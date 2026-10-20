@@ -1,4 +1,9 @@
-import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
+import {
+  decodeOnce,
+  foldedJournalView,
+  type EventJournal,
+  type JournalView,
+} from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
 import {
   decodeRunExecutionEvent,
@@ -12,11 +17,13 @@ import { foldRun } from '../domain/run.js';
 
 type JournalEvent = Awaited<ReturnType<EventJournal['readAll']>>[number];
 
+const decodeRun = decodeOnce(decodeRunExecutionEvent);
+
 export class RunRepository {
-  private readonly runs: CachedJournalView<readonly RunView[]>;
+  private readonly runs: JournalView<RunsState>;
 
   constructor(private readonly journal: EventJournal) {
-    this.runs = cachedJournalView(journal, deriveRuns);
+    this.runs = foldedJournalView(journal, { initial: emptyRuns, extend: extendRuns });
   }
 
   async load(runId: RunId): Promise<{
@@ -25,7 +32,7 @@ export class RunRepository {
     readonly view: ReturnType<typeof foldRun>;
   }> {
     const events = await this.journal.readStream(runStream(runId));
-    const decoded = events.map(decodeRunExecutionEvent);
+    const decoded = events.map(decodeRun);
     return { sequence: events.length, events: decoded, view: foldRun(decoded) };
   }
 
@@ -39,21 +46,43 @@ export class RunRepository {
   }
 
   async list(activationId?: ActivationId): Promise<readonly RunView[]> {
-    const runs = await this.runs.get();
+    const { views: runs } = await this.runs.get();
     return activationId === undefined
       ? runs
       : runs.filter((run) => run.activationId === activationId);
   }
 }
 
-function deriveRuns(events: readonly JournalEvent[]): readonly RunView[] {
-  const grouped = new Map<RunId, RunExecutionEvent[]>();
+interface RunsState {
+  readonly events: ReadonlyMap<RunId, readonly RunExecutionEvent[]>;
+  readonly byRun: ReadonlyMap<RunId, RunView | null>;
+  readonly views: readonly RunView[];
+}
+
+const emptyRuns: RunsState = { events: new Map(), byRun: new Map(), views: [] };
+
+// Decodes and folds only the runs the new events touch; untouched runs keep
+// their decoded history and view, so a journal move costs the delta.
+function extendRuns(state: RunsState, events: readonly JournalEvent[]): RunsState {
+  const touched = new Map<RunId, RunExecutionEvent[]>();
   for (const event of events) {
     if (!isRunStream(event.stream)) continue;
     const id = runId(event.stream.id);
-    const decoded = grouped.get(id) ?? [];
-    decoded.push(decodeRunExecutionEvent(event));
-    grouped.set(id, decoded);
+    const batch = touched.get(id) ?? [];
+    batch.push(decodeRun(event));
+    touched.set(id, batch);
   }
-  return [...grouped.values()].map(foldRun).filter((run) => run !== null);
+  if (touched.size === 0) return state;
+  const history = new Map(state.events);
+  const byRun = new Map(state.byRun);
+  for (const [id, batch] of touched) {
+    const all = [...(history.get(id) ?? []), ...batch];
+    history.set(id, all);
+    byRun.set(id, foldRun(all));
+  }
+  return {
+    events: history,
+    byRun,
+    views: [...byRun.values()].filter((run) => run !== null),
+  };
 }

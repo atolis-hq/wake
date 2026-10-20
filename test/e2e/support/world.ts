@@ -101,6 +101,7 @@ export class TestWorld {
   readonly resourceLookup = createResourceLookup({
     journal: this.journal,
     projections: this.projections,
+    checkpoints: this.checkpoints,
   });
 
   readonly resources = createResourceService(this.journal, this.resourceLookup);

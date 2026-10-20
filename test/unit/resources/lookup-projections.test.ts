@@ -94,7 +94,7 @@ function createWorld() {
   const projections = new InMemoryProjectionStore();
   const checkpoints = new InMemoryCheckpointStore();
   const serialiseRun = createInMemoryProcessorRunSerialiser();
-  const lookup = createResourceLookup({ journal, projections });
+  const lookup = createResourceLookup({ journal, projections, checkpoints });
   return {
     resources: createResourceService(journal, lookup),
     lookup,

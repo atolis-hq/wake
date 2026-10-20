@@ -1,5 +1,6 @@
 import { correlationId } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
+import { existsSync } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
 import { mkdtemp, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -115,9 +116,12 @@ it.each([false, true])(
     expect(pending).toHaveLength(instances);
     // One cold listing plus the gate's Work synchronisation; never one per instance.
     expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(6);
-    // Each segment is stat'ed once, when first seen, and never again.
+    // Each segment is stat'ed once, when first seen, and never again. Probes for
+    // the not-yet-written next segment stat names that do not exist.
     expect(
-      statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl')).length,
+      statMock.mock.calls.filter(
+        ([path]) => String(path).endsWith('.jsonl') && existsSync(String(path)),
+      ).length,
     ).toBeLessThanOrEqual(segments);
   },
 );

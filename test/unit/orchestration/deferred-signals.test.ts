@@ -1,17 +1,10 @@
 import { expect, it, vi } from 'vitest';
 import { DeferredSignals } from '../../../src/orchestration/application/deferred-signals.js';
-import { OrchestrationEventType } from '../../../src/orchestration/contracts/events.js';
 
 function subject(deferredIds: readonly string[], fenced: ReadonlySet<string>) {
   const history = vi.fn(async (_id: string) => ({ events: [] }));
   const repository = {
-    events: async () => [
-      ...deferredIds.flatMap((id) => [
-        { stream: { id }, event: { eventType: OrchestrationEventType.SignalDeferred } },
-        { stream: { id }, event: { eventType: OrchestrationEventType.SignalDeferred } },
-      ]),
-      { stream: { id: 'untouched' }, event: { eventType: 'orchestration.other' } },
-    ],
+    instancesWithDeferredSignals: async () => new Set(deferredIds),
     history,
     loadRequired: async () => ({ view: {}, sequence: 0 }),
   };

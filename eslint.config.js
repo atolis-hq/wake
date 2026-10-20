@@ -9,9 +9,9 @@ const fullJournalRescanRule = {
   selector:
     'CallExpression[callee.property.name="readAll"][arguments.0.type="Literal"][arguments.0.value=0]',
   message:
-    'readAll(0) re-derives the full event history on every call. Route it through ' +
-    'cachedJournalView() (@atolis-hq/eventing) so a resident loop only pays that cost ' +
-    'when the journal has actually moved since the last call.',
+    'readAll(0) re-reads the full event history on every call. Read a ProjectionStore ' +
+    'projection (readCurrentProjection) or fold only new events with foldedJournalView() ' +
+    '(@atolis-hq/eventing). test/architecture/journal-read-patterns.test.ts also guards this.',
 };
 
 export default tseslint.config(
@@ -161,19 +161,12 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     ignores: [
       'src/{work,resources,activities,orchestration,execution}/{domain,application}/**/*.ts',
-      'src/kernel/infrastructure/cached-journal-view.ts',
       // Composition/wiring and CLI command handlers: startup and one-off
       // command volume, not a resident tick.
       'src/bootstrap/**',
       'src/surfaces/cli/**',
       // Fake/test adapter, not production polling.
       'src/integrations/fake/**',
-      // Bounded by actual pr.merge command volume, not a resident tick.
-      // (A plain file, not under {domain,application}/, so block 1 above
-      // doesn't already cover it.)
-      'src/activities/pr/application.ts',
-      // Bounded by actual agent-activation volume, not a resident tick.
-      'src/integrations/github/application/comment-history-reader.ts',
     ],
     rules: {
       'no-restricted-syntax': ['error', fullJournalRescanRule],

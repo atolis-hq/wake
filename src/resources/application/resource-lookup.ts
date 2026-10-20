@@ -1,4 +1,9 @@
-import type { EventJournal, ProjectionDefinition, ProjectionStore } from '@atolis-hq/eventing';
+import {
+  readCurrentProjection,
+  type CheckpointStore,
+  type EventJournal,
+  type ProjectionStore,
+} from '@atolis-hq/eventing';
 import type { WorkItemId } from '../../work/index.js';
 import { ResourceEventType, selectResourceEvent } from '../contracts/events.js';
 import type { ResourceId } from '../contracts/identifiers.js';
@@ -24,23 +29,17 @@ export interface ResourceLookup {
 export function createResourceLookup(dependencies: {
   readonly journal: EventJournal;
   readonly projections: ProjectionStore;
+  readonly checkpoints: Pick<CheckpointStore, 'load'>;
 }): ResourceLookup {
-  const seeded = async <View>(
-    definition: ProjectionDefinition<View>,
-    key: string,
-  ): Promise<View> => {
-    const stored = await dependencies.projections.read<View>(definition.name, key);
-    let value = stored?.value ?? definition.initial(key);
-    for (const event of await dependencies.journal.readAll(stored?.lastGlobalPosition ?? 0)) {
-      if (definition.select(event)?.key === key) value = definition.project(value, event);
-    }
-    return value;
-  };
-
   return {
     resourceIdForExternalKey: (externalKey) =>
-      seeded(resourcesByExternalKeyProjection, externalKeyProjectionKey(externalKey)),
-    correlationsForWork: (workItemId) => seeded(workCorrelationsProjection, workItemId),
+      readCurrentProjection(
+        dependencies,
+        resourcesByExternalKeyProjection,
+        externalKeyProjectionKey(externalKey),
+      ),
+    correlationsForWork: (workItemId) =>
+      readCurrentProjection(dependencies, workCorrelationsProjection, workItemId),
     async primaryCorrelation(resourceId) {
       const active = new Map<WorkItemId, ResourceCorrelationView>();
       const retracted: ResourceCorrelationView[] = [];

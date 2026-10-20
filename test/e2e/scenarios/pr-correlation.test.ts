@@ -36,7 +36,7 @@ it(`${scenario.id} correlates a verified primary PR and rejects uncorrelated or 
   const journal = new InMemoryEventJournal(clock);
   const checkpoints = new InMemoryCheckpointStore();
   const projectionStore = new InMemoryProjectionStore();
-  const lookup = createResourceLookup({ journal, projections: projectionStore });
+  const lookup = createResourceLookup({ journal, projections: projectionStore, checkpoints });
   const resources = createResourceService(journal, lookup);
   const work = createWorkService(journal);
   const pullRequests = createPullRequestService(journal, work, resources);
