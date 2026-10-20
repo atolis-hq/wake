@@ -42,6 +42,7 @@ const statBatchSize = 256;
 // nothing, but never for longer than this: a full listing still bounds how long
 // an unexpected change (a removed segment, an odd clock) can go unnoticed.
 const maxProbeOnlyMs = 5_000;
+const maxProbedDays = 8;
 
 export class FileEventJournal implements EventJournal {
   constructor(
@@ -489,9 +490,19 @@ export class FileEventJournal implements EventJournal {
     if (Date.now() - this.lastFullListingMs > maxProbeOnlyMs) return false;
     if (!sameEntries(cached.entries, this.latestEntries)) return false;
     const next = String(cached.events.length + 1).padStart(20, '0');
-    const day = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
-    const days = new Set([last.file.slice(0, 10), day(0), day(24 * 60 * 60 * 1000)]);
-    const candidates = [...days].flatMap((d) => [`${d}~${next}.jsonl`, `${d}.jsonl`]);
+    // A writer names a segment from its own clock, so cover every day between the
+    // newest cached segment (or yesterday, for a clock running behind) and
+    // tomorrow. A wider gap cannot be probed cheaply, so list the directory.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const lastDay = Date.parse(`${last.file.slice(0, 10)}T00:00:00Z`);
+    const firstDay = Math.min(lastDay, Date.UTC(...utcDayParts(Date.now() - dayMs)));
+    const lastProbedDay = Date.UTC(...utcDayParts(Date.now() + dayMs));
+    if (!Number.isFinite(lastDay) || (lastProbedDay - firstDay) / dayMs > maxProbedDays)
+      return false;
+    const days: string[] = [];
+    for (let at = firstDay; at <= lastProbedDay; at += dayMs)
+      days.push(new Date(at).toISOString().slice(0, 10));
+    const candidates = days.flatMap((d) => [`${d}~${next}.jsonl`, `${d}.jsonl`]);
     const unknown = candidates.filter((name) => !this.knownSegments.has(name));
     const found = await Promise.all(
       unknown.map((name) =>
@@ -796,6 +807,11 @@ function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
         );
       }))
   );
+}
+
+function utcDayParts(ms: number): [number, number, number] {
+  const date = new Date(ms);
+  return [date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()];
 }
 
 function noop(): void {}

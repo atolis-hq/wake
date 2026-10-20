@@ -3,6 +3,7 @@ import {
   EventProcessorHost,
   ProjectionRebuilder,
   applyProjectionBatch,
+  applyProjectionEvent,
   createEventData,
   createProjectionProcessor,
   projectionConsumer,
@@ -245,6 +246,77 @@ it('reads a quiet key from the processor checkpoint, not by replaying history si
 
   expect(value).toBe(2);
   expect(readAll.mock.calls).toEqual([[301, 500]]);
+});
+
+it.each(['checkpoint', 'value'] as const)(
+  'does not skip events the processor applies while a reader sits between its two reads (%s read)',
+  async (raced) => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const store = new InMemoryProjectionStore();
+    const checkpoints = new InMemoryCheckpointStore();
+    const definition = projectionDefinition('racing-counts');
+    const stream: StreamRef<'counter', 'racing'> = { kind: 'counter', id: 'racing' };
+    for (let index = 0; index < 3; index += 1)
+      await appendCountedEvent(journal, stream, index, `racing-${index}`);
+    const events = await journal.readAll(0);
+    const consumer = projectionConsumer(definition);
+    await applyProjectionEvent(definition, store, 'one', events[0]!);
+    await checkpoints.save(consumer, 1);
+    // The processor writes the key, then saves its checkpoint, exactly as a pass does.
+    const advance = async () => {
+      for (const event of events.slice(1))
+        await applyProjectionEvent(definition, store, 'one', event);
+      await checkpoints.save(consumer, 3);
+    };
+    const racingCheckpoints = {
+      load: async (name: string) => {
+        if (raced === 'checkpoint') await advance();
+        return checkpoints.load(name);
+      },
+    };
+    const racingProjections = {
+      ...store,
+      read: async <Value>(namespace: string, key: string) => {
+        if (raced === 'value') await advance();
+        return store.read<Value>(namespace, key);
+      },
+    } as unknown as InMemoryProjectionStore;
+
+    const value = await readCurrentProjection(
+      { journal, projections: racingProjections, checkpoints: racingCheckpoints },
+      definition,
+      'one',
+    );
+
+    expect(value).toBe(3);
+  },
+);
+
+it('resets the checkpoint before clearing the store when rebuilding', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const store = new InMemoryProjectionStore();
+  const checkpoints = new InMemoryCheckpointStore();
+  const order: string[] = [];
+  const reset = checkpoints.reset.bind(checkpoints);
+  checkpoints.reset = async (consumer: string) => {
+    order.push('reset');
+    await reset(consumer);
+  };
+  const clear = store.clear.bind(store);
+  store.clear = async (namespace?: string) => {
+    order.push('clear');
+    await clear(namespace);
+  };
+  const rebuilder = new ProjectionRebuilder(
+    journal,
+    store,
+    checkpoints,
+    createInMemoryProcessorRunSerialiser(),
+  );
+
+  await rebuilder.rebuild(projectionDefinition('rebuild-order'));
+
+  expect(order).toEqual(['reset', 'clear']);
 });
 
 function projectionDefinition(name: string) {

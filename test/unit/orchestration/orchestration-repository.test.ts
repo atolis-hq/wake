@@ -85,6 +85,28 @@ it('fails only the instance holding a malformed event on load, and fails list-wi
   await expect(repository.events()).rejects.toThrow();
 });
 
+it('fails the parent too when a child holds a malformed delegation reservation', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const repository = new OrchestrationRepository(journal);
+  await seedTwoInstances(journal);
+  const { sequence } = await repository.history('workflow-2');
+  await journal.appendToStream(workflowInstanceStream(workflowInstanceId('workflow-2')), sequence, [
+    createEventData({
+      eventId: 'malformed-reservation',
+      eventType: OrchestrationEventType.DelegationReserved,
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { parentWorkflowInstanceId: 'workflow-1' },
+    }),
+  ]);
+
+  await expect(repository.load('workflow-2')).rejects.toThrow();
+  await expect(repository.load('workflow-1')).rejects.toThrow();
+});
+
 it('records an activation start once however many ticks retry the dispatch', async () => {
   const journal = new InMemoryEventJournal(new FakeClock());
   const repository = new OrchestrationRepository(journal);

@@ -201,8 +201,20 @@ function decodeIsolated(
     return selectWorkflowOrchestrationEvent(raw);
   } catch (error) {
     if (!failures.has(instanceId)) failures.set(instanceId, error);
+    // A reservation recorded on a child's stream is part of its parent's view, so
+    // a malformed one must not leave the parent quietly missing it.
+    const parent = rawReservationParent(raw);
+    if (parent !== undefined && !failures.has(parent)) failures.set(parent, error);
     return null;
   }
+}
+
+function rawReservationParent(raw: JournalEvent): string | undefined {
+  if (raw.event.eventType !== OrchestrationEventType.DelegationReserved) return undefined;
+  const payload: unknown = raw.event.payload;
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const parent = (payload as { parentWorkflowInstanceId?: unknown }).parentWorkflowInstanceId;
+  return typeof parent === 'string' ? parent : undefined;
 }
 
 /** The parent instance a child-stream DelegationReserved fact is recorded for. */

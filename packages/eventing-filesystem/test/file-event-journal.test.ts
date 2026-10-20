@@ -1345,7 +1345,8 @@ function expectNoExistingSegmentStats(): void {
 it('does not list the directory while a probe for the next segment finds nothing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const clock = new FakeClock();
+  // A recent clock, as in production: a cache far behind today is listed, not probed.
+  const clock = { now: () => new Date() } as never;
   const journal = new FileEventJournal(root, clock);
   for (let index = 0; index < 5; index += 1)
     await journal.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
@@ -1391,4 +1392,22 @@ it('relists the directory once the probe-only interval has passed', async () => 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('sees a first-of-day append by an instance whose clock is on an earlier day than today', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-skew-'));
+  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
+  const clockAt = (iso: string) => ({ now: () => new Date(iso) });
+  const writerA = new FileEventJournal(root, clockAt('2026-01-01T12:00:00Z') as never);
+  const reader = new FileEventJournal(root, clockAt('2026-01-01T12:00:00Z') as never);
+  // The writer's clock names its segment for a day that is neither the reader's
+  // last segment day, today, nor tomorrow.
+  const skewed = new FileEventJournal(root, clockAt('2026-01-05T23:59:59Z') as never);
+  await writerA.appendToStream(stream, 0, [journalDraft('event-0')]);
+  expect(await reader.latestGlobalPosition()).toBe(1);
+
+  await skewed.appendToStream(stream, 1, [journalDraft('event-1')]);
+
+  expect(await reader.latestGlobalPosition()).toBe(2);
+  expect((await reader.readStream(stream)).length).toBe(2);
 });

@@ -55,7 +55,9 @@ const catchUpBatchSize = 500;
  * plus any events the projection processor has not applied yet. The tail starts
  * at the processor's checkpoint, not the key's own last position: everything at
  * or below the checkpoint is already applied for every key, whereas a quiet
- * key's position can trail the head by the whole history.
+ * key's position can trail the head by the whole history. A rebuild resets the
+ * checkpoint before it clears the store, so the checkpoint is never ahead of
+ * the stored values it vouches for.
  */
 export async function readCurrentProjection<Value>(
   dependencies: {
@@ -66,12 +68,14 @@ export async function readCurrentProjection<Value>(
   definition: ProjectionDefinition<Value>,
   key: string,
 ): Promise<Value> {
+  // Order matters. The processor writes a key and only then saves the batch
+  // checkpoint, so a checkpoint read first can only be older than the stored
+  // value read after it: every event at or below it is already in that value.
+  // Reading the value first would let events applied in between be skipped.
+  const checkpoint = await dependencies.checkpoints.load(projectionConsumer(definition));
   const stored = await dependencies.projections.read<Value>(definition.name, key);
   let value = stored?.value ?? definition.initial(key);
-  let position = Math.max(
-    stored?.lastGlobalPosition ?? 0,
-    await dependencies.checkpoints.load(projectionConsumer(definition)),
-  );
+  let position = Math.max(stored?.lastGlobalPosition ?? 0, checkpoint);
   for (;;) {
     const events = await dependencies.journal.readAll(position, catchUpBatchSize);
     for (const event of events)
@@ -118,8 +122,9 @@ export class ProjectionRebuilder {
     signal: AbortSignal,
   ): Promise<number> {
     const consumer = projectionConsumer(definition);
-    await this.projections.clear(definition.name);
+    // Checkpoint first: a concurrent reader that sees a cleared store must also see a reset checkpoint.
     await this.checkpoints.reset(consumer);
+    await this.projections.clear(definition.name);
     const processor = createProjectionProcessor(definition, this.projections);
     if (processor.mode === 'batch') throw new Error('Projection processors must handle each event');
     let total = 0;
