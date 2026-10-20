@@ -53,6 +53,12 @@ export interface DeliveryQaResponse {
   readonly candidateId?: string;
   readonly repositories: readonly { readonly resourceId: string; readonly revision: string }[];
   readonly stale: readonly string[];
+  /** Why each stale selected output no longer counts as current evidence. */
+  readonly staleOutputs?: readonly {
+    readonly workItemKey: WorkItemKey;
+    readonly outputName: string;
+    readonly reason: string;
+  }[];
   readonly verdict?: string;
   readonly effective: boolean;
   readonly canComplete: boolean;
@@ -66,13 +72,48 @@ export interface WorkDetailResponse {
     readonly qa?: DeliveryQaResponse;
     readonly rootWorkItemKey: WorkItemKey;
     readonly parentWorkItemKey?: WorkItemKey;
+    /** Present while the parent is waiting on an assessment of blocked children. */
+    readonly attention?: {
+      readonly cohortId: string;
+      readonly revision: number;
+      readonly blockers: readonly {
+        readonly blockerId: string;
+        readonly workItemKey: WorkItemKey;
+        readonly kind: string;
+        readonly reason: string;
+        /** A parent reply has been accepted for this blocker. */
+        readonly answered: boolean;
+      }[];
+    };
+    readonly cohorts?: readonly {
+      readonly cohortId: string;
+      /** The join has resolved; an unsettled cohort is still waiting on required children. */
+      readonly settled: boolean;
+      readonly failureReason?: string;
+    }[];
     readonly children: readonly {
       readonly workItemKey: WorkItemKey;
       readonly parentWorkItemKey: WorkItemKey;
       readonly objective: string;
       readonly workflowName: string;
       readonly status: string;
+      readonly currentStage?: string;
       readonly cohortId: string;
+      readonly repository?: { readonly resourceId: string; readonly pullRequestBase: string };
+      readonly prerequisites?: readonly WorkItemKey[];
+      /** Set only while a prerequisite is actually holding this child back. */
+      readonly prerequisiteBlocker?: string;
+      /** Original required assignment this corrective child replaces. */
+      readonly replaces?: { readonly cohortId: string; readonly assignmentId: string };
+      readonly outputs?: readonly {
+        readonly name: string;
+        readonly kind: string;
+        readonly required: boolean;
+        readonly selected: boolean;
+        readonly stale: boolean;
+        /** Declared per-output repository and PR base, when it differs from the child's. */
+        readonly repository?: { readonly resourceId: string; readonly pullRequestBase: string };
+      }[];
       readonly blockReason?: string;
       readonly resources: readonly ResourceItemResponse[];
     }[];

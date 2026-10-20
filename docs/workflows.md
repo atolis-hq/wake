@@ -968,3 +968,21 @@ normal passing semantics. Missing, ambiguous, expired or unreadable checkout evi
 cannot qualify. The current PR test-merge SHA is not used, so lazy recomputation cannot
 block base-only maintenance followed by a qualifying execution. Completed job logs and
 Git objects are cached; mutable workflow-run attempts are conditionally revalidated.
+
+### Delivery inspection and reporting
+
+Work detail for a delegated delivery shows, from journal-derived facts, every cohort and
+whether its join has settled (with a terminal failure reason), the open parent attention
+assessment (which child blockers it covers and whether a reply was accepted), and for each
+child: workflow and current stage, repository and pull request base, declared prerequisites
+as links (with the waiting reason only while one is actually blocking), the original assignment
+a corrective child replaces, status and block reason, and each named output with its
+required, selected and stale state and its own repository and base when it declares one. Candidate QA lists stale selected outputs with the reason
+(they were built on an output that has since been replaced), together with partial integration
+progress and maintenance history. Nothing is stored for the view; it is identical after restart
+or projection rebuild, and original ownership, historical joins and descriptive links are not
+reinterpreted.
+
+The `delivery-activity` report and the `acceptedChildResults` / `correctiveActivations` summary
+fields keep three populations separate; see [analytics](analytics-api.md). A delegated child's
+primary completion is a child result and never a delivered root.

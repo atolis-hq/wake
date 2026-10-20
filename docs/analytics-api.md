@@ -45,9 +45,14 @@ Run durations include preparation through terminal finish; active runs and
 invalid/missing durations are excluded from the median. Counts and sums are
 zero when empty; empty medians are `null`.
 
+Summary also reports `acceptedChildResults` and `correctiveActivations` (see
+`delivery-activity` below).
+
 Work items done count the first completion of an associated primary workflow
 per work item in the window, regardless of work creation time. Child workflow
-completion does not finish a work item. End-to-end durations run from work
+completion does not finish a work item, and the primary completion of a
+registered delegated child WorkItem is a child result, not a delivered root, so
+it is excluded. End-to-end durations run from work
 creation to that first completion; missing or invalid durations are excluded.
 
 Summary and report requests are independent. Disconnecting cancels their scan;
@@ -107,6 +112,21 @@ Malformed persisted events (including non-ISO timestamps) are rejected by the
 owning event decoder and use the report error state rather than being silently
 ignored. Duration exclusions apply to decoded facts with missing creation or
 inconsistent time ordering.
+
+`delivery-activity` returns a time series with three separate measures that must
+not be summed: `root-deliveries` (first primary completion of each non-delegated
+WorkItem, reconciling with Work items done), `accepted-child-results` (one per
+cohort and child durable result selection, at its first selection time; replays
+and refreshed selections are not recounted), and `corrective-activations`.
+A corrective activation is an activation that actually started a Run and carries
+explicit durable correction provenance: any activation of a child reserved with
+`replaces` (a replacement child), or the producing activation of a recorded
+delivery maintenance. It is counted once per activation however many Run attempts
+it has, and belongs to the window and UTC bucket of its earliest recorded Run
+start. QA activations, stage names, prose and descriptive links are never treated
+as correction, so repair categories without such provenance are not counted.
+Accepting refreshed or replacement evidence never increments `root-deliveries`.
+Individual Run attempts, durations and usage stay in the per-Run reports.
 
 The `run-duration` report shows run duration by Action and Stage and over the
 selected window's buckets, using run start time for cohort and bucket membership.

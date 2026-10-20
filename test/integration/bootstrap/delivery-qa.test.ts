@@ -39,6 +39,7 @@ import {
   ResourceCorrelationRole,
   resourceId,
 } from '../../../src/resources/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
@@ -744,6 +745,28 @@ it.each([
       const stale = await current.orchestration.deliveryStateFor(parent.workflowInstanceId);
       expect(stale.stale).toContain('cohort/a2/delivery');
       expect(stale.stale).not.toContain('cohort/b1/delivery');
+      // DC-23: the same stale set, as the operator sees it, after a restart-equivalent rebuild.
+      const shown = await presentDelivery(current, (await current.work.get(parentWork))!);
+      expect(shown.delegation!.qa!.staleOutputs).toEqual([
+        {
+          workItemKey: toWorkItemKey(a2.workItemId),
+          outputName: 'delivery',
+          reason: expect.stringContaining('replaced'),
+        },
+      ]);
+      const rows = new Map(shown.delegation!.children.map((entry) => [entry.workItemKey, entry]));
+      expect(rows.get(toWorkItemKey(a2.workItemId))!.outputs![0]).toMatchObject({
+        name: 'delivery',
+        stale: true,
+      });
+      expect(rows.get(toWorkItemKey(b1.workItemId))!.outputs![0]).toMatchObject({ stale: false });
+      expect(rows.get(toWorkItemKey(fixes[0]!.workItemId))).toMatchObject({
+        replaces: { cohortId: 'cohort', assignmentId: a1.assignmentId },
+        outputs: [{ name: 'delivery', selected: true, stale: false }],
+      });
+      expect(rows.get(toWorkItemKey(a1.workItemId))!.outputs![0]).toMatchObject({
+        selected: false,
+      });
       const fixRun = (await current.execution.list()).find(
         (run) =>
           run.workflowInstanceId === fixes[1]!.workflowInstanceId &&
@@ -945,6 +968,23 @@ it.each([
         candidateId: mode === 'repair' ? 'repaired' : 'asm-1',
       });
       expect(presented.delegation!.qa!.repositories).toHaveLength(2);
+      // DC-23: each child shows its workflow position, repository/base, outputs and join state.
+      expect(presented.delegation!.cohorts!.length).toBeGreaterThan(0);
+      expect(presented.delegation!.qa!.staleOutputs).toBeInstanceOf(Array);
+      for (const entry of presented.delegation!.children) {
+        expect(entry.currentStage).toEqual(expect.any(String));
+        expect(entry.repository).toEqual({
+          resourceId: expect.any(String),
+          pullRequestBase: expect.any(String),
+        });
+        expect(entry.prerequisites).toBeInstanceOf(Array);
+        expect(entry.outputs!.length).toBeGreaterThan(0);
+      }
+      expect(
+        presented.delegation!.children.some((entry) =>
+          entry.outputs!.some((output) => output.selected),
+        ),
+      ).toBe(true);
     };
     await assertHandoff();
     expect(scriptError).toBeUndefined();

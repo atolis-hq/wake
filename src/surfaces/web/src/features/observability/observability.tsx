@@ -200,6 +200,8 @@ function Summary({ data }: { readonly data: AnalyticsSummaryResponse }) {
     ['Total cost (USD)', `$${data.totalCostUsd.toFixed(4)}`],
     ['Median run duration', duration(data.medianRunDurationMs)],
     ['Work items done', data.workItemsDone.toLocaleString()],
+    ['Accepted child results', data.acceptedChildResults.toLocaleString()],
+    ['Corrective activations', data.correctiveActivations.toLocaleString()],
     ['Median end-to-end duration', duration(data.medianEndToEndDurationMs)],
   ];
   return (

@@ -62,6 +62,8 @@ export * from './domain/workflow-instance.js';
 
 export * from './domain/workflow-selector.js';
 
+export * from './application/delivery-activity-report.js';
+
 export * from './application/work-completion-summary.js';
 
 export type { WorkflowCompileDiagnostic } from './domain/compile-diagnostics.js';

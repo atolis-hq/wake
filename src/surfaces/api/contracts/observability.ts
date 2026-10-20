@@ -35,5 +35,7 @@ export interface AnalyticsSummaryResponse {
   readonly totalCostUsd: number;
   readonly medianRunDurationMs: number | null;
   readonly workItemsDone: number;
+  readonly acceptedChildResults: number;
+  readonly correctiveActivations: number;
   readonly medianEndToEndDurationMs: number | null;
 }

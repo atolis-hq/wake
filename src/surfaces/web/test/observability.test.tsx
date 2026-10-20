@@ -28,6 +28,8 @@ const summary = {
   totalCostUsd: 0,
   medianRunDurationMs: null,
   workItemsDone: 0,
+  acceptedChildResults: 0,
+  correctiveActivations: 0,
   medianEndToEndDurationMs: null,
 };
 const json = (data: unknown) =>
