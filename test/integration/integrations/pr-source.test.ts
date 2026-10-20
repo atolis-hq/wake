@@ -727,3 +727,44 @@ it('persists the actual merged commit independently of the reviewed head, includ
     mergeRevision: 'squash-commit',
   });
 });
+
+it('keeps original check execution time when a base-only move is polled and persists a fresh rerun across restart', async () => {
+  let base = 'base-a';
+  let startedAt = '2026-10-20T00:00:00.000Z';
+  const runtime = sourceRuntime(
+    fakeClient({
+      pullRequests: async () => [{ ...pullRequest(), base: { sha: base } }],
+      checkRuns: async () => [
+        { name: 'required', status: 'completed', conclusion: 'success', started_at: startedAt },
+      ],
+    }),
+  );
+  await admitPullRequest(runtime, 'check-subject', 'owner/repo#7');
+  const observe = async () => {
+    await runtime.poll.pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resource = await runtime.lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    return runtime.pullRequests.get(resource!);
+  };
+  expect((await observe())?.checkEvidence).toEqual({
+    headRevision: 'head-a',
+    baseRevision: 'base-a',
+    startedAt,
+  });
+  base = 'base-b';
+  const moved = (await observe())!;
+  expect(moved).toMatchObject({
+    headRevision: 'head-a',
+    baseRevision: base,
+    checks: 'passing',
+    checkEvidence: { startedAt: '2026-10-20T00:00:00.000Z' },
+  });
+  startedAt = '2026-10-20T00:05:00.000Z';
+  const fresh = (await observe())!;
+  expect(fresh.checkEvidence).toEqual({ headRevision: 'head-a', baseRevision: base, startedAt });
+  const restarted = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
+  expect((await restarted.get(fresh.resourceId))?.checkEvidence).toEqual(fresh.checkEvidence);
+});

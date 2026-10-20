@@ -7,6 +7,7 @@ import {
 import type { z } from 'zod';
 import { type ResourceId, type ResourceStreamRef } from '../../resources/index.js';
 import { type WorkItemId, type WorkItemStreamRef } from '../../work/index.js';
+import type { PullRequestCheckEvidence } from '../pr/check-evidence.js';
 import type { PullRequestActivityOutcome, PullRequestTarget } from '../pr/contracts.js';
 import type { ParentActionContext } from '../pr/parent-scope.js';
 import type {
@@ -44,6 +45,7 @@ export const ActivityEventType = {
 export type ActivityEventTypes = typeof ActivityEventType;
 
 export interface PullRequestDiscoveredPayload {
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly mergeRevision?: string | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly workItemId: WorkItemId;
@@ -159,6 +161,7 @@ export interface ActivityEventPayloads {
     readonly mergeability?: PullRequestMergeability | undefined;
   };
   readonly [ActivityEventType.PrChecksChanged]: {
+    readonly checkEvidence?: PullRequestCheckEvidence | undefined;
     readonly checks: PullRequestDiscoveredPayload['checks'];
   };
   readonly [ActivityEventType.PrReviewAccepted]: {

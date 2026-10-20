@@ -28,6 +28,7 @@ import {
 } from '../contracts/vocabulary.js';
 import { withoutWakeMarkers } from './content-fingerprint.js';
 import type { PollBatch } from './poll-watermark.js';
+import { verifiedCheckSubject } from './pr-check-subject.js';
 import { readPullRequestEvidence, type CheckEvidence } from './pr-evidence.js';
 
 export interface GitHubPullRequestSourceClient {
@@ -147,6 +148,7 @@ function pullRequestObservation(input: {
     headRevision: revision,
     baseRevision: fallback(pullRequest.base?.sha, UnknownGitHubRevision),
     checks,
+    ...verifiedCheckSubject(input.evidence, revision, pullRequest.base?.sha),
     actor: {
       id: fallback(pullRequest.user?.login, UnknownGitHubIdentity),
       kind: actorKind(pullRequest.user?.type),

@@ -218,6 +218,7 @@ export const deliveryMaintenanceSchema = z
     repositoryResourceId: z.string().min(1),
     previous: subjectState,
     current: subjectState.extend({ baseRevision: z.string().min(1).optional() }).strict(),
+    recordedAt: z.string().datetime({ offset: true }).optional(),
     producer: z.object({ runId: z.string().min(1), activationId: z.string().min(1) }).strict(),
   })
   .strict();

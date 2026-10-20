@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { createPullRequestService } from '../../../src/activities/index.js';
 import { runId, type RunView } from '../../../src/execution/index.js';
 import {
   createDeliveryIntegrationVerification,
@@ -67,14 +68,30 @@ it('requires provider identity/base verification and a fresh trusted review afte
           }
         : 'not-found',
   } as unknown as ProviderInstance;
-  const verification = createDeliveryIntegrationVerification({
+  const dependencies = {
     resources: world.resources,
-    pullRequests: world.pullRequests,
     providers: async () => [provider],
     runs: async () => [
       { runId: runId('maintain'), startedAt: '2026-10-20T00:01:00.000Z' } as RunView,
     ],
-  });
+  };
+  const restarted = () =>
+    createDeliveryIntegrationVerification({
+      ...dependencies,
+      pullRequests: createPullRequestService(world.journal, world.work, world.resources),
+    });
+  let verification = restarted();
+  await world.pullRequests.observe(
+    {
+      resourceId: resource,
+      workItemId: work.workItemId,
+      state: 'open',
+      headRevision: 'a'.repeat(40),
+      baseRevision: 'c'.repeat(40),
+      checks: 'passing',
+    },
+    context('base-only', '2026-10-20T00:01:30.000Z'),
+  );
   const request = {
     ownerWorkItemId: work.workItemId,
     resourceId: resource,
@@ -83,6 +100,8 @@ it('requires provider identity/base verification and a fresh trusted review afte
     revision: 'a'.repeat(40),
     pullRequestBase: 'main',
     maintenanceRunId: 'maintain',
+    maintenanceRecordedAt: '2026-10-20T00:02:15.000Z',
+    baseRevision: 'c'.repeat(40),
     requireReview: true,
     requireChecks: true,
   };
@@ -91,6 +110,35 @@ it('requires provider identity/base verification and a fresh trusted review afte
     { ...review, acceptedEventId: 'new' },
     context('new-review', '2026-10-20T00:02:00.000Z'),
   );
+  expect(await verification.verifyTarget(request)).toBe(false);
+  verification = restarted();
+  expect(await verification.verifyTarget(request)).toBe(false);
+  const observed = (await world.pullRequests.get(resource))!;
+  await world.pullRequests.observe(
+    {
+      ...observed,
+      checkEvidence: {
+        headRevision: observed.headRevision,
+        baseRevision: observed.baseRevision,
+        startedAt: '2026-10-20T00:01:45.000Z',
+      },
+    },
+    context('old-checks-polled', '2026-10-20T00:02:30.000Z'),
+  );
+  expect(await verification.verifyTarget(request)).toBe(false);
+  await world.pullRequests.observe(
+    {
+      ...observed,
+      checkEvidence: {
+        headRevision: observed.headRevision,
+        baseRevision: observed.baseRevision,
+        startedAt: '2026-10-20T00:02:30.000Z',
+      },
+    },
+    context('fresh-checks', '2026-10-20T00:03:00.000Z'),
+  );
+  expect(await verification.verifyTarget(request)).toBe(true);
+  verification = restarted();
   expect(await verification.verifyTarget(request)).toBe(true);
   expect(await verification.verifyTarget({ ...request, pullRequestBase: 'forged' })).toBe(false);
   expect(await verification.verifyTarget({ ...request, ownerWorkItemId: workId('other') })).toBe(

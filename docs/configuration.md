@@ -922,3 +922,7 @@ that scope further; its validated effective scope is persisted on the reservatio
 for nested requests. Omitting `repository` never selects a checkout. Legacy
 reservations without a permission scope retain only their explicit selected
 repository, if any.
+
+Fake-provider PR events may supply `checkEvidence: { headRevision, baseRevision, startedAt }`.
+`startedAt` is an ISO timestamp for the check execution, not the poll. The subject must match
+the observation. Maintained targets requiring checks cannot qualify without fresh evidence.

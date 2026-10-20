@@ -930,3 +930,9 @@ by itself never proves progress. Squash merges and stack retargets require expli
 Existing durable delivery intents/results retain partial progress across restart; integration
 across repositories does not provide atomic rollback. Work detail API/web expose target states,
 maintenance reasons, affected evidence and maintenance history.
+
+Maintained PRs with required checks need provider execution evidence for the exact head/base
+subject, with every reported check or status started after the new maintenance subject was recorded. A retained
+`passing` value, re-polling an older execution, missing timestamps or incomplete provider evidence
+cannot satisfy this gate. Check evidence is journaled even when the aggregate state remains
+`passing`, and the same subject and execution-time rules apply after restart.

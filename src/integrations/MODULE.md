@@ -65,3 +65,9 @@ Governed integration reuses provider artifact verification for exact repository/
 identity and the target's own review/check authority. Maintained subjects need fresh trusted
 review evidence from the maintenance Run onward. Existing delivery intents/results reconcile
 child-owned merges to the requesting parent's wait without transferring correlation.
+
+Maintained PRs with required checks need provider execution evidence for the exact head/base
+subject, with every reported check or status started after the new maintenance subject was recorded. A retained
+`passing` value, re-polling an older execution, missing timestamps or incomplete provider evidence
+cannot satisfy this gate. Check evidence is journaled even when the aggregate state remains
+`passing`, and the same subject and execution-time rules apply after restart.

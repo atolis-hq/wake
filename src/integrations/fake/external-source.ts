@@ -5,7 +5,11 @@ import {
   eventId,
   EventSourceKind,
 } from '@atolis-hq/eventing';
-import type { PullRequestMergeability, ReviewActorKind } from '../../activities/index.js';
+import type {
+  PullRequestCheckEvidence,
+  PullRequestMergeability,
+  ReviewActorKind,
+} from '../../activities/index.js';
 import { PullRequestCheckState, PullRequestState } from '../../activities/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { ExternalEventSource, ProviderEventData } from '../contracts/intake.js';
@@ -24,6 +28,7 @@ export interface FakeWorkEvidence {
   readonly kind?: 'issue' | 'pull-request' | undefined;
   readonly revision?: string | undefined;
   readonly baseBranch?: string | undefined;
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly baseRevision?: string | undefined;
   readonly state?: PullRequestState | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
@@ -48,6 +53,7 @@ function observationIdentity(payload: FakeWorkEvidence): string {
   const parts = [
     payload.state === undefined || payload.state === PullRequestState.Open ? '' : payload.state,
     payload.baseRevision ?? '',
+    payload.checkEvidence?.startedAt ?? '',
     payload.mergeability ?? '',
   ];
   return parts.every((part) => part === '') ? '' : `:${parts.join(':')}`;

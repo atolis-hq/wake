@@ -8,11 +8,13 @@ import {
 import { z } from 'zod';
 import {
   ProviderPermission,
+  pullRequestCheckEvidenceSchema,
   PullRequestCheckState,
   PullRequestMergeability,
   PullRequestState,
   ReviewActorKind,
   ReviewerAuthorizationSource,
+  type PullRequestCheckEvidence,
   type ReviewerAuthorizationEvidence,
 } from '../../../activities/index.js';
 import { brandedStringSchema } from '../../../kernel/index.js';
@@ -46,6 +48,7 @@ export interface ExternalWorkObservedPayload {
   readonly outcome?: ExternalWorkOutcome | undefined;
   readonly revision: string;
   readonly headRevision?: string | undefined;
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly baseRevision?: string | undefined;
   readonly mergeRevision?: string | undefined;
   readonly checks?:
@@ -252,6 +255,7 @@ const githubEventSchemas = {
           .optional(),
         headRevision: z.string().optional(),
         baseRevision: z.string().optional(),
+        checkEvidence: pullRequestCheckEvidenceSchema.optional(),
         mergeRevision: z.string().min(1).optional(),
         checks: z
           .enum([

@@ -6,6 +6,7 @@ import type {
   ActivityResourceRole,
 } from '../contracts/vocabulary.js';
 import type { ReviewActorKind, ReviewerAuthorizationEvidence } from '../review/contracts.js';
+import type { PullRequestCheckEvidence } from './check-evidence.js';
 import type { MergePolicyDetails } from './merge-policy-denial.js';
 import type { ParentDeliveryScope } from './parent-scope.js';
 import type {
@@ -23,6 +24,7 @@ export interface PullRequestView {
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly mergeRevision?: string | undefined;
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly checks: PullRequestCheckState;
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly acceptedReview?: {
@@ -41,6 +43,7 @@ export interface ObservePullRequest {
   readonly headRevision: string;
   readonly baseRevision: string;
   readonly mergeRevision?: string | undefined;
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly checks: PullRequestView['checks'];
   readonly mergeability?: PullRequestMergeability | undefined;
   readonly changedFiles?: readonly string[] | undefined;

@@ -22,6 +22,8 @@ export interface DeliveryIntegration {
     readonly branch: string;
     readonly revision: string;
     readonly pullRequestBase: string;
+    readonly baseRevision?: string | undefined;
+    readonly maintenanceRecordedAt?: string | undefined;
     readonly maintenanceRunId?: string | undefined;
     readonly requireReview: boolean;
     readonly requireChecks: boolean;

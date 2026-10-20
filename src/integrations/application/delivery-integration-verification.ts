@@ -40,7 +40,7 @@ export function createDeliveryIntegrationVerification(input: {
         },
       );
       if (!matchesVerifiedTarget(verified, resource.externalKey, request.revision)) return false;
-      if (!(await freshReview(request, input, resource.resourceId))) return false;
+      if (!(await freshEvidence(request, input, resource.resourceId))) return false;
       const decision = decidePullRequestOutputAuthority(
         await input.pullRequests.authorityInput(owner.workItemId),
         {
@@ -54,7 +54,7 @@ export function createDeliveryIntegrationVerification(input: {
   };
 }
 
-async function freshReview(
+async function freshEvidence(
   request: Parameters<DeliveryIntegration['verifyTarget']>[0],
   input: {
     readonly runs: () => Promise<readonly RunView[]>;
@@ -62,9 +62,11 @@ async function freshReview(
   },
   id: Parameters<PullRequestService['factsFor']>[0],
 ): Promise<boolean> {
-  if (!request.requireReview || request.maintenanceRunId === undefined) return true;
+  if (request.maintenanceRunId === undefined) return true;
   const run = (await input.runs()).find((entry) => entry.runId === request.maintenanceRunId);
   if (run === undefined) return false;
+  if (!(await freshChecks(request, input.pullRequests, id, run))) return false;
+  if (!request.requireReview) return true;
   return (await input.pullRequests.factsFor(id)).some(
     ({ event }) =>
       event.eventType === ActivityEventType.ReviewAcceptanceSignalRecorded &&
@@ -85,5 +87,27 @@ function matchesVerifiedTarget(
     verified.externalKey.adapter === key.adapter &&
     verified.externalKey.key === key.key &&
     verified.revision?.toLowerCase() === revision.toLowerCase()
+  );
+}
+
+async function freshChecks(
+  request: Parameters<DeliveryIntegration['verifyTarget']>[0],
+  pullRequests: PullRequestService,
+  id: Parameters<PullRequestService['get']>[0],
+  run: RunView,
+): Promise<boolean> {
+  if (!request.requireChecks) return true;
+  const view = await pullRequests.get(id);
+  const evidence = view?.checkEvidence;
+  if (evidence === undefined || request.baseRevision === undefined) return false;
+  return (
+    evidence.headRevision.toLowerCase() === request.revision.toLowerCase() &&
+    evidence.baseRevision.toLowerCase() === request.baseRevision.toLowerCase() &&
+    evidence.baseRevision.toLowerCase() === view!.baseRevision.toLowerCase() &&
+    Date.parse(evidence.startedAt) >=
+      Math.max(
+        Date.parse(request.maintenanceRecordedAt ?? run.finishedAt ?? ''),
+        Date.parse(run.executionStartedAt ?? run.startedAt),
+      )
   );
 }

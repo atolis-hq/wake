@@ -82,7 +82,7 @@ export class DeliveryCoordinator {
     const parent = await this.parent(caller);
     await this.assertCoordinatorStage(parent);
     return this.commit(parent, context, `maintenance:${command.maintenanceId}`, (facts) =>
-      this.integration.planMaintenance(facts, command, caller),
+      this.integration.planMaintenance(facts, command, caller, context.occurredAt),
     );
   }
 

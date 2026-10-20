@@ -61,7 +61,10 @@ export const checksChanged = (
 ): ActivityEventDataOf<typeof ActivityEventType.PrChecksChanged> =>
   fact({
     ...metadata(ActivityEventType.PrChecksChanged, context),
-    payload: { checks: command.checks },
+    payload: {
+      checks: command.checks,
+      ...(command.checkEvidence === undefined ? {} : { checkEvidence: command.checkEvidence }),
+    },
   });
 
 export const reviewAccepted = (

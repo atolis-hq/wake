@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pullRequestCheckEvidenceSchema } from '../pr/check-evidence.js';
 import { mergePolicyDetailsSchema } from '../pr/merge-policy-denial.js';
 import { parentActionContextSchema } from '../pr/parent-scope.js';
 
@@ -212,6 +213,7 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
           headRevision: z.string(),
           baseRevision: z.string(),
           checks: checksSchema,
+          checkEvidence: pullRequestCheckEvidenceSchema.optional(),
           changedFiles: z.array(z.string()).optional(),
         })
         .strict(),
@@ -236,7 +238,12 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
         })
         .strict(),
     ),
-    resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),
+    resourceFactDraft(
+      eventTypes.PrChecksChanged,
+      z
+        .object({ checks: checksSchema, checkEvidence: pullRequestCheckEvidenceSchema.optional() })
+        .strict(),
+    ),
     resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),
     resourceFactDraft(
       eventTypes.ReviewAcceptanceSignalRecorded,

@@ -177,7 +177,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             )
               continue;
             await root.pullRequests.observe(
-              { ...observed, baseRevision },
+              { ...observed, baseRevision, checkEvidence: undefined },
               context('base-after-' + found + '-' + sibling),
             );
             const assessment = (
@@ -536,6 +536,11 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             headRevision: revision,
             baseRevision: main,
             checks: 'passing',
+            checkEvidence: {
+              headRevision: revision,
+              baseRevision: main,
+              startedAt: new Date().toISOString(),
+            },
           },
           maintenanceContext('observe-maintained-' + id),
         );
@@ -600,6 +605,18 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             pullRequestBase: 'main',
           },
           maintenanceContext('maintain-' + id),
+        );
+        const checked = (await root.pullRequests.get(target.resourceId as never))!;
+        await root.pullRequests.observe(
+          {
+            ...checked,
+            checkEvidence: {
+              headRevision: revision,
+              baseRevision: main,
+              startedAt: new Date().toISOString(),
+            },
+          },
+          maintenanceContext('checks-after-subject-' + id),
         );
         expect(
           (

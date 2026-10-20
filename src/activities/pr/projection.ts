@@ -57,6 +57,7 @@ function clearRevisionEvidence(view: PullRequestView): PullRequestView {
   delete copy.acceptedReview;
   delete copy.changedFiles;
   delete copy.mergeability;
+  delete copy.checkEvidence;
   return copy;
 }
 
@@ -80,7 +81,9 @@ function projectPullRequest(
             mergeRevision: data.payload.mergeRevision,
           };
     case ActivityEventType.PrChecksChanged:
-      return previous === null ? previous : { ...previous, checks: data.payload.checks };
+      return previous === null
+        ? previous
+        : { ...previous, checks: data.payload.checks, checkEvidence: data.payload.checkEvidence };
     case ActivityEventType.PrReviewAccepted:
       return previous === null
         ? previous

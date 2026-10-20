@@ -102,12 +102,14 @@ export class DeliveryIntegrationService {
     action: ParentActionRequest['action'],
   ) {
     const { reference } = selectedChange(facts, output);
+    const maintenance = facts.maintenance
+      .filter((item) => outputKey(item.target) === outputKey(output))
+      .at(-1);
     return (
       (await this.dependencies.integration?.verifyTarget({
         ...reference,
-        maintenanceRunId: facts.maintenance
-          .filter((item) => outputKey(item.target) === outputKey(output))
-          .at(-1)?.producer.runId,
+        maintenanceRunId: maintenance?.producer.runId,
+        maintenanceRecordedAt: maintenance?.recordedAt,
         ownerWorkItemId: reference.workItemId,
         ...targetRequirements(facts, output, action),
       })) === true
@@ -122,6 +124,7 @@ export class DeliveryIntegrationService {
     facts: DeliveryFacts,
     input: DeliveryMaintenanceCommand,
     caller: DelegationCaller,
+    recordedAt: string,
   ): Promise<MaintenancePlan> {
     const command = deliveryMaintenanceCommandSchema.parse(input);
     const { reference, childWorkItemId } = selectedChange(facts, command.target);
@@ -187,6 +190,7 @@ export class DeliveryIntegrationService {
         pullRequestBase: command.pullRequestBase,
         ...(known(observed.baseRevision) ? { baseRevision: observed.baseRevision } : {}),
       },
+      recordedAt,
       producer: { runId: caller.runId, activationId: caller.activationId },
     };
     return {

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
+  pullRequestCheckEvidenceSchema,
   PullRequestCheckState,
   PullRequestMergeability,
   PullRequestState,
@@ -28,6 +29,7 @@ const configSchema = z
             branch: z.string().min(1).optional(),
             baseBranch: z.string().min(1).optional(),
             baseRevision: z.string().min(1).optional(),
+            checkEvidence: pullRequestCheckEvidenceSchema.optional(),
             state: z
               .enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged])
               .optional(),
