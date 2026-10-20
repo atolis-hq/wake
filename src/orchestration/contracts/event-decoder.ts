@@ -10,7 +10,12 @@ import {
   delegationResultSchema,
   delegationWaitSchema,
 } from './delegation.js';
-import { deliveryCandidateSchema, deliveryQaSchema, deliverySelectionSchema } from './delivery.js';
+import {
+  deliveryCandidateSchema,
+  deliveryMaintenanceSchema,
+  deliveryQaSchema,
+  deliverySelectionSchema,
+} from './delivery.js';
 
 import { eventDataSchema, eventEnvelopeSchema, type EventEnvelope } from '@atolis-hq/eventing';
 import {
@@ -343,6 +348,10 @@ const eventSchemas = {
   [OrchestrationEventType.DeliveryQaRecorded]: workflowEnvelope(
     OrchestrationEventType.DeliveryQaRecorded,
     deliveryQaSchema,
+  ),
+  [OrchestrationEventType.DeliveryMaintenanceRecorded]: workflowEnvelope(
+    OrchestrationEventType.DeliveryMaintenanceRecorded,
+    deliveryMaintenanceSchema,
   ),
   [OrchestrationEventType.DelegationReserved]: workflowEnvelope(
     OrchestrationEventType.DelegationReserved,

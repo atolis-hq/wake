@@ -63,6 +63,33 @@ async function deliveryQaFor(root: CompositionRoot, work: WorkItemView) {
   return state === undefined
     ? undefined
     : {
+        ...(state.integration === null
+          ? {}
+          : {
+              integration: {
+                complete: state.integration.complete,
+                summary: state.integration.summary,
+                targets: state.integration.targets.map((target) => ({
+                  workItemKey: toWorkItemKey(target.ownerWorkItemId),
+                  outputName: target.output.outputName,
+                  state: target.state,
+                  layer: target.layer,
+                  baseMovement: target.baseMovement,
+                  evidenceAffected: target.evidenceAffected,
+                  ...(target.maintenance === undefined ? {} : { maintenance: target.maintenance }),
+                  ...(target.detail === undefined ? {} : { detail: target.detail }),
+                })),
+                maintenance: state.maintenance.map((item) => ({
+                  maintenanceId: item.maintenanceId,
+                  workItemKey: toWorkItemKey(item.target.childWorkItemId),
+                  outputName: item.target.outputName,
+                  kind: item.kind,
+                  previousRevision: item.previous.revision,
+                  currentRevision: item.current.revision,
+                  producerRunId: item.producer.runId,
+                })),
+              },
+            }),
         selectionRevision: state.selectionRevision,
         ...(state.candidate === null ? {} : { candidateId: state.candidate.candidateId }),
         repositories:

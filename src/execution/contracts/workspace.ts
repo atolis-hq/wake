@@ -2,6 +2,7 @@ import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { PreparedCandidate } from './candidate.js';
 import type { RunId } from './identifiers.js';
+import type { PreparedMaintenance } from './maintenance.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
 import type { RunView } from './views.js';
 import type { WorkspaceMode } from './vocabulary.js';
@@ -20,6 +21,7 @@ export interface WorkspaceRequest {
 
 export interface WorkspaceLease {
   readonly candidate?: PreparedCandidate;
+  readonly maintenance?: PreparedMaintenance;
   readonly workspaceId: string;
   readonly path: string;
   /** Branch actually checked out for this lease, when the provider can attest it. */

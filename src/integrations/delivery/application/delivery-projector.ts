@@ -115,6 +115,9 @@ function activityIntentView(event: EventEnvelope): IntentViewResult {
           revision: intent.event.payload.revision,
           method: intent.event.payload.method,
           autoMerge: intent.event.payload.autoMerge,
+          ...(intent.event.payload.parent === undefined
+            ? {}
+            : { ownerWorkItemId: intent.event.payload.parent.ownerWorkItemId }),
         },
         state: DeliveryState.Pending,
         attempts: 0,

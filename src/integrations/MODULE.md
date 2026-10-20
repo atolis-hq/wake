@@ -60,3 +60,23 @@ Prerequisite outputs distinguish verified pushed changes, delivery-ready review
 and check authority, and actual provider-observed merge state at the exact head.
 They retain observed base revisions for selective downstream freshness checks;
 workflow or issue completion is never merge evidence.
+
+Governed integration reuses provider artifact verification for exact repository/branch/head/base
+identity and the target's own review/check authority. Maintained subjects need fresh trusted
+review evidence from the maintenance Run onward. Existing delivery intents/results reconcile
+child-owned merges to the requesting parent's wait without transferring correlation.
+
+Maintained PRs with required checks need provider execution evidence for the exact head/base
+subject, with every reported check or status started after the new maintenance subject was recorded. A retained
+`passing` value, re-polling an older execution, missing timestamps or incomplete provider evidence
+cannot satisfy this gate. Check evidence is journaled even when the aggregate state remains
+`passing`, and the same subject and execution-time rules apply after restart.
+
+GitHub joins head-SHA checks to successful Actions `pull_request` runs by check suite.
+Linked PR metadata is mutable and is not execution provenance. For each successful job,
+Wake reads the full checkout commit from its Actions log and verifies that commit's
+ordered parents against the selected base and head. Skipped and neutral jobs retain their
+normal passing semantics. Missing, ambiguous, expired or unreadable checkout evidence
+cannot qualify. The current PR test-merge SHA is not used, so lazy recomputation cannot
+block base-only maintenance followed by a qualifying execution. Completed job logs and
+Git objects are cached; mutable workflow-run attempts are conditionally revalidated.

@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { pullRequestCheckEvidenceSchema } from '../pr/check-evidence.js';
 import { mergePolicyDetailsSchema } from '../pr/merge-policy-denial.js';
+import { parentActionContextSchema } from '../pr/parent-scope.js';
 
 import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
 import { brandedStringSchema } from '../../kernel/index.js';
@@ -105,6 +107,10 @@ const denialCodeSchema = z.enum([
   PullRequestDenialCode.TooManyFilesChanged,
   PullRequestDenialCode.BlockedPathChanged,
   PullRequestDenialCode.ChangedFilesUnavailable,
+  PullRequestDenialCode.OutsideDelivery,
+  PullRequestDenialCode.DeliveryNotReady,
+  PullRequestDenialCode.TargetHeld,
+  PullRequestDenialCode.MaintenanceRequired,
 ]);
 const denialSchema = z
   .object({
@@ -134,6 +140,7 @@ const approveRequestedSchema = z
     resourceId: resourceIdSchema,
     revision: z.string(),
     body: z.string().nullable(),
+    parent: parentActionContextSchema.optional(),
   })
   .strict();
 const mergeRequestedSchema = z
@@ -146,6 +153,7 @@ const mergeRequestedSchema = z
     method: z.enum([MergeMethod.Merge, MergeMethod.Squash, MergeMethod.Rebase]),
     requireChecks: z.boolean(),
     autoMerge: z.boolean().default(false),
+    parent: parentActionContextSchema.optional(),
   })
   .strict();
 
@@ -199,11 +207,13 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
       z
         .object({
           workItemId: workItemIdSchema,
+          mergeRevision: z.string().min(1).optional(),
           state: stateSchema,
           mergeability: mergeabilitySchema.optional(),
           headRevision: z.string(),
           baseRevision: z.string(),
           checks: checksSchema,
+          checkEvidence: pullRequestCheckEvidenceSchema.optional(),
           changedFiles: z.array(z.string()).optional(),
         })
         .strict(),
@@ -220,9 +230,20 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
     ),
     resourceFactDraft(
       eventTypes.PrStateChanged,
-      z.object({ state: stateSchema, mergeability: mergeabilitySchema.optional() }).strict(),
+      z
+        .object({
+          state: stateSchema,
+          mergeability: mergeabilitySchema.optional(),
+          mergeRevision: z.string().min(1).optional(),
+        })
+        .strict(),
     ),
-    resourceFactDraft(eventTypes.PrChecksChanged, z.object({ checks: checksSchema }).strict()),
+    resourceFactDraft(
+      eventTypes.PrChecksChanged,
+      z
+        .object({ checks: checksSchema, checkEvidence: pullRequestCheckEvidenceSchema.optional() })
+        .strict(),
+    ),
     resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),
     resourceFactDraft(
       eventTypes.ReviewAcceptanceSignalRecorded,

@@ -5,8 +5,12 @@ import {
   eventId,
   EventSourceKind,
 } from '@atolis-hq/eventing';
-import type { ReviewActorKind } from '../../activities/index.js';
-import { PullRequestCheckState } from '../../activities/index.js';
+import type {
+  PullRequestCheckEvidence,
+  PullRequestMergeability,
+  ReviewActorKind,
+} from '../../activities/index.js';
+import { PullRequestCheckState, PullRequestState } from '../../activities/index.js';
 import type { AdapterId } from '../contracts/identifiers.js';
 import type { ExternalEventSource, ProviderEventData } from '../contracts/intake.js';
 
@@ -24,7 +28,10 @@ export interface FakeWorkEvidence {
   readonly kind?: 'issue' | 'pull-request' | undefined;
   readonly revision?: string | undefined;
   readonly baseBranch?: string | undefined;
+  readonly checkEvidence?: PullRequestCheckEvidence | undefined;
   readonly baseRevision?: string | undefined;
+  readonly state?: PullRequestState | undefined;
+  readonly mergeability?: PullRequestMergeability | undefined;
   readonly checks?:
     | typeof PullRequestCheckState.Unknown
     | typeof PullRequestCheckState.Pending
@@ -41,6 +48,17 @@ export interface FakeWorkEvidence {
   readonly eligible?: boolean | undefined;
 }
 
+// New provider facts about an unchanged head (merged, moved base) must not collapse into the old event.
+function observationIdentity(payload: FakeWorkEvidence): string {
+  const parts = [
+    payload.state === undefined || payload.state === PullRequestState.Open ? '' : payload.state,
+    payload.baseRevision ?? '',
+    payload.checkEvidence?.startedAt ?? '',
+    payload.mergeability ?? '',
+  ];
+  return parts.every((part) => part === '') ? '' : `:${parts.join(':')}`;
+}
+
 export class FakeExternalEventSource implements ExternalEventSource {
   constructor(
     private readonly adapter: AdapterId,
@@ -50,7 +68,7 @@ export class FakeExternalEventSource implements ExternalEventSource {
   async poll(signal: AbortSignal): Promise<readonly ProviderEventData[]> {
     void signal;
     return this.events.flatMap((payload, ordinal) => {
-      const identity = `fake:${this.adapter}:${payload.key}:${payload.revision ?? missingIdentityPart}:${payload.checks ?? PullRequestCheckState.Unknown}:${payload.watchEvent ?? missingIdentityPart}:${ordinal}`;
+      const identity = `fake:${this.adapter}:${payload.key}:${payload.revision ?? missingIdentityPart}:${payload.checks ?? PullRequestCheckState.Unknown}:${payload.watchEvent ?? missingIdentityPart}:${ordinal}${observationIdentity(payload)}`;
       const metadata = {
         schemaVersion: 1 as const,
         occurredAt: '2026-08-01T00:00:00.000Z',

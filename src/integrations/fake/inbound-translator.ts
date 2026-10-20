@@ -10,6 +10,7 @@ import {
 } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import {
+  pullRequestCheckEvidenceSchema,
   PullRequestCheckState,
   PullRequestState,
   ReviewActorKind,
@@ -40,6 +41,9 @@ const evidenceSchema = z
     branch: z.string().min(1).optional(),
     baseBranch: z.string().min(1).optional(),
     baseRevision: z.string().min(1).optional(),
+    checkEvidence: pullRequestCheckEvidenceSchema.optional(),
+    state: z.enum(['open', 'closed', 'merged']).optional(),
+    mergeability: z.enum(['unknown', 'clean', 'conflicting']).optional(),
     checks: z.enum(['unknown', 'pending', 'passing', 'failing']).optional(),
     acceptedReview: z.boolean().optional(),
     reviewActorId: z.string().min(1).optional(),
@@ -208,10 +212,12 @@ export class FakeInboundTranslator {
       {
         resourceId,
         workItemId,
-        state: PullRequestState.Open,
+        state: evidence.state ?? PullRequestState.Open,
         headRevision: revision,
+        checkEvidence: evidence.checkEvidence,
         baseRevision: evidence.baseRevision ?? 'unknown',
         checks: evidence.checks ?? PullRequestCheckState.Unknown,
+        ...(evidence.mergeability === undefined ? {} : { mergeability: evidence.mergeability }),
         ...(evidence.changedFiles === undefined ? {} : { changedFiles: evidence.changedFiles }),
       },
       context,

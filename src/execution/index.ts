@@ -77,3 +77,5 @@ export * from './contracts/repository-assignment.js';
 export { createRepositoryAssignments } from './application/repository-assignments.js';
 
 export * from './contracts/candidate.js';
+
+export * from './contracts/maintenance.js';

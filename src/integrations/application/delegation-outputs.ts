@@ -161,7 +161,7 @@ async function qualifyingChange(
       branch,
       pullRequestBase: assignment.pullRequestBase,
       runId: run.runId,
-      ...(condition === undefined ? {} : { baseRevision: observed.baseRevision }),
+      baseRevision: observed.baseRevision,
       ...(observed.state === PullRequestState.Merged ? { merged: true as const } : {}),
     },
   };

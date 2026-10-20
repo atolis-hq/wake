@@ -7,6 +7,7 @@ import type {
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ExecutionCandidate } from './candidate.js';
+import type { ExecutionMaintenance } from './maintenance.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
 import type { WorkspaceMode } from './vocabulary.js';
 
@@ -28,6 +29,7 @@ export interface ExecutionActivation {
 
 export interface ExecutionAttemptContext {
   readonly candidate?: ExecutionCandidate;
+  readonly maintenance?: ExecutionMaintenance;
   readonly workItemId: WorkItemId;
   readonly workflowInstanceId: ActivityWorkflowInstanceId;
   readonly orchestrationGroupId: ActivityOrchestrationGroupId;

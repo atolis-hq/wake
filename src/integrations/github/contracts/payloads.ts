@@ -43,9 +43,12 @@ export interface GitHubPullRequestPayload extends GitHubIssuePayload {
   readonly head?: { readonly sha?: string };
   readonly base?: { readonly sha?: string };
   readonly merged_at?: string | null;
+  readonly merge_commit_sha?: string | null;
 }
 
 export interface GitHubCheckRunPayload {
+  readonly check_suite?: { readonly id: number } | null;
+  readonly head_sha?: string;
   readonly id?: number;
   readonly name?: string;
   readonly status?: string;
@@ -72,4 +75,21 @@ export interface GitHubReviewPayload {
   readonly commit_id: string;
   readonly submitted_at: string;
   readonly user?: { readonly login?: string; readonly type?: string } | null;
+}
+
+export interface GitHubWorkflowRunPayload {
+  readonly run_attempt?: number;
+  readonly id: number;
+  readonly check_suite_id?: number;
+  readonly head_sha: string;
+  readonly event: string;
+  readonly status: string | null;
+  readonly conclusion: string | null;
+  readonly pull_requests?:
+    | readonly {
+        readonly number: number;
+        readonly head: { readonly sha: string };
+        readonly base: { readonly sha: string };
+      }[]
+    | null;
 }

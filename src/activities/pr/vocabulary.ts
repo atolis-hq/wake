@@ -46,6 +46,14 @@ export const PullRequestDenialCode = defineClosedVocabulary({
   TooManyFilesChanged: 'too-many-files-changed',
   BlockedPathChanged: 'blocked-path-changed',
   ChangedFilesUnavailable: 'changed-files-unavailable',
+  /** The caller is not a validated delivery parent, or asked beyond the one planned action. */
+  OutsideDelivery: 'outside-delivery',
+  /** The parent has no current candidate with an effective passing QA verdict. */
+  DeliveryNotReady: 'delivery-not-ready',
+  /** The target or one of its ancestors is frozen, cancelled or deleted. */
+  TargetHeld: 'target-held',
+  /** The next planned change needs agent maintenance and fresh evidence first. */
+  MaintenanceRequired: 'maintenance-required',
 } as const);
 
 export type PullRequestDenialCode = ValueOf<typeof PullRequestDenialCode>;

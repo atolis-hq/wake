@@ -14,6 +14,7 @@ import {
 import { ActivityResourceRole } from '../contracts/vocabulary.js';
 import { isReviewAuthorized } from '../review/authorization.js';
 import { isPullRequestLikeResource } from './capability.js';
+import { sameCheckEvidence } from './check-evidence.js';
 import type {
   AcceptReviewSignal,
   ObservePullRequest,
@@ -90,6 +91,12 @@ class JournalPullRequestService implements PullRequestService {
     if ((await this.work.get(command.workItemId)) === null)
       throw new Error('Pull request WorkItem missing');
 
+    if (
+      command.checkEvidence !== undefined &&
+      (command.checkEvidence.headRevision !== command.headRevision ||
+        command.checkEvidence.baseRevision !== command.baseRevision)
+    )
+      throw new Error('Check evidence must match the observed head and base');
     const current = await this.get(command.resourceId);
     if (current === null) {
       await this.append(command.resourceId, discovered(command, context));
@@ -164,11 +171,15 @@ class JournalPullRequestService implements PullRequestService {
       await this.append(command.resourceId, revisionChanged(command, context));
     if (
       current.state !== command.state ||
+      current.mergeRevision !== command.mergeRevision ||
       current.mergeability !== command.mergeability ||
       (revisionHasChanged && command.mergeability !== undefined)
     )
       await this.append(command.resourceId, stateChanged(command, context));
-    if (current.checks !== command.checks)
+    if (
+      current.checks !== command.checks ||
+      !sameCheckEvidence(current.checkEvidence, command.checkEvidence)
+    )
       await this.append(command.resourceId, checksChanged(command, context));
   }
 

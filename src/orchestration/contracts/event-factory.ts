@@ -38,6 +38,8 @@ export function createOrchestrationEventData(
       return createEventData(input);
     case OrchestrationEventType.DeliveryQaRecorded:
       return createEventData(input);
+    case OrchestrationEventType.DeliveryMaintenanceRecorded:
+      return createEventData(input);
     case OrchestrationEventType.DelegationReserved:
       return createEventData(input);
     case OrchestrationEventType.DelegationRegistered:

@@ -37,6 +37,10 @@ const octokit = vi.hoisted(() => ({
   paginateIterator: vi.fn(),
   listPullRequests: vi.fn(),
   getPullRequest: vi.fn(),
+  workflowRuns: vi.fn(),
+  workflowJobs: vi.fn(),
+  jobLogs: vi.fn(),
+  gitCommit: vi.fn(),
   listCheckRunsForRef: vi.fn(),
   getCombinedStatusForRef: vi.fn(),
   listPullRequestFiles: vi.fn(),
@@ -47,6 +51,12 @@ vi.mock('@octokit/rest', () => ({
     return {
       paginate: Object.assign(octokit.paginate, { iterator: octokit.paginateIterator }),
       rest: {
+        actions: {
+          listWorkflowRunsForRepo: octokit.workflowRuns,
+          listJobsForWorkflowRun: octokit.workflowJobs,
+          downloadJobLogsForWorkflowRun: octokit.jobLogs,
+        },
+        git: { getCommit: octokit.gitCommit },
         pulls: {
           list: octokit.listPullRequests,
           get: octokit.getPullRequest,
@@ -687,4 +697,182 @@ it('retains old PR conflict evidence and recurring transitions through restart a
   );
   expect(observations).toHaveLength(3);
   expect(new Set(observations.map((event) => event.event.eventId)).size).toBe(3);
+});
+
+it('persists the actual merged commit independently of the reviewed head, including late provider evidence', async () => {
+  let merged = false;
+  let mergeRevision: string | null = null;
+  const runtime = sourceRuntime(
+    fakeClient({
+      pullRequests: async () => [
+        {
+          ...pullRequest(),
+          merge_commit_sha: mergeRevision,
+          ...(merged ? { state: 'closed', merged_at: '2026-10-20T00:00:00.000Z' } : {}),
+        },
+      ],
+    }),
+  );
+  await admitPullRequest(runtime, 'merge-evidence', 'owner/repo#7');
+  const observe = async () => {
+    await runtime.poll.pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resource = await runtime.resources.findByExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    return runtime.pullRequests.get(resource!.resourceId);
+  };
+  mergeRevision = 'test-merge-before-integration';
+  expect((await observe())?.mergeRevision).toBeUndefined();
+  merged = true;
+  mergeRevision = null;
+  expect((await observe())?.state).toBe('merged');
+  mergeRevision = 'squash-commit';
+  const observed = await observe();
+  expect(observed).toMatchObject({ headRevision: 'head-a', mergeRevision: 'squash-commit' });
+  const replayed = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
+  expect(await replayed.get(observed!.resourceId)).toMatchObject({
+    headRevision: 'head-a',
+    mergeRevision: 'squash-commit',
+  });
+});
+
+it('rejects late old-base executions across restart and records only checks on a verified maintained test merge', async () => {
+  let base = 'base-a';
+  let testedBase = 'base-a';
+  let suiteId = 42;
+
+  const startedAt = '2026-10-20T00:05:00.000Z';
+  const runtime = sourceRuntime({
+    ...fakeClient({
+      pullRequests: async () => [
+        { ...pullRequest(), base: { sha: base }, merge_commit_sha: 'stale-test-merge' },
+      ],
+      checkRuns: async () => [
+        {
+          id: 99,
+          name: 'required',
+          head_sha: 'head-a',
+          check_suite: { id: suiteId },
+          status: 'completed',
+          conclusion: 'success',
+          started_at: startedAt,
+        },
+      ],
+    }),
+    checkExecution: async () => ({
+      sha: 'tested-merge-' + suiteId,
+      parents: [{ sha: testedBase }, { sha: 'head-a' }],
+    }),
+    workflowRunsForSuite: async () => [
+      {
+        id: 1,
+        check_suite_id: suiteId,
+        head_sha: 'head-a',
+        event: 'pull_request',
+        status: 'completed',
+        conclusion: 'success',
+        pull_requests: [{ number: 7, head: { sha: 'head-a' }, base: { sha: base } }],
+      },
+    ],
+  });
+  await admitPullRequest(runtime, 'check-subject', 'owner/repo#7');
+  const observe = async () => {
+    await runtime.poll.pollOnce(new AbortController().signal);
+    await processInbound(runtime.translator, runtime.journal, runtime.checkpoints);
+    const resource = await runtime.lookup.resourceIdForExternalKey({
+      adapter: 'github',
+      key: 'owner/repo#7',
+    });
+    return runtime.pullRequests.get(resource!);
+  };
+  expect((await observe())?.checkEvidence).toEqual({
+    testedRevision: 'tested-merge-' + suiteId,
+    headRevision: 'head-a',
+    baseRevision: base,
+    startedAt,
+  });
+  base = 'base-b';
+  const moved = (await observe())!;
+  expect(moved.checks).toBe('passing');
+  expect(moved.checkEvidence).toBeUndefined();
+  const restarted = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
+  expect((await restarted.get(moved.resourceId))?.checkEvidence).toBeUndefined();
+  testedBase = base;
+  suiteId = 43;
+  const fresh = (await observe())!;
+  expect(fresh.checkEvidence).toEqual({
+    testedRevision: 'tested-merge-' + suiteId,
+    headRevision: 'head-a',
+    baseRevision: base,
+    startedAt,
+  });
+  expect((await restarted.get(fresh.resourceId))?.checkEvidence).toEqual(fresh.checkEvidence);
+});
+
+it('joins Actions workflow runs through the production client and conditionally revalidates cached provenance', async () => {
+  const data = {
+    total_count: 1,
+    workflow_runs: [
+      {
+        id: 1,
+        check_suite_id: 42,
+        head_sha: 'head-a',
+        event: 'pull_request',
+        status: 'completed',
+        conclusion: 'success',
+        pull_requests: [{ number: 7, head: { sha: 'head-a' }, base: { sha: 'base-a' } }],
+      },
+    ],
+  };
+  octokit.workflowRuns
+    .mockResolvedValueOnce({ data, headers: { etag: 'suite-v1' } })
+    .mockRejectedValueOnce({ status: 304 });
+  const client = createGitHubClient('token');
+  expect(await client.workflowRunsForSuite('owner', 'repo', 42)).toEqual(data.workflow_runs);
+  expect(await client.workflowRunsForSuite('owner', 'repo', 42)).toEqual(data.workflow_runs);
+  expect(octokit.workflowRuns).toHaveBeenLastCalledWith({
+    owner: 'owner',
+    repo: 'repo',
+    check_suite_id: 42,
+    event: 'pull_request',
+    per_page: 100,
+    headers: { 'if-none-match': 'suite-v1' },
+  });
+});
+
+it('reads and caches the actual checkout from completed Actions job logs, not mutable linked PR metadata', async () => {
+  const revision = 'a'.repeat(40);
+  octokit.workflowJobs.mockResolvedValue({
+    data: {
+      total_count: 1,
+      jobs: [
+        {
+          id: 99,
+          run_id: 1,
+          status: 'completed',
+          conclusion: 'success',
+          check_run_url: 'https://api.github.com/repos/owner/repo/check-runs/55',
+        },
+      ],
+    },
+  });
+  octokit.jobLogs.mockResolvedValue({
+    data:
+      '2026-10-20T00:00:00Z ##[group]Run actions/checkout@v7\n2026-10-20T00:00:01Z [command]/usr/bin/git log -1 --format=%H\n2026-10-20T00:00:01Z ' +
+      revision,
+  });
+  octokit.gitCommit.mockResolvedValue({
+    data: { sha: revision, parents: [{ sha: 'base-a' }, { sha: 'head-a' }] },
+  });
+  const client = createGitHubClient('token');
+  expect(await client.checkExecution('owner', 'repo', 1, 1, 55)).toEqual({
+    sha: revision,
+    parents: [{ sha: 'base-a' }, { sha: 'head-a' }],
+  });
+  await client.checkExecution('owner', 'repo', 1, 1, 55);
+  expect(octokit.workflowJobs).toHaveBeenCalledTimes(1);
+  expect(octokit.jobLogs).toHaveBeenCalledTimes(1);
+  expect(octokit.gitCommit).toHaveBeenCalledTimes(1);
 });

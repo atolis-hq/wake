@@ -50,6 +50,7 @@ export const stateChanged = (
     ...metadata(ActivityEventType.PrStateChanged, context),
     payload: {
       state: command.state,
+      ...(command.mergeRevision === undefined ? {} : { mergeRevision: command.mergeRevision }),
       ...(command.mergeability === undefined ? {} : { mergeability: command.mergeability }),
     },
   });
@@ -60,7 +61,10 @@ export const checksChanged = (
 ): ActivityEventDataOf<typeof ActivityEventType.PrChecksChanged> =>
   fact({
     ...metadata(ActivityEventType.PrChecksChanged, context),
-    payload: { checks: command.checks },
+    payload: {
+      checks: command.checks,
+      ...(command.checkEvidence === undefined ? {} : { checkEvidence: command.checkEvidence }),
+    },
   });
 
 export const reviewAccepted = (

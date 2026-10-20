@@ -34,6 +34,7 @@ it('pr.merge defaults only target and keeps nested and top-level schemas strict'
 it('exports the exact shared parsed merge input contract', () => {
   expectTypeOf<PullRequestMergeInput>().toEqualTypeOf<{
     readonly target: 'primary' | { readonly resourceId: ReturnType<typeof resourceId> };
+    readonly scope?: { readonly delivery: 'next' } | undefined;
     readonly method: 'merge' | 'squash' | 'rebase';
     readonly requireChecks: boolean;
     readonly requireApproval?: boolean | undefined;

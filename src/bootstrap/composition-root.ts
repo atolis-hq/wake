@@ -60,7 +60,10 @@ import type {
   ProviderCompositionFailure,
   ProviderInstance,
 } from '../integrations/index.js';
-import { createDelegationOutputs } from '../integrations/index.js';
+import {
+  createDelegationOutputs,
+  createDeliveryIntegrationVerification,
+} from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import {
   compileWorkflow,
@@ -80,6 +83,7 @@ import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { createDelegationAuthority } from './delegation-authority.js';
+import { createDeliveryIntegration } from './delivery-integration.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
@@ -231,6 +235,8 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         },
         conversations,
       ),
+      // Resolved lazily: Orchestration is composed after the registry it compiles against.
+      { authorize: (request) => orchestration.authorizeParentAction(request) },
     );
   const workflowNotices: string[] = [];
   const definitions = Object.fromEntries(
@@ -278,6 +284,16 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           accepted: queries.isActivationAccepted,
         }),
       }),
+      integration: createDeliveryIntegration(
+        pullRequests,
+        () => execution.list(),
+        createDeliveryIntegrationVerification({
+          runs: () => execution.list(),
+          resources,
+          pullRequests,
+          providers: () => providerInstances.promise,
+        }),
+      ),
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
         return (

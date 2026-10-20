@@ -7,6 +7,7 @@ import {
   delegationAttentionReplySchema,
   delegationSubmissionSchema,
   deliveryCandidateCommandSchema,
+  deliveryMaintenanceCommandSchema,
   deliveryQaCommandSchema,
   deliverySelectionCommandSchema,
   type DelegationCaller,
@@ -129,6 +130,22 @@ export function registerDelegationTools(
     async (command) =>
       guarded(async () =>
         input.orchestration.recordDeliveryQa(await input.caller(), command, input.commandContext()),
+      ),
+  );
+  server.registerTool(
+    'wake_delivery_maintenance',
+    {
+      description:
+        'Record what you actually did to one selected pull request during integration maintenance (retarget, rebase or resolve) in the branch workspace Wake leased for it. Name the head you started from (expectedRevision) and the resulting pushed head and pull request base. Wake verifies the provider head and records a new subject: earlier reviews, checks and QA stay historical, and fresh review, checks and a new candidate with QA are required before the next merge.',
+      inputSchema: deliveryMaintenanceCommandSchema,
+    },
+    async (command) =>
+      guarded(async () =>
+        input.orchestration.recordDeliveryMaintenance(
+          await input.caller(),
+          command,
+          input.commandContext(),
+        ),
       ),
   );
   server.registerTool(

@@ -40,3 +40,9 @@ retries operational filesystem failures on later ticks.
 Concrete adapters stay in infrastructure and Bootstrap wires them.
 ## Scenarios
 E2E-RUN-001, E2E-RECOVERY-001, E2E-OPS-TRANSCRIPT-001.
+
+Governed parent maintenance leases the original child branch workspaces in deterministic
+child identity order and releases partial acquisitions on failure. New workspaces start at
+the selected output revision. A prior ambiguous child or maintenance writer must be
+reconciled before another writer acquires the branch. Run start records every target/path;
+maintenance never transfers branch or PR ownership to the parent.

@@ -1,4 +1,5 @@
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
+import type { ParentActionRequest } from '../../activities/index.js';
 import {
   DelegationConflictError,
   delegationSubmissionSchema,
@@ -8,10 +9,12 @@ import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
 import {
   DeliveryRejectionError,
   deliveryCandidateCommandSchema,
+  deliveryMaintenanceCommandSchema,
   deliveryQaCommandSchema,
   deliverySelectionCommandSchema,
   type DeliveryCandidate,
   type DeliveryCandidateCommand,
+  type DeliveryMaintenanceCommand,
   type DeliveryQa,
   type DeliveryQaCommand,
   type DeliverySelectionCommand,
@@ -27,12 +30,13 @@ import {
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { planCandidate } from '../domain/delivery-candidate.js';
-import { requirements, type DeliveryFacts } from '../domain/delivery-facts.js';
+import { currentSelection, requirements, type DeliveryFacts } from '../domain/delivery-facts.js';
 import { assertQa, completionDecision, deliveryState } from '../domain/delivery-qa.js';
 import { originalOf } from '../domain/delivery-replacement.js';
 import { reviseSelection } from '../domain/delivery-selection.js';
 import { delegationDraft } from './delegation-ledger.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
+import { DeliveryIntegrationService } from './delivery-integration-service.js';
 import { DeliveryPreparation } from './delivery-preparation.js';
 import { verifyCandidateSources } from './delivery-sources.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
@@ -47,11 +51,39 @@ type Draft = Parameters<typeof delegationDraft>[2];
  */
 export class DeliveryCoordinator {
   private readonly preparation: DeliveryPreparation;
+  private readonly integration: DeliveryIntegrationService;
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly dependencies: DeliveryDependencies,
   ) {
     this.preparation = new DeliveryPreparation(repository, dependencies);
+    this.integration = new DeliveryIntegrationService(repository, dependencies);
+  }
+
+  authorizeParentAction(request: ParentActionRequest) {
+    return this.integration.authorize(request);
+  }
+
+  /** The targets the configured maintenance stage will lease, or undefined for other stages. */
+  async maintenanceTargets(id: string) {
+    const parent = (await this.repository.loadRequired(id)).view;
+    const stage = (await this.dependencies.definitionFor(parent)).delegation?.maintenance?.stage;
+    if (stage === undefined || parent.pendingActivation?.stage !== stage) return undefined;
+    return this.integration.maintenanceTargets(parent);
+  }
+
+  /** Records what the maintaining agent actually produced as a new immutable subject. */
+  async recordMaintenance(
+    caller: DelegationCaller,
+    input: DeliveryMaintenanceCommand,
+    context: CommandContext,
+  ) {
+    const command = deliveryMaintenanceCommandSchema.parse(input);
+    const parent = await this.parent(caller);
+    await this.assertCoordinatorStage(parent);
+    return this.commit(parent, context, `maintenance:${command.maintenanceId}`, (facts) =>
+      this.integration.planMaintenance(facts, command, caller, context.occurredAt),
+    );
   }
 
   async select(caller: DelegationCaller, input: DeliverySelectionCommand, context: CommandContext) {
@@ -165,24 +197,28 @@ export class DeliveryCoordinator {
     const parent = (await this.repository.loadRequired(id)).view;
     const facts = await this.facts(parent);
     const state = deliveryState(facts);
+    const mode =
+      (await this.dependencies.definitionFor(parent)).delegation?.completion ??
+      DeliveryCompletion.QaApproved;
+    // Only merge-required deliveries pay for provider reads; QA-approved ones never integrate.
+    const integration =
+      mode === DeliveryCompletion.MergeRequired ? await this.integration.assess(facts) : null;
     return {
       ...state,
+      integration,
+      maintenance: facts.maintenance,
       required: requirements(facts.reservations).map((requirement) => ({
         cohortId: requirement.cohortId,
         assignmentId: requirement.assignmentId,
         outputName: requirement.outputName,
         childWorkItemId: requirement.child.workItemId,
       })),
-      selection: facts.selections.at(-1) ?? null,
+      selection: currentSelection(facts) ?? null,
       history: facts.qa,
       completion:
         parent.deliveryGateBlock !== undefined
           ? { complete: false, reason: parent.blockReason! }
-          : completionDecision(
-              state,
-              (await this.dependencies.definitionFor(parent)).delegation?.completion ??
-                DeliveryCompletion.QaApproved,
-            ),
+          : completionDecision(state, mode, integration ?? undefined),
     };
   }
 

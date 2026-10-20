@@ -1,5 +1,12 @@
+import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { PullRequestCheckState, ReviewActorKind } from '../../activities/index.js';
+import {
+  pullRequestCheckEvidenceSchema,
+  PullRequestCheckState,
+  PullRequestMergeability,
+  PullRequestState,
+  ReviewActorKind,
+} from '../../activities/index.js';
 import { BuiltInResourceCapability, BuiltInResourceKind } from '../../resources/index.js';
 import { matchesArtifactSource } from '../application/artifact-source.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
@@ -22,6 +29,17 @@ const configSchema = z
             branch: z.string().min(1).optional(),
             baseBranch: z.string().min(1).optional(),
             baseRevision: z.string().min(1).optional(),
+            checkEvidence: pullRequestCheckEvidenceSchema.optional(),
+            state: z
+              .enum([PullRequestState.Open, PullRequestState.Closed, PullRequestState.Merged])
+              .optional(),
+            mergeability: z
+              .enum([
+                PullRequestMergeability.Unknown,
+                PullRequestMergeability.Mergeable,
+                PullRequestMergeability.Conflicting,
+              ])
+              .optional(),
             checks: z
               .enum([
                 PullRequestCheckState.Unknown,
@@ -42,6 +60,7 @@ const configSchema = z
       )
       .default([]),
     deliveryEffects: z.record(z.string(), z.string()).default({}),
+    eventsFile: z.string().min(1).optional(),
     effectsFile: z.string().min(1).optional(),
     // Deterministic test hook: when set, checkConnectivity rejects with this
     // message instead of resolving, so doctor's failure path is exercisable
@@ -75,7 +94,13 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
       }),
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== BuiltInResourceKind.PullRequest) return ArtifactVerificationResult.NotFound;
-        const evidence = config.events.find((event) => event.key === externalKey.key);
+        const events =
+          config.eventsFile === undefined
+            ? config.events
+            : configSchema.shape.events.parse(
+                JSON.parse(await readFile(config.eventsFile, 'utf8')),
+              );
+        const evidence = events.find((event) => event.key === externalKey.key);
         if (evidence === undefined || (evidence.kind ?? 'issue') !== 'pull-request')
           return ArtifactVerificationResult.NotFound;
         if (

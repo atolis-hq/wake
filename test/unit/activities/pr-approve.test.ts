@@ -112,9 +112,10 @@ describe('pr.approve public contract', () => {
     expectTypeOf<PullRequestApproveInput>().toEqualTypeOf<{
       readonly target: 'primary' | { readonly resourceId: ReturnType<typeof resourceId> };
       readonly body?: string;
+      readonly scope?: { readonly delivery: 'next' } | undefined;
     }>();
     expectTypeOf<PullRequestActivityOutcome>().toMatchTypeOf<{
-      readonly kind: 'waiting' | 'done' | 'blocked' | 'failed';
+      readonly kind: 'waiting' | 'done' | 'blocked' | 'failed' | 'integrated';
     }>();
   });
 });

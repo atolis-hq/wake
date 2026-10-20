@@ -8,9 +8,10 @@ import type {
   DelegationCaller,
   DelegationSubmission,
 } from '../contracts/delegation.js';
-import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
+import type { DeliveryDependencies, DeliveryIntegration } from '../contracts/delivery-ports.js';
 import type {
   DeliveryCandidateCommand,
+  DeliveryMaintenanceCommand,
   DeliveryQaCommand,
   DeliverySelectionCommand,
 } from '../contracts/delivery.js';
@@ -25,8 +26,12 @@ import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
 import type { CommandContext, EventJournal, ProjectionStore } from '@atolis-hq/eventing';
-import { type ActivationId, type ActivityOutcome } from '../../activities/index.js';
-import type { ExecutionFailureCode } from '../../execution/index.js';
+import {
+  type ActivationId,
+  type ActivityOutcome,
+  type ParentActionRequest,
+} from '../../activities/index.js';
+import type { ExecutionFailureCode, ExecutionMaintenance } from '../../execution/index.js';
 import {
   WorkStatus,
   type DeliverySnapshot,
@@ -163,8 +168,10 @@ export class OrchestrationService {
     );
     this.delivery = new DeliveryCoordinator(
       repository,
-      deliveryDependencies(dependencies, async (parent) =>
-        this.startWorkflow.definitionFor(parent),
+      deliveryDependencies(
+        dependencies,
+        async (parent) => this.startWorkflow.definitionFor(parent),
+        work,
       ),
     );
     this.advanceWorkflow = new AdvanceWorkflow(
@@ -254,6 +261,45 @@ export class OrchestrationService {
 
   recordDeliveryQa(caller: DelegationCaller, input: DeliveryQaCommand, context: CommandContext) {
     return this.delivery.recordQa(caller, input, context);
+  }
+
+  recordDeliveryMaintenance(
+    caller: DelegationCaller,
+    input: DeliveryMaintenanceCommand,
+    context: CommandContext,
+  ) {
+    return this.delivery.recordMaintenance(caller, input, context);
+  }
+
+  authorizeParentAction(request: ParentActionRequest) {
+    return this.delivery.authorizeParentAction(request);
+  }
+
+  /** The branch leases Execution must hold for the configured maintenance stage's activation. */
+  async deliveryMaintenancePreparation(
+    workflowInstanceId: string,
+  ): Promise<ExecutionMaintenance | undefined> {
+    const targets = await this.delivery.maintenanceTargets(workflowInstanceId);
+    if (targets === undefined || targets.length === 0) return undefined;
+    const prepared: ExecutionMaintenance['targets'][number][] = [];
+    for (const target of targets) {
+      // The same assignment that created the child's workspace, so its lease is reused exactly.
+      const repository = await this.delegatedWork.repositoryFor(target.ownerWorkItemId);
+      if (repository === undefined) continue;
+      prepared.push({
+        childWorkItemId: target.ownerWorkItemId,
+        outputName: target.output.outputName,
+        resourceId: target.resourceId,
+        repository,
+        branch: target.branch,
+        revision: target.revision,
+        pullRequestBase: target.pullRequestBase,
+        ...(target.maintenance === undefined
+          ? {}
+          : { reason: `${target.maintenance}: ${target.detail ?? ''}`.trim() }),
+      });
+    }
+    return prepared.length === 0 ? undefined : { targets: prepared };
   }
 
   async inspectDelegation(caller: DelegationCaller, context: CommandContext) {
@@ -927,6 +973,7 @@ type DelegationDependenciesFactory = (queries: {
   artifacts: DelegationArtifacts;
   authority?: DelegationAuthority;
   repositories?: DelegationRepositories;
+  integration?: DeliveryIntegration;
   runHasEnded: (runId: string) => Promise<boolean>;
 };
 
@@ -937,10 +984,33 @@ async function unavailableRunCompletion(): Promise<never> {
 function deliveryDependencies(
   dependencies: ReturnType<DelegationDependenciesFactory> | undefined,
   definitionFor: DeliveryDependencies['definitionFor'],
+  work: WorkService,
 ): DeliveryDependencies {
   return {
     authority: dependencies?.authority ?? unavailableDelegationAuthority,
     repositories: dependencies?.repositories,
+    integration: dependencies?.integration,
+    // A finished producing workflow (a Closed child) is deliberately not a hold.
+    unavailable: async (ids) => {
+      const snapshot = await work.deliverySnapshot();
+      const reasons = new Map<string, string>();
+      for (const id of ids) {
+        const lineage = [id, ...(snapshot.get(id)?.delegation?.ancestors ?? [])];
+        const held = lineage.find((member) => {
+          const state = snapshot.get(member);
+          return (
+            snapshot.invalid(member) ||
+            state === null ||
+            state.deleted === true ||
+            state.frozen === true ||
+            state.state === WorkStatus.Cancelled ||
+            (member !== id && state.state !== WorkStatus.Open)
+          );
+        });
+        if (held !== undefined) reasons.set(id, `Delivery work ${held} is unavailable`);
+      }
+      return reasons;
+    },
     definitionFor,
   };
 }

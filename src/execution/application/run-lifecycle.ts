@@ -291,6 +291,7 @@ function workspacePayload(lease: WorkspaceLease | undefined) {
               : { checkoutRevision: lease.checkoutRevision }),
             path: lease.path,
             ...(lease.candidate === undefined ? {} : { candidate: lease.candidate }),
+            ...(lease.maintenance === undefined ? {} : { maintenance: lease.maintenance }),
             ...(lease.branch === undefined ? {} : { branch: lease.branch }),
           },
         }),

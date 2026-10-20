@@ -305,6 +305,7 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
     case OrchestrationEventType.DeliverySelectionRevised:
     case OrchestrationEventType.DeliveryCandidateRecorded:
     case OrchestrationEventType.DeliveryQaRecorded:
+    case OrchestrationEventType.DeliveryMaintenanceRecorded:
       return;
     case OrchestrationEventType.DelegationWaitStarted:
     case OrchestrationEventType.DelegationJoined:

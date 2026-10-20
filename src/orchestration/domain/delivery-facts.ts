@@ -2,6 +2,7 @@ import type { DelegationReservation, DelegationResult } from '../contracts/deleg
 import {
   DeliveryRejectionError,
   type DeliveryCandidate,
+  type DeliveryMaintenance,
   type DeliveryOutputKey,
   type DeliveryQa,
   type DeliverySelection,
@@ -26,6 +27,8 @@ export interface DeliveryFacts {
   readonly selections: readonly DeliverySelection[];
   readonly candidates: readonly DeliveryCandidate[];
   readonly qa: readonly DeliveryQa[];
+  /** Agent maintenance of selected changes, oldest first; each is a new immutable subject. */
+  readonly maintenance: readonly DeliveryMaintenance[];
 }
 
 export const outputKey = (key: DeliveryOutputKey) => `${key.childWorkItemId}/${key.outputName}`;
@@ -39,8 +42,41 @@ export const reject = (code: DeliveryRejection, message: string) =>
 export const isChange = (output: Output): output is Output & { reference: ChangeReference } =>
   'repositoryResourceId' in output.reference;
 
+/**
+ * The latest selection with each change at its newest maintained subject. The recorded selection
+ * and every earlier subject stay in the journal; nothing else reads a stale head or base.
+ */
 export function currentSelection(facts: DeliveryFacts): DeliverySelection | undefined {
-  return facts.selections.at(-1);
+  const selection = facts.selections.at(-1);
+  if (selection === undefined || facts.maintenance.length === 0) return selection;
+  return {
+    ...selection,
+    entries: selection.entries.map((entry) => {
+      const latest = facts.maintenance
+        .filter(
+          (item) =>
+            item.target.childWorkItemId === entry.childWorkItemId &&
+            item.target.outputName === entry.output.name,
+        )
+        .at(-1);
+      if (latest === undefined || !isChange(entry.output)) return entry;
+      return {
+        ...entry,
+        output: {
+          ...entry.output,
+          reference: {
+            ...entry.output.reference,
+            revision: latest.current.revision,
+            pullRequestBase: latest.current.pullRequestBase,
+            runId: latest.producer.runId,
+            ...(latest.current.baseRevision === undefined
+              ? {}
+              : { baseRevision: latest.current.baseRevision }),
+          },
+        },
+      };
+    }),
+  };
 }
 
 export interface Requirement {

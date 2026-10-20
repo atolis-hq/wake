@@ -55,6 +55,9 @@ export async function readDeliveryFacts(
     qa: mine.flatMap((event) =>
       event.eventType === OrchestrationEventType.DeliveryQaRecorded ? [event.payload] : [],
     ),
+    maintenance: mine.flatMap((event) =>
+      event.eventType === OrchestrationEventType.DeliveryMaintenanceRecorded ? [event.payload] : [],
+    ),
   };
 }
 

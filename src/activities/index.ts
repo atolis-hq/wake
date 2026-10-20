@@ -30,6 +30,8 @@ export * from './pr/contracts.js';
 
 export * from './pr/merge-authority-gate.js';
 
+export * from './pr/parent-scope.js';
+
 export * from './pr/merge.js';
 
 export * from './pr/policy.js';
@@ -45,3 +47,8 @@ export * from './review/contracts.js';
 export * from './review/signals.js';
 
 export * from './pr/merge-policy-denial.js';
+
+export {
+  pullRequestCheckEvidenceSchema,
+  type PullRequestCheckEvidence,
+} from './pr/check-evidence.js';

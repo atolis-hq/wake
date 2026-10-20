@@ -501,6 +501,13 @@ function appendWorkspacePrompt(
   if (workspace?.candidate !== undefined)
     prompt +=
       '\n\nExact delivery candidate prepared by Wake:\n' + JSON.stringify(workspace.candidate);
+  if (workspace?.maintenance !== undefined)
+    prompt +=
+      '\n\nPull requests Wake leased for maintenance (each path is the owning child branch workspace; ' +
+      'it may not be at the recorded revision, so fetch and check out the pull request head first). ' +
+      'Retarget, rebase or repair under the lease, push, then record the actual result with wake_delivery_maintenance; ' +
+      'a new head or base requires fresh review, checks and QA:\n' +
+      JSON.stringify(workspace.maintenance);
   if (workspace?.repository === undefined) return prompt;
   return (
     prompt +

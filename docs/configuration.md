@@ -904,6 +904,13 @@ verdict must match this configured value. Configuring `qa` or explicit `completi
 enforces the final gate on parent completion; absent configuration preserves existing
 direct delegation routes. QA sessions are fresh, and configured workspace preparation
 hooks run once per candidate repository checkout.
+Optional `maintenance` is a strict object with `stage` naming an existing agent stage
+with workspace `none`, distinct from QA, in a `merge-required` workflow. Wake prepares
+and leases the selected child branches for that stage. Scoped `pr.approve` and `pr.merge`
+inputs accept `scope: { delivery: next }`; route `integrated` when all targets are merged.
+See [governed child integration](workflows.md#governed-child-integration-and-stack-maintenance).
+The fake provider's optional `eventsFile` supplies a JSON array of current PR evidence for
+artifact verification, using the same schema as `events`; it is re-read for each verification.
 Optional repositories is a nonempty list of Repository Resource IDs
 narrowing inherited assignment authority. A root with no correlated Repository Resource
 defaults to the repository of its provider-observed primary Issue. See [delegated delivery controls](workflows.md#delegated-delivery-controls)
@@ -915,3 +922,11 @@ that scope further; its validated effective scope is persisted on the reservatio
 for nested requests. Omitting `repository` never selects a checkout. Legacy
 reservations without a permission scope retain only their explicit selected
 repository, if any.
+
+Fake-provider PR events may supply `checkEvidence: { testedRevision, headRevision, baseRevision, startedAt }`.
+`startedAt` is an ISO timestamp for the check execution, not the poll. The subject must match
+the observation. Maintained targets requiring checks cannot qualify without fresh evidence.
+
+For maintained subjects, check evidence must include `testedRevision`, the execution
+revision verified by the provider against the subject head and base. Older evidence without
+this provenance remains readable but cannot authorize integration.

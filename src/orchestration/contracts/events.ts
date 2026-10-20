@@ -24,6 +24,7 @@ import type {
 import type {
   DeliveryCandidate,
   DeliveryCompletionBlock,
+  DeliveryMaintenance,
   DeliveryQa,
   DeliverySelection,
 } from './delivery.js';
@@ -61,6 +62,7 @@ export const OrchestrationEventType = {
   DeliverySelectionRevised: 'orchestration.delivery-selection-revised',
   DeliveryCandidateRecorded: 'orchestration.delivery-candidate-recorded',
   DeliveryQaRecorded: 'orchestration.delivery-qa-recorded',
+  DeliveryMaintenanceRecorded: 'orchestration.delivery-maintenance-recorded',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
   StageEntered: 'orchestration.stage-entered',
@@ -134,6 +136,7 @@ export interface OrchestrationEventPayloads {
   readonly [OrchestrationEventType.DeliverySelectionRevised]: DeliverySelection;
   readonly [OrchestrationEventType.DeliveryCandidateRecorded]: DeliveryCandidate;
   readonly [OrchestrationEventType.DeliveryQaRecorded]: DeliveryQa;
+  readonly [OrchestrationEventType.DeliveryMaintenanceRecorded]: DeliveryMaintenance;
   readonly [OrchestrationEventType.DelegationReserved]: DelegationReservation;
   readonly [OrchestrationEventType.DelegationRegistered]: { readonly cohortId: string };
   readonly [OrchestrationEventType.DelegationResultSelected]: DelegationResult;

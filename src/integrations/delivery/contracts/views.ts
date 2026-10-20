@@ -26,6 +26,8 @@ export interface DeliveryIntentView {
         readonly revision: string;
         readonly method: MergeMethod;
         readonly autoMerge: boolean;
+        /** Set when a parent delivery merges a child-owned PR: the owner, not the requester. */
+        readonly ownerWorkItemId?: string;
       }
     | { readonly kind: typeof DeliveryIntentKind.IssueComplete }
     | { readonly kind: typeof DeliveryIntentKind.StatusPublish; readonly body: string }
