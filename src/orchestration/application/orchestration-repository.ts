@@ -40,9 +40,16 @@ interface OrchestrationState extends OrchestrationSnapshot {
   /** Own events plus reservations other instances made on this instance's behalf. */
   readonly grouped: ReadonlyMap<string, readonly WorkflowOrchestrationEvent[]>;
   readonly listedById: ReadonlyMap<string, ListedInstance>;
+  /**
+   * Instances whose history cannot be decoded or folded. A malformed event must
+   * fail only its own instance's load, as a per-stream read did; list-based
+   * reads still fail loudly, as the whole-journal derivation did.
+   */
+  readonly failures: ReadonlyMap<string, unknown>;
 }
 
 const emptyState: OrchestrationState = {
+  failures: new Map(),
   instances: [],
   events: [],
   inherited: new Map(),
@@ -85,21 +92,29 @@ export class OrchestrationRepository {
   }
 
   snapshot(): Promise<OrchestrationSnapshot> {
-    return this.state.get();
+    return this.healthyState();
   }
 
-  events(): Promise<readonly WorkflowOrchestrationEvent[]> {
-    return this.state.get().then((state) => state.events);
+  async events(): Promise<readonly WorkflowOrchestrationEvent[]> {
+    return (await this.healthyState()).events;
   }
 
   /** Workflow instances that hold at least one deferred signal. */
   async instancesWithDeferredSignals(): Promise<ReadonlySet<string>> {
-    return (await this.state.get()).deferredInstanceIds;
+    return (await this.healthyState()).deferredInstanceIds;
   }
 
   async history(id: string) {
     const state = await this.state.get();
+    if (state.failures.has(id)) throw state.failures.get(id);
     return { sequence: state.sequences.get(id) ?? 0, events: state.own.get(id) ?? [] };
+  }
+
+  /** The state for reads that span every instance, which fail while any instance is malformed. */
+  private async healthyState(): Promise<OrchestrationState> {
+    const state = await this.state.get();
+    for (const failure of state.failures.values()) throw failure;
+    return state;
   }
 
   async loadRequired(id: string) {
@@ -141,7 +156,7 @@ export class OrchestrationRepository {
   }
 
   async list(): Promise<readonly ListedInstance[]> {
-    return (await this.state.get()).instances;
+    return (await this.healthyState()).instances;
   }
 }
 
@@ -149,6 +164,45 @@ function isWorkflowEvent(
   event: ReturnType<typeof decodeOrchestrationEvent>,
 ): event is WorkflowOrchestrationEvent {
   return isWorkflowInstanceStream(event.stream);
+}
+
+/** Refolds only the touched instances; a fold error fails that instance alone. */
+function refoldTouched(
+  touched: ReadonlySet<string>,
+  previous: ReadonlyMap<string, ListedInstance>,
+  sequences: ReadonlyMap<string, number>,
+  grouped: ReadonlyMap<string, readonly WorkflowOrchestrationEvent[]>,
+  failures: Map<string, unknown>,
+): Map<string, ListedInstance> {
+  const listedById = new Map(previous);
+  for (const id of touched) {
+    // A parent named by a reservation may not have a stream of its own yet.
+    if (!sequences.has(id)) continue;
+    try {
+      listedById.set(id, {
+        sequence: sequences.get(id)!,
+        view: foldWorkflowInstance(grouped.get(id) ?? []),
+      });
+    } catch (error) {
+      listedById.delete(id);
+      if (!failures.has(id)) failures.set(id, error);
+    }
+  }
+  return listedById;
+}
+
+/** A malformed event poisons only the instance whose stream holds it. */
+function decodeIsolated(
+  raw: JournalEvent,
+  instanceId: string,
+  failures: Map<string, unknown>,
+): WorkflowOrchestrationEvent | null {
+  try {
+    return selectWorkflowOrchestrationEvent(raw);
+  } catch (error) {
+    if (!failures.has(instanceId)) failures.set(instanceId, error);
+    return null;
+  }
 }
 
 /** The parent instance a child-stream DelegationReserved fact is recorded for. */
@@ -171,6 +225,7 @@ function extendState(
   const grouped = new Map(state.grouped);
   const inherited = new Map(state.inherited);
   const deferred = new Set(state.deferredInstanceIds);
+  const failures = new Map(state.failures);
   const added: WorkflowOrchestrationEvent[] = [];
   const touched = new Set<string>();
   // Arrays carried over from earlier states are copied on first touch, then
@@ -194,7 +249,7 @@ function extendState(
     const id = raw.stream.id;
     sequences.set(id, (sequences.get(id) ?? 0) + 1);
     touched.add(id);
-    const event = selectWorkflowOrchestrationEvent(raw);
+    const event = decodeIsolated(raw, id, failures);
     if (event === null) continue;
     added.push(event);
     push(own, id, event);
@@ -208,16 +263,9 @@ function extendState(
     }
   }
   if (touched.size === 0) return state;
-  const listedById = new Map(state.listedById);
-  for (const id of touched) {
-    // A parent named by a reservation may not have a stream of its own yet.
-    if (!sequences.has(id)) continue;
-    listedById.set(id, {
-      sequence: sequences.get(id)!,
-      view: foldWorkflowInstance(grouped.get(id) ?? []),
-    });
-  }
+  const listedById = refoldTouched(touched, state.listedById, sequences, grouped, failures);
   return {
+    failures,
     instances: [...listedById.values()],
     events: added.length === 0 ? state.events : [...state.events, ...added],
     inherited,

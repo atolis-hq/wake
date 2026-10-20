@@ -1,4 +1,4 @@
-import { correlationId, type EventJournal } from '@atolis-hq/eventing';
+import { correlationId, createEventData, type EventJournal } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import {
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
+import { workflowInstanceStream } from '../../../src/orchestration/contracts/streams.js';
 import { compileWorkflow, createOrchestrationService } from '../../../src/orchestration/index.js';
 import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
@@ -56,6 +57,32 @@ it('folds only the events after the position it holds, however long the history'
     1,
   );
   expect(loaded.sequence).toBeGreaterThan(0);
+});
+
+it('fails only the instance holding a malformed event on load, and fails list-wide reads loudly', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const repository = new OrchestrationRepository(journal);
+  await seedTwoInstances(journal);
+  const { sequence } = await repository.history('workflow-1');
+  await journal.appendToStream(workflowInstanceStream(workflowInstanceId('workflow-1')), sequence, [
+    createEventData({
+      eventId: 'malformed',
+      eventType: OrchestrationEventType.StageEntered,
+      occurredAt: '2026-07-30T12:00:00Z',
+      correlationId: 'corr',
+      causationId: 'cause',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: { stage: 42 },
+    }),
+  ]);
+
+  await expect(repository.load('workflow-2')).resolves.toMatchObject({
+    sequence: expect.any(Number),
+  });
+  await expect(repository.load('workflow-1')).rejects.toThrow();
+  await expect(repository.list()).rejects.toThrow();
+  await expect(repository.events()).rejects.toThrow();
 });
 
 it('records an activation start once however many ticks retry the dispatch', async () => {
