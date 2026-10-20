@@ -119,6 +119,12 @@ a CLI command.
   known-good state to fall back to.
 - `recordBad`/`isBad` MUST track a deduplicated set of unusable tags,
   independent of the pending/healthy markers.
+- A candidate whose sandbox image cannot be built because npm cannot yet
+  resolve the just-published package version
+  (`CandidateNotYetAvailableError`) MUST be reported and recorded in the
+  failure log but MUST NOT be recorded as a bad tag; a later attempt may
+  succeed once the registry has propagated it. Every other build failure
+  still records the tag bad.
 
 **Maintenance lease state**
 

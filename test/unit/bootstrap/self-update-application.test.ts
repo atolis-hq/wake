@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createSelfUpdateApplication } from '../../../src/bootstrap/self-update-application.js';
+import {
+  CandidateNotYetAvailableError,
+  createSelfUpdateApplication,
+} from '../../../src/bootstrap/self-update-application.js';
 
 function ledger(lastHealthyTag: string | null, calls: string[] = []) {
   return {
@@ -540,6 +543,48 @@ describe('self-update application: Docker rollout', () => {
       'record:v2:candidate build failed',
       'bad:v2',
     ]);
+  });
+
+  it('does not record a bad tag when the candidate is not yet available from the registry', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: source(calls),
+      rollout: {
+        ...rollout(calls),
+        prepare: async (tag) => {
+          calls.push(`prepare:${tag}`);
+          throw new CandidateNotYetAvailableError('v2 is not available from the registry yet');
+        },
+      },
+      quiesce: quiesce(calls, [[]]),
+    });
+
+    await expect(application.update('v2')).rejects.toThrow('not available from the registry yet');
+    expect(calls).toEqual([
+      'checkout:v2',
+      'prepare:v2',
+      'checkout:v1',
+      'record:v2:v2 is not available from the registry yet',
+    ]);
+  });
+
+  it('still reports the candidate as not updated, and retryable, from updateLatest', async () => {
+    const calls: string[] = [];
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: { ...source(calls), candidateTags: async () => ['v2', 'v1'] },
+      rollout: {
+        ...rollout(calls),
+        prepare: async () => {
+          throw new CandidateNotYetAvailableError('v2 is not available from the registry yet');
+        },
+      },
+      quiesce: quiesce(calls, [[]]),
+    });
+
+    await expect(application.updateLatest()).resolves.toEqual({ tag: 'v2', updated: false });
+    expect(calls.filter((call) => call.startsWith('bad:'))).toEqual([]);
   });
 
   it('deploys the sandbox container after a successful source checkout', async () => {
