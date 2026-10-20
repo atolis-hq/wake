@@ -305,6 +305,16 @@ export class OrchestrationService {
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
+  /** Delegated children still blocked on a question this work item's parent escalated to a human. */
+  async escalatedReplyTargets(workItemId: WorkItemId) {
+    const targets: WorkItemId[] = [];
+    for (const parent of await this.advanceWorkflow.listAll())
+      if (parent.workItemId === workItemId)
+        for (const target of await this.delegatedWork.attention.escalatedTargets(parent))
+          targets.push(target.childWorkItemId as WorkItemId);
+    return targets;
+  }
+
   /** The open attention request when `activationId` is the attention activation, else null. */
   async openDelegationAttention(id: WorkflowInstanceId, activationId: ActivationId) {
     const view = (await this.repository.load(id)).view;

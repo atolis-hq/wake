@@ -91,9 +91,14 @@ The attention activation's outcome never settles or cancels the cohort: every en
 the cohort wait, so independent members keep running and their results stay joinable. A
 structured blocked or needs-clarification result is a batched human question: it is also
 recorded as an accepted outcome, which the existing publication route delivers to a human,
-and its text is kept on the resolved fact. A failed, rejected or infrastructure-blocked
-assessment run (runner failure, authentication, invalid result) records the failure and a
-diagnostic, and re-raises the same blockers up to three times. While an assessment is open, a
+and its text is kept on the resolved fact; a deliberate `FAILED` the parent agent reports is
+escalated the same way. A human reply on the parent is routed by the conversation reactor into
+the conversation of each child still blocked on an escalated question, where the ordinary reply
+path resumes it, so the answer moves the delivery without settling or joining the cohort. A
+failed, rejected or infrastructure-blocked assessment run (runner failure, authentication,
+ambiguous or invalid result, unverified completion) records the failure and a diagnostic, and
+re-raises the same blockers up to three times; the last attempt also leaves one operator
+escalation diagnostic. While an assessment is open, a
 second cohort is refused (`attention-open`); replacements are submitted once the cohort
 settles and the parent is resumed. Bootstrap adds a typed attention section to the
 agent prompt for the attention activation. A completed child

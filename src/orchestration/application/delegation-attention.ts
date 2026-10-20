@@ -12,6 +12,7 @@ import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { DelegationAttentionRejection, WorkflowStatus } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
+import { escalatedTargets } from './delegation-attention-escalations.js';
 import {
   assertReplyAllowed,
   assessedBlockers,
@@ -19,6 +20,7 @@ import {
   blockerOf,
   contextBlockerId,
   digest,
+  MaxAssessmentAttempts,
   reject,
   resolutionDrafts,
   type AttentionVerdict,
@@ -266,16 +268,38 @@ export class DelegationAttention {
       const attention = loaded.view.delegationAttention;
       if (attention === undefined || attention.activationId !== attentionActivation)
         return loaded.view;
+      const exhausted =
+        verdict.failure !== undefined &&
+        (await this.priorFailures(parentId, attention.attentionKey)) + 1 >= MaxAssessmentAttempts;
       try {
         await this.repository.append(
           parentId,
           loaded.sequence,
-          resolutionDrafts(context, parentId, attention, verdict),
+          resolutionDrafts(context, parentId, attention, { ...verdict, exhausted }),
         );
         return (await this.repository.loadRequired(parentId)).view;
       } catch (error) {
         if (!(error instanceof WrongExpectedSequenceError)) throw error;
       }
     }
+  }
+
+  private async priorFailures(parentId: WorkflowInstanceId, attentionKey: string) {
+    const { events } = await this.repository.history(parentId);
+    return events.filter(
+      ({ event }) =>
+        event.eventType === OrchestrationEventType.DelegationAttentionResolved &&
+        event.payload.attentionKey === attentionKey &&
+        event.payload.assessmentFailure !== undefined,
+    ).length;
+  }
+
+  /**
+   * Children whose assignment-context blocker the parent escalated to a human and which are still
+   * blocked on it. A human reply on the parent is routed to exactly these, so a published question
+   * always has an answer path that moves the delivery without settling or joining the cohort.
+   */
+  escalatedTargets(parent: WorkflowInstanceView) {
+    return escalatedTargets(this.repository, this.ledger, parent);
   }
 }

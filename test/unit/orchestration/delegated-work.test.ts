@@ -1,10 +1,15 @@
 import {
   correlationId,
   createEventData,
+  EventProcessorHost,
   WrongExpectedSequenceError,
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+} from '@atolis-hq/eventing/memory';
 import { afterEach, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
@@ -14,12 +19,17 @@ import {
   pullRequestMergeInputSchema,
 } from '../../../src/activities/index.js';
 import {
+  conversationIdForWorkItem,
+  createConversationService,
+} from '../../../src/conversations/index.js';
+import {
   orchestrationGroupId,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/contracts/identifiers.js';
 import {
   compileWorkflow,
+  createConversationCommandReactor,
   createOrchestrationEventData,
   createOrchestrationService,
   DelegationPendingError,
@@ -2435,7 +2445,17 @@ it('keeps the cohort tracked when the parent escalates a human question, and its
   fixture.artifacts.published.add(y!.workItemId);
   await complete(fixture, y!.workflowInstanceId);
   expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
-  await fixture.service.resumeNeedsClarificationStage(x!.workflowInstanceId, context('answer'));
+  // The human answers on the parent issue (the route the question was published on): the reply
+  // reaches the asking child through the real conversation reactor, with no operator command.
+  await humanReply(fixture, workId('1'), 'Use API version 2.');
+  expect((await fixture.service.get(x!.workflowInstanceId))!.status).toBe('active');
+  expect((await fixture.service.get(y!.workflowInstanceId))!.status).toBe('completed');
+  expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
+  expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
+  // A second comment is not routed again: the child is no longer blocked on the question.
+  const resumes = await count(fixture, OrchestrationEventType.OperatorRetryRequested);
+  await humanReply(fixture, workId('1'), 'Thanks!', 'second');
+  expect(await count(fixture, OrchestrationEventType.OperatorRetryRequested)).toBe(resumes);
   fixture.artifacts.published.add(x!.workItemId);
   await complete(fixture, x!.workflowInstanceId);
   expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);
@@ -2444,6 +2464,48 @@ it('keeps the cohort tracked when the parent escalates a human question, and its
   ).toHaveLength(2);
   expect(await count(fixture, OrchestrationEventType.DelegationReserved)).toBe(1);
 });
+
+/** A human comment on a work item, applied through the real conversation reactor. */
+async function humanReply(
+  fixture: Fixture,
+  workItemId: ReturnType<typeof workId>,
+  body: string,
+  id = 'first',
+) {
+  const conversations = createConversationService(fixture.journal);
+  const reactor = createConversationCommandReactor(fixture.service, {
+    conversations,
+    publish: async () => undefined,
+  });
+  const entryContext = context(`comment-${id}`);
+  await conversations.createForWorkItem(workItemId, entryContext);
+  await conversations.record(
+    {
+      conversationId: conversationIdForWorkItem(workItemId),
+      entryId: `comment-${id}`,
+      body,
+      origin: {
+        kind: 'external',
+        adapter: 'github',
+        actorId: 'contributor',
+        resourceId: 'resource-1',
+        threadId: 'org/repo#1',
+        messageId: id,
+        authorized: false,
+      },
+    },
+    entryContext,
+  );
+  const host = new EventProcessorHost(
+    fixture.journal,
+    new InMemoryCheckpointStore(),
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+  // The routed copy lands on the child's conversation and is picked up by a second pass.
+  await host.runOnce(reactor.processor);
+  await host.runOnce(reactor.processor);
+}
 
 it('treats a failed assessment run as retryable without settling or cancelling the cohort', async () => {
   const fixture = attentionBuild();
@@ -2479,13 +2541,18 @@ it('treats a failed assessment run as retryable without settling or cancelling t
   // Failures are bounded and visible: no fourth assessment is requested for the same blockers.
   expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(3);
   expect((await parentOf(fixture)).status).toBe('waiting');
+  const diagnostics = (await fixture.journal.readAll(0)).filter(
+    (entry) =>
+      entry.event.eventType === OrchestrationEventType.DelegationReconciliationFailed &&
+      JSON.stringify(entry.event.payload).includes('assessment failed'),
+  );
+  // Three per-attempt diagnostics, the last of which is also the operator escalation.
+  expect(diagnostics).toHaveLength(4);
   expect(
-    (await fixture.journal.readAll(0)).filter(
-      (entry) =>
-        entry.event.eventType === OrchestrationEventType.DelegationReconciliationFailed &&
-        JSON.stringify(entry.event.payload).includes('assessment failed'),
+    diagnostics.filter((entry) =>
+      JSON.stringify(entry.event.payload).includes('an operator must inspect the blockers'),
     ),
-  ).toHaveLength(3);
+  ).toHaveLength(1);
   // The cohort is still joinable once the child is answered by other means.
   await fixture.service.resumeNeedsClarificationStage(x!.workflowInstanceId, context('answer'));
   fixture.artifacts.published.add(x!.workItemId);

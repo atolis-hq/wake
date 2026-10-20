@@ -99,6 +99,7 @@ const structuredBlockSchema = z
     status: z.string().min(1),
     message: z.string().optional(),
     question: z.string().optional(),
+    unverifiedCompletionReason: z.string().optional(),
   })
   .passthrough();
 const failureDataSchema = z
@@ -106,26 +107,34 @@ const failureDataSchema = z
   .passthrough();
 
 /**
- * A structured blocked/needs-clarification result is a human question. A failed, rejected or
- * infrastructure-blocked run (runner failure, authentication, ambiguous result) is only a failed
- * assessment: it must never cancel or settle the cohort.
+ * A structured blocked/needs-clarification result, or a deliberate `FAILED` the agent reports
+ * itself, is a human-visible escalation. A failed, rejected or infrastructure-blocked run (runner
+ * failure, authentication, ambiguous or unverified completion) is only a failed assessment: it
+ * must never cancel or settle the cohort.
  */
 export function attentionVerdict(outcome: ActivityOutcome): AttentionVerdict {
   if (outcome.kind === ActivityOutcomeKind.Done) return {};
-  const question =
-    outcome.kind === ActivityOutcomeKind.Blocked
-      ? structuredBlockSchema.safeParse(outcome.data)
-      : null;
-  if (question?.success === true)
-    return {
-      escalation: question.data.question ?? question.data.message ?? question.data.status,
-      outcome,
-    };
+  const question = humanQuestion(outcome);
+  return question === undefined
+    ? { failure: runFailure(outcome) }
+    : { escalation: question, outcome };
+}
+
+/** The agent's own structured block or failure, unless the run could not verify completion. */
+function humanQuestion(outcome: ActivityOutcome): string | undefined {
+  if (outcome.kind !== ActivityOutcomeKind.Blocked && outcome.kind !== ActivityOutcomeKind.Failed)
+    return undefined;
+  const parsed = structuredBlockSchema.safeParse(outcome.data);
+  if (!parsed.success || parsed.data.unverifiedCompletionReason !== undefined) return undefined;
+  return parsed.data.question ?? parsed.data.message ?? parsed.data.status;
+}
+
+function runFailure(outcome: ActivityOutcome): string {
+  const structured = structuredBlockSchema.safeParse(outcome.data);
+  if (structured.success && structured.data.unverifiedCompletionReason !== undefined)
+    return structured.data.unverifiedCompletionReason;
   const detail = failureDataSchema.safeParse(outcome.data);
-  return {
-    failure:
-      (detail.success ? (detail.data.reason ?? detail.data.message) : undefined) ?? outcome.kind,
-  };
+  return (detail.success ? (detail.data.reason ?? detail.data.message) : undefined) ?? outcome.kind;
 }
 
 /** How the parent's assessment ended; only a human question or a failed run is more than `done`. */
@@ -134,6 +143,8 @@ export interface AttentionVerdict {
   readonly escalation?: string;
   /** The assessment run itself failed (runner, transport or invalid result). */
   readonly failure?: string;
+  /** Set by the ledger when this failure used the last allowed assessment attempt. */
+  readonly exhausted?: boolean;
   readonly outcome?: ActivityOutcome;
 }
 
@@ -184,6 +195,22 @@ export function resolutionDrafts(
           payload: {
             cohortId: attention.cohortId,
             reason: `Parent attention assessment failed (${verdict.failure}); the cohort is unchanged`,
+          },
+        },
+        parentId,
+      ),
+    );
+  // The last allowed retry leaves one inspectable operator escalation, not a quiet stop.
+  if (verdict.failure !== undefined && verdict.exhausted === true)
+    drafts.push(
+      delegationDraft(
+        context,
+        `attention-exhausted:${digest(attention.attentionKey)}`,
+        {
+          eventType: OrchestrationEventType.DelegationReconciliationFailed,
+          payload: {
+            cohortId: attention.cohortId,
+            reason: `Parent attention assessment failed ${MaxAssessmentAttempts} times (${verdict.failure}); an operator must inspect the blockers`,
           },
         },
         parentId,

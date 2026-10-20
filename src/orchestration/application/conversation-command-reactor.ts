@@ -83,6 +83,7 @@ export function createConversationCommandReactor(
           return;
         }
         if (entry.origin.canClarify === false) return;
+        await routeEscalatedReply(orchestration, feedback, event, workItemId, entry.origin.adapter);
         for (const workflow of await orchestration.listAll()) {
           if (workflow.workItemId !== workItemId) continue;
           const resume = input.authorized
@@ -98,6 +99,39 @@ export function createConversationCommandReactor(
       },
     }),
   };
+}
+
+/**
+ * A parent that escalated a delegated child's question to a human has no stage to resume. The
+ * human's reply is recorded on each asking child's own conversation, where the ordinary reply path
+ * resumes it; the cohort stays tracked and nothing is settled or joined.
+ */
+async function routeEscalatedReply(
+  orchestration: OrchestrationService,
+  feedback: ConversationCommandFeedback | undefined,
+  event: ConversationCommandMessage,
+  workItemId: ReturnType<typeof workItemIdForConversation>,
+  adapter: string,
+): Promise<void> {
+  if (feedback === undefined) return;
+  const context: CommandContext = {
+    commandId: `${event.eventId}:escalated-reply`,
+    correlationId: correlationId(event.correlationId),
+    occurredAt: event.occurredAt,
+    actor: { kind: EventActorKind.Integration, id: adapter },
+  };
+  for (const childWorkItemId of await orchestration.escalatedReplyTargets(workItemId)) {
+    const conversation = await feedback.conversations.createForWorkItem(childWorkItemId, context);
+    await feedback.conversations.record(
+      {
+        conversationId: conversation.conversationId,
+        entryId: `${event.eventId}:routed:${childWorkItemId}`,
+        body: event.entry.body,
+        origin: event.entry.origin,
+      },
+      context,
+    );
+  }
 }
 
 async function applyExternalCommand(

@@ -713,9 +713,12 @@ replacement work in a new cohort, and review, consent or approval gates cannot
 be answered through this channel. To hand human questions over, batch them all
 into one structured `blocked` or needs-clarification result: Wake publishes it to a
 human through the ordinary route while the cohort stays tracked, so independent
-children keep running and nothing is cancelled or joined early. A failed run of the
-assessment itself (runner failure, authentication, invalid result) never touches the
-cohort and is re-raised up to three times. Wake refuses
+children keep running and nothing is cancelled or joined early. A human reply on the
+parent issue is delivered to each child still blocked on that question and resumes it
+through the ordinary reply path. A deliberate `FAILED` result is escalated the same way.
+A failed run of the assessment itself (runner failure, authentication, ambiguous or
+invalid result, unverified completion) never touches the cohort and is re-raised up to
+three times; after the third an operator diagnostic asks for inspection. Wake refuses
 wake_delegation_submit while an assessment is open (`attention-open`); submit
 replacement work once the cohort settles and the stage is resumed.
 Wake adds the blockers to the activation's prompt. Each blocker is assessed once, and a delegating
