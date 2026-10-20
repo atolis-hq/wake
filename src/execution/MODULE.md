@@ -17,6 +17,13 @@ new branches. Existing branch workspaces retain their branch and dirty
 state. Run preparation records the assignment, Run start records the checkout,
 and successful completion records the resulting HEAD. Read-only reviews in the
 same orchestration group use that implementation HEAD, including watch children.
+Candidate QA acquires all selected repository leases in deterministic resource-ID order,
+checks every checkout against its pinned revision, and releases all leases after partial
+failure or Run settlement. Retained refs are re-resolved during acquisition; missing or
+moved refs cannot prepare even if the commit is cached locally. Read-only leases may
+advance to a later authorized candidate while writable assignment identity stays fixed.
+Run start records the candidate and exact prepared repository paths/revisions, and QA
+starts a fresh session with the configured recipe, criteria and contributing references.
 
 ## Public contracts
 `index.ts` is the only public entry.

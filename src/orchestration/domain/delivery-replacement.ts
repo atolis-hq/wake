@@ -47,6 +47,7 @@ function assertOutputsProvided(original: Child, assignment: DelegatedAssignment)
     const counterpart = assignment.outputs.find((entry) => entry.name === output.name);
     if (counterpart === undefined || 'kind' in output !== 'kind' in counterpart)
       throw invalid(`A replacement must provide the original output ${output.name}`);
+    if ('kind' in output && 'kind' in counterpart) assertChangeRequirements(output, counterpart);
   }
 }
 
@@ -55,10 +56,7 @@ function assertCarriesContribution(
   reference: { branch: string; revision: string; pullRequestBase: string },
 ): void {
   const repository = assignment.repository;
-  if (
-    repository?.sourceRevision !== reference.revision &&
-    repository?.sourceRef !== reference.branch
-  )
+  if (repository?.sourceRevision !== reference.revision)
     throw invalid(
       `A replacement must start from the unmerged contribution ${reference.branch}@${reference.revision}`,
     );
@@ -66,4 +64,20 @@ function assertCarriesContribution(
     throw invalid(
       `A replacement must target the intended integration branch ${reference.pullRequestBase}`,
     );
+}
+
+function assertChangeRequirements(
+  original: {
+    readonly requireReview?: boolean | undefined;
+    readonly requireChecks?: boolean | undefined;
+  },
+  replacement: {
+    readonly requireReview?: boolean | undefined;
+    readonly requireChecks?: boolean | undefined;
+  },
+): void {
+  if ((original.requireReview ?? true) && !(replacement.requireReview ?? true))
+    throw invalid('A replacement must preserve the original review requirement');
+  if ((original.requireChecks ?? true) && !(replacement.requireChecks ?? true))
+    throw invalid('A replacement must preserve the original checks requirement');
 }

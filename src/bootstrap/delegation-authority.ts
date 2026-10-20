@@ -46,6 +46,26 @@ export function createDelegationAuthority(
       )
         throw new Error('Delegation capability is stale or does not own the parent activation');
     },
+    async assertQaCaller(caller, candidateId, selectionRevision, revisions) {
+      const run = (await runs.load(runId(caller.runId))).view;
+      const prepared = run?.workspace?.candidate;
+      const key = (entries: readonly { resourceId: string; revision: string }[]) =>
+        entries
+          .map((entry) => entry.resourceId + '@' + entry.revision)
+          .sort()
+          .join(',');
+      if (
+        run === null ||
+        !isActiveRunStatus(run.status) ||
+        run.cancellation !== undefined ||
+        run.activationId !== caller.activationId ||
+        run.workflowInstanceId !== caller.workflowInstanceId ||
+        prepared?.candidateId !== candidateId ||
+        prepared.selectionRevision !== selectionRevision ||
+        key(prepared.repositories) !== key(revisions)
+      )
+        throw new Error('QA verdict requires the Run prepared for this exact candidate');
+    },
     repositories: (parent) => repositories(parent.workItemId),
     // The scope is the repository the provider observed the root Issue in, never an agent claim.
     // Any Repository Resource already correlated to the root (for example operator-declared)

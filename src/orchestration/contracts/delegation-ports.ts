@@ -38,6 +38,12 @@ export interface DelegationArtifacts {
 }
 
 export interface DelegationAuthority {
+  assertQaCaller?(
+    caller: DelegationCaller,
+    candidateId: string,
+    selectionRevision: number,
+    revisions: readonly { resourceId: string; revision: string }[],
+  ): Promise<void>;
   assertCaller(caller: DelegationCaller, parent: WorkflowInstanceView): Promise<void>;
   repositories(parent: WorkflowInstanceView): Promise<readonly string[]>;
   /**

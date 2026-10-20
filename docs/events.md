@@ -133,3 +133,10 @@ maintenance lane records `delivery.reconciled` with a confirmed result and the
 normal outcome reactor resumes configured workflow routing. Missing or different
 revision evidence, closed-unmerged PRs, and historical failed deliveries do not
 qualify. Existing failed journal facts are never rewritten.
+
+Delivery QA facts optionally record the producing Run and activation identities. New
+verdicts require configured QA-route authority and the Run's exact prepared candidate;
+legacy verdicts without provenance remain historical and cannot satisfy completion.
+Run-start workspace facts optionally carry the candidate identity, selection revision,
+and every prepared repository path/revision. These facts attest execution preparation,
+not interpretation of acceptance prose or patch semantics.

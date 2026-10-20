@@ -199,13 +199,18 @@ export async function runDispatchLoop(
         selected.workflow.workItemId,
         repositoryAssignment,
       );
+      const candidate = await ctx.orchestration.deliveryQaPreparation?.(
+        selected.workflow.workflowInstanceId,
+      );
       const run = await ctx.execution.attempt(selected.activation, {
         workItemId: selected.workflow.workItemId,
         workflowInstanceId: selected.workflow.workflowInstanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
         resources: resourceViews,
+        ...(candidate === undefined ? {} : { candidate }),
         ...(repositoryAssignment === undefined ? {} : { repositoryAssignment }),
         sessionPolicy:
+          candidate !== undefined ||
           selected.activation.sessionPolicy === 'fresh' ||
           selected.workflow.parentWorkflowInstanceId !== undefined
             ? 'fresh'
@@ -218,10 +223,7 @@ export async function runDispatchLoop(
         run.outcome !== undefined &&
         isRunnerQuotaOutcome(run.outcome)
       ) {
-        // No isDispatchPaused check here: a quota retry re-requests the same
-        // stage's activity without publishing an outcome or consuming retry
-        // budget, so it must not be held behind maintenance pause the way an
-        // outward-publishing acceptOutcome call is below.
+        // Quota retries preserve the stage and its budget even while dispatch is paused.
         const retried = await ctx.orchestration.retryRunnerQuotaFailure?.(
           selected.workflow.workflowInstanceId,
           {
@@ -304,7 +306,6 @@ export async function runDispatchLoop(
         workflowInstanceId: selected.workflow.workflowInstanceId,
         reason,
       };
-      continue;
     }
   }
 

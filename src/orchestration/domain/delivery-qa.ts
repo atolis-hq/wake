@@ -1,7 +1,13 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { DeliveryCandidate, DeliveryQa, DeliveryQaCommand } from '../contracts/delivery.js';
 import { DeliveryCompletion, DeliveryRejection, QaVerdict } from '../contracts/vocabulary.js';
-import { currentSelection, reject, type DeliveryFacts } from './delivery-facts.js';
+import {
+  currentSelection,
+  entryKey,
+  reject,
+  requirements,
+  type DeliveryFacts,
+} from './delivery-facts.js';
 import { staleEntries } from './delivery-selection.js';
 
 /** The exact repository and revision set QA must have checked. */
@@ -17,6 +23,11 @@ export function assertQa(facts: DeliveryFacts, command: DeliveryQaCommand): Deli
     throw reject(
       DeliveryRejection.RevisionMismatch,
       'QA must check exactly the candidate repository revisions; testing main or another candidate cannot satisfy the gate',
+    );
+  if (!command.environment.available && command.verdict !== QaVerdict.Blocked)
+    throw reject(
+      DeliveryRejection.InvalidVerdict,
+      'An unavailable environment must be reported as blocked',
     );
   if (command.verdict === QaVerdict.Pass) assertPass(candidate, command);
   if (command.verdict === QaVerdict.Fail && command.findings.length === 0)
@@ -59,11 +70,11 @@ export function deliveryState(facts: DeliveryFacts): DeliveryState {
   const current = currentSelection(facts);
   const stale = [...staleEntries(facts)];
   const candidate = facts.candidates.at(-1) ?? null;
-  const candidateCurrent =
-    candidate !== null && candidate.selectionRevision === current?.revision && stale.length === 0;
+  const candidateCurrent = isCandidateCurrent(facts, current, candidate, stale);
   const qa =
     facts.qa.filter((entry) => entry.candidateId === candidate?.candidateId).at(-1) ?? null;
-  const qaEffective = qa !== null && candidateCurrent;
+  const qaEffective =
+    qa !== null && qa.runId !== undefined && qa.activationId !== undefined && candidateCurrent;
   return {
     selectionRevision: current?.revision ?? 0,
     stale,
@@ -106,4 +117,24 @@ export function completionDecision(
       reason: 'Governed integration is required and its gates are not satisfied',
     };
   return { complete: true };
+}
+
+function isCandidateCurrent(
+  facts: DeliveryFacts,
+  current: ReturnType<typeof currentSelection>,
+  candidate: DeliveryCandidate | null,
+  stale: readonly string[],
+): boolean {
+  return (
+    candidate !== null &&
+    current !== undefined &&
+    candidate.selectionRevision === current?.revision &&
+    stale.length === 0 &&
+    requirements(facts.reservations).every((requirement) =>
+      current.entries.some(
+        (entry) =>
+          entryKey(entry, entry.output.name) === entryKey(requirement, requirement.outputName),
+      ),
+    )
+  );
 }

@@ -24,7 +24,10 @@ export class OrchestrationRepository {
     inherited: ReadonlyMap<string, readonly WorkflowOrchestrationEvent[]>;
   }>;
 
-  constructor(private readonly journal: EventJournal) {
+  constructor(
+    private readonly journal: EventJournal,
+    private readonly completionReason?: (id: string) => Promise<string | undefined>,
+  ) {
     this.listed = cachedJournalView(journal, (events) => {
       const owned = events.flatMap((entry) => {
         const decoded = selectWorkflowOrchestrationEvent(entry);
@@ -97,6 +100,15 @@ export class OrchestrationRepository {
         .filter((event) => drafts.some((draft) => draft.eventId === event.event.eventId))
         .map(decodeOrchestrationEvent)
         .filter(isWorkflowEvent);
+    if (drafts.some((draft) => draft.eventType === OrchestrationEventType.InstanceCompleted)) {
+      const reason = await this.completionReason?.(id);
+      if (reason !== undefined)
+        drafts = drafts.map((draft) =>
+          draft.eventType === OrchestrationEventType.InstanceCompleted
+            ? { ...draft, eventType: OrchestrationEventType.InstanceBlocked, payload: { reason } }
+            : draft,
+        );
+    }
     const events = await this.journal.appendToStream(
       workflowInstanceStream(workflowInstanceId(id)),
       sequence,

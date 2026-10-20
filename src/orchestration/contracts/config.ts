@@ -192,6 +192,10 @@ export const delegationPolicySchema = z
     maxConcurrentRuns: z.number().int().positive(),
     /** Final gate for the parent: QA approval alone (default) or QA plus governed integration. */
     completion: z.enum(DeliveryCompletion).optional(),
+    qa: z
+      .object({ stage: identifier, recipe: z.string().trim().min(1).optional() })
+      .strict()
+      .optional(),
   })
   .strict();
 

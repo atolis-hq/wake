@@ -121,12 +121,13 @@ function assertReplacement(facts: DeliveryFacts, requirement: Requirement, entry
       DeliveryRejection.ReplacementConflict,
       `${outputKey(entry.output)} does not preserve the original acceptance criteria`,
     );
+  const current = currentFor(facts, requirement);
+  if (entry.replaces === undefined && outputKey(entry.output) === outputKey(current)) return;
   if (entry.replaces === undefined)
     throw reject(
       DeliveryRejection.ReplacementConflict,
       `${key} replacement must name the output it replaces`,
     );
-  const current = currentFor(facts, requirement);
   if (outputKey(entry.replaces) !== outputKey(current))
     throw reject(
       DeliveryRejection.ReplacementConflict,
@@ -166,7 +167,7 @@ export function staleEntries(facts: DeliveryFacts): ReadonlySet<string> {
     .flatMap((selection) => selection.entries)
     .flatMap((entry) => (entry.replaces === undefined ? [] : [qualifying(facts, entry.replaces)]))
     .flatMap((output) => (output === undefined ? [] : [output.reference]))
-    .filter((reference) => !live.some((candidate) => isDeepStrictEqual(candidate, reference)));
+    .filter((reference) => !live.some((candidate) => sameRevision(candidate, reference)));
   const stale = new Set<string>();
   for (let changed = true; changed;) {
     changed = false;
@@ -183,4 +184,16 @@ export function staleEntries(facts: DeliveryFacts): ReadonlySet<string> {
 }
 
 const consumesAny = (consumed: readonly Output[], dead: readonly Output['reference'][]) =>
-  consumed.some((input) => dead.some((reference) => isDeepStrictEqual(reference, input.reference)));
+  consumed.some((input) => dead.some((reference) => sameRevision(reference, input.reference)));
+
+/** Provider metadata can gain a base/merge observation without changing the consumed code. */
+function sameRevision(a: Output['reference'], b: Output['reference']): boolean {
+  if (a.workItemId !== b.workItemId) return false;
+  if ('revisionId' in a) return 'revisionId' in b && a.revisionId === b.revisionId;
+  return (
+    !('revisionId' in b) &&
+    a.resourceId === b.resourceId &&
+    a.repositoryResourceId === b.repositoryResourceId &&
+    a.revision === b.revision
+  );
+}

@@ -8,6 +8,7 @@ import type {
   DelegationCaller,
   DelegationSubmission,
 } from '../contracts/delegation.js';
+import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
 import type {
   DeliveryCandidateCommand,
   DeliveryQaCommand,
@@ -18,7 +19,7 @@ import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { DelegationCommands } from './delegation-commands.js';
 import { DelegationGate } from './delegation-gate.js';
-import { DeliveryCoordinator, type DeliveryDependencies } from './delivery-coordinator.js';
+import { DeliveryCoordinator } from './delivery-coordinator.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
@@ -34,7 +35,7 @@ import {
   type WorkService,
 } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { CompiledWorkflow, DelegationPolicy, TransitionTarget } from '../contracts/config.js';
+import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildWorkflowRequest,
@@ -54,7 +55,6 @@ import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   ApprovalAuthorityKind,
   ConversationBuiltInCommand,
-  DeliveryCompletion,
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import {
@@ -123,7 +123,9 @@ export class OrchestrationService {
     this.projections = projections;
     this.journal = journal;
     this.work = work;
-    const repository = new OrchestrationRepository(journal);
+    const repository = new OrchestrationRepository(journal, (id) =>
+      this.delivery.completionReason(id),
+    );
     this.repository = repository;
     this.delegationGate = new DelegationGate(
       repository,
@@ -162,7 +164,7 @@ export class OrchestrationService {
     this.delivery = new DeliveryCoordinator(
       repository,
       deliveryDependencies(dependencies, async (parent) =>
-        completionOf(await this.startWorkflow.definitionFor(parent)),
+        this.startWorkflow.definitionFor(parent),
       ),
     );
     this.advanceWorkflow = new AdvanceWorkflow(
@@ -198,6 +200,14 @@ export class OrchestrationService {
         await this.deferredSignals.reconcile(context);
       },
     );
+  }
+
+  deliveryStateFor(workflowInstanceId: string) {
+    return this.delivery.inspect(workflowInstanceId);
+  }
+
+  deliveryQaPreparation(workflowInstanceId: string) {
+    return this.delivery.prepare(workflowInstanceId);
   }
 
   repositoryAuthority(workItemId: string) {
@@ -926,17 +936,14 @@ async function unavailableRunCompletion(): Promise<never> {
 
 function deliveryDependencies(
   dependencies: ReturnType<DelegationDependenciesFactory> | undefined,
-  completionFor: DeliveryDependencies['completionFor'],
+  definitionFor: DeliveryDependencies['definitionFor'],
 ): DeliveryDependencies {
   return {
     authority: dependencies?.authority ?? unavailableDelegationAuthority,
     repositories: dependencies?.repositories,
-    completionFor,
+    definitionFor,
   };
 }
-
-const completionOf = (definition: { readonly delegation?: DelegationPolicy }) =>
-  definition.delegation?.completion ?? DeliveryCompletion.QaApproved;
 
 const unavailableArtifacts: DelegationArtifacts = {
   validateInputs: unavailableRunCompletion,

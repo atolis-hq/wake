@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { RepositoryAssignment } from '../../contracts/repository-assignment.js';
-import type { RepositoryCloneResolver } from './git-workspace.js';
+import type { RepositoryCloneResolver } from '../../contracts/workspace.js';
 
 const exec = promisify(execFile);
 

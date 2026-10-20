@@ -151,6 +151,8 @@ export const deliveryQaSchema = deliveryQaCommandSchema
   .extend({
     /** Set when this failure used the last descendant slot: the parent must escalate. */
     exhausted: z.boolean().optional(),
+    runId: z.string().min(1).optional(),
+    activationId: z.string().min(1).optional(),
   })
   .strict();
 

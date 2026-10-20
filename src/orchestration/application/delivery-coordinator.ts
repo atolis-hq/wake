@@ -1,46 +1,43 @@
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
-import type { DelegationAuthority, DelegationRepositories } from '../contracts/delegation-ports.js';
 import {
   DelegationConflictError,
   delegationSubmissionSchema,
   type DelegationCaller,
 } from '../contracts/delegation.js';
+import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
 import {
   DeliveryRejectionError,
   deliveryCandidateCommandSchema,
   deliveryQaCommandSchema,
   deliverySelectionCommandSchema,
+  type DeliveryCandidate,
   type DeliveryCandidateCommand,
+  type DeliveryQa,
   type DeliveryQaCommand,
   type DeliverySelectionCommand,
 } from '../contracts/delivery.js';
 import { OrchestrationEventType } from '../contracts/events.js';
+import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   DelegationConflictCode,
+  DeliveryCompletion,
   DeliveryRejection,
   QaVerdict,
   WorkflowStatus,
-  type DeliveryCompletion,
 } from '../contracts/vocabulary.js';
 import { planCandidate } from '../domain/delivery-candidate.js';
 import { requirements, type DeliveryFacts } from '../domain/delivery-facts.js';
 import { assertQa, completionDecision, deliveryState } from '../domain/delivery-qa.js';
-import { assertCriteriaPreserving, originalOf } from '../domain/delivery-replacement.js';
+import { originalOf } from '../domain/delivery-replacement.js';
 import { reviseSelection } from '../domain/delivery-selection.js';
 import { delegationDraft } from './delegation-ledger.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
+import { DeliveryPreparation } from './delivery-preparation.js';
 import { verifyCandidateSources } from './delivery-sources.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 type Draft = Parameters<typeof delegationDraft>[2];
-
-export interface DeliveryDependencies {
-  readonly authority: DelegationAuthority;
-  /** Resolves a repository source through the parent's own repository authority. */
-  readonly repositories?: DelegationRepositories | undefined;
-  readonly completionFor: (parent: WorkflowInstanceView) => Promise<DeliveryCompletion>;
-}
 
 /**
  * Agent-led parent QA over the delegated delivery. The parent agent chooses what to select,
@@ -49,14 +46,18 @@ export interface DeliveryDependencies {
  * is stale, blocked or exhausted. Every fact lives in the parent's journal stream.
  */
 export class DeliveryCoordinator {
+  private readonly preparation: DeliveryPreparation;
   constructor(
     private readonly repository: OrchestrationRepository,
     private readonly dependencies: DeliveryDependencies,
-  ) {}
+  ) {
+    this.preparation = new DeliveryPreparation(repository, dependencies);
+  }
 
   async select(caller: DelegationCaller, input: DeliverySelectionCommand, context: CommandContext) {
     const command = deliverySelectionCommandSchema.parse(input);
     const parent = await this.parent(caller);
+    await this.assertCoordinatorStage(parent);
     return this.commit(parent, context, `selection:${command.requestId}`, async (facts) => {
       const { selection, replay } = reviseSelection(facts, command);
       return {
@@ -75,6 +76,8 @@ export class DeliveryCoordinator {
   ) {
     const command = deliveryCandidateCommandSchema.parse(input);
     const parent = await this.parent(caller);
+    await this.assertCoordinatorStage(parent);
+    const policy = (await this.dependencies.definitionFor(parent)).delegation?.qa;
     return this.commit(parent, context, `candidate:${command.candidateId}`, async (facts) => {
       const root = facts.reservations[0]?.rootWorkItemId;
       if (root === undefined)
@@ -86,6 +89,8 @@ export class DeliveryCoordinator {
           DeliveryRejection.Conflict,
           `Candidate ${command.candidateId} already exists with different contents`,
         );
+      if (policy !== undefined && policy.recipe !== command.recipe)
+        throw new Error('Candidate must use the configured QA recipe');
       // A replay re-proves the sources, so a restart cannot revive a candidate whose ref is gone.
       await verifyCandidateSources(parent, this.dependencies.repositories, candidate, facts);
       return {
@@ -101,11 +106,24 @@ export class DeliveryCoordinator {
   async recordQa(caller: DelegationCaller, input: DeliveryQaCommand, context: CommandContext) {
     const command = deliveryQaCommandSchema.parse(input);
     const parent = await this.parent(caller);
+    const definition = await this.dependencies.definitionFor(parent);
+    const policy = definition.delegation?.qa;
+    if (policy === undefined || parent.pendingActivation?.stage !== policy.stage)
+      throw new Error('QA verdicts require the configured QA stage');
     return this.commit(parent, context, `qa:${command.qaId}`, async (facts) => {
       const qa = assertQa(facts, command);
+      const candidate = facts.candidates.find((entry) => entry.candidateId === qa.candidateId)!;
+      await this.assertQaActor(caller, facts, candidate, qa, policy.recipe);
       const recorded = facts.qa.find((entry) => entry.qaId === command.qaId);
       if (recorded !== undefined) {
-        if (JSON.stringify({ ...recorded, exhausted: undefined }) !== JSON.stringify(qa))
+        if (
+          JSON.stringify({
+            ...recorded,
+            exhausted: undefined,
+            runId: undefined,
+            activationId: undefined,
+          }) !== JSON.stringify(qa)
+        )
           throw new DeliveryRejectionError(
             DeliveryRejection.Conflict,
             `QA ${command.qaId} was already recorded differently`,
@@ -117,8 +135,18 @@ export class DeliveryCoordinator {
         const candidate = facts.candidates.find((entry) => entry.candidateId === qa.candidateId)!;
         await verifyCandidateSources(parent, this.dependencies.repositories, candidate, facts);
       }
-      const exhausted = qa.verdict === QaVerdict.Fail && noDescendantCapacity(facts);
-      const payload = exhausted ? { ...qa, exhausted } : qa;
+      const route = definition.stages[stageName(policy.stage)]?.on.failed;
+      const routeExhausted =
+        route?.repeat !== undefined && (parent.repeatCounts[route.id] ?? 0) >= route.repeat.max;
+      const exhausted =
+        qa.verdict === QaVerdict.Fail &&
+        (routeExhausted || (await this.preparation.noDescendantCapacity(facts)));
+      const payload = {
+        ...qa,
+        runId: caller.runId,
+        activationId: caller.activationId,
+        ...(exhausted ? { exhausted } : {}),
+      };
       return {
         result: { qa: payload, replay: false },
         draft: { eventType: OrchestrationEventType.DeliveryQaRecorded, payload },
@@ -130,6 +158,11 @@ export class DeliveryCoordinator {
   async inspectFor(caller: DelegationCaller) {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     await this.dependencies.authority.assertCaller(caller, parent);
+    return this.inspect(parent.workflowInstanceId);
+  }
+
+  async inspect(id: string) {
+    const parent = (await this.repository.loadRequired(id)).view;
     const facts = await this.facts(parent);
     const state = deliveryState(facts);
     return {
@@ -142,7 +175,11 @@ export class DeliveryCoordinator {
       })),
       selection: facts.selections.at(-1) ?? null,
       history: facts.qa,
-      completion: completionDecision(state, await this.dependencies.completionFor(parent)),
+      completion: completionDecision(
+        state,
+        (await this.dependencies.definitionFor(parent)).delegation?.completion ??
+          DeliveryCompletion.QaApproved,
+      ),
     };
   }
 
@@ -151,12 +188,13 @@ export class DeliveryCoordinator {
    * is replaced by a new child, while correcting a still-running one is not supported.
    */
   async assertReplacements(caller: DelegationCaller, input: unknown): Promise<void> {
+    const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
+    await this.assertCoordinatorStage(parent);
     const submission = delegationSubmissionSchema.safeParse(input);
     const replacements = submission.success
       ? submission.data.assignments.filter((entry) => entry.replaces !== undefined)
       : [];
     if (replacements.length === 0) return;
-    const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
     await this.dependencies.authority.assertCaller(caller, parent);
     const facts = await this.facts(parent);
     for (const assignment of replacements) {
@@ -167,8 +205,44 @@ export class DeliveryCoordinator {
           DelegationConflictCode.ReplacementUnsupported,
           'Correcting a child that is still running is not supported; replace it once it is complete or superseded',
         );
-      assertCriteriaPreserving(facts, original, { ...assignment, workflowFingerprint: '' });
     }
+  }
+
+  completionReason(id: string) {
+    return this.preparation.completionReason(id);
+  }
+
+  prepare(id: string) {
+    return this.preparation.prepare(id);
+  }
+
+  private async assertQaActor(
+    caller: DelegationCaller,
+    facts: DeliveryFacts,
+    candidate: DeliveryCandidate,
+    qa: DeliveryQa,
+    recipe: string | undefined,
+  ) {
+    if (
+      !deliveryState(facts).candidateCurrent ||
+      facts.candidates.at(-1)?.candidateId !== qa.candidateId
+    )
+      throw new Error('QA candidate is no longer current');
+    if (this.dependencies.authority.assertQaCaller === undefined)
+      throw new Error('QA Run authority is unavailable');
+    await this.dependencies.authority.assertQaCaller(
+      caller,
+      qa.candidateId,
+      candidate.selectionRevision,
+      qa.revisions,
+    );
+    if (qa.environment.recipe !== recipe) throw new Error('QA must use the configured recipe');
+  }
+
+  private async assertCoordinatorStage(parent: WorkflowInstanceView): Promise<void> {
+    const policy = (await this.dependencies.definitionFor(parent)).delegation?.qa;
+    if (policy !== undefined && parent.pendingActivation?.stage === policy.stage)
+      throw new Error('The QA stage cannot choose its own candidate or selection');
   }
 
   private async parent(caller: DelegationCaller): Promise<WorkflowInstanceView> {
@@ -210,12 +284,4 @@ export class DeliveryCoordinator {
       }
     }
   }
-}
-
-/** The shared root bound is the existing repair budget; reaching it is an escalation. */
-function noDescendantCapacity(facts: DeliveryFacts): boolean {
-  const root = facts.reservations[0];
-  if (root === undefined) return false;
-  const used = facts.reservations.reduce((count, entry) => count + entry.children.length, 0);
-  return used >= root.maxDescendants;
 }

@@ -135,6 +135,24 @@ export interface ActivityExecutionContext {
     readonly path: string;
     readonly mode: ActivityWorkspaceMode;
     readonly checkoutRevision?: string | undefined;
+    readonly candidate?:
+      | {
+          readonly candidateId: string;
+          readonly selectionRevision: number;
+          readonly criteria: readonly string[];
+          readonly inputs: readonly {
+            readonly workItemId: string;
+            readonly outputName: string;
+            readonly revision: string;
+          }[];
+          readonly recipe?: string | undefined;
+          readonly repositories: readonly {
+            readonly resourceId: string;
+            readonly revision: string;
+            readonly path: string;
+          }[];
+        }
+      | undefined;
     readonly repository?:
       | {
           readonly resourceId: string;

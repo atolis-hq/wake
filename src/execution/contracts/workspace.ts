@@ -1,5 +1,6 @@
 import type { ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
+import type { PreparedCandidate } from './candidate.js';
 import type { RunId } from './identifiers.js';
 import type { RepositoryAssignment } from './repository-assignment.js';
 import type { RunView } from './views.js';
@@ -13,10 +14,12 @@ export interface WorkspaceRequest {
   readonly repositoryResource: ResourceView;
   /** Git checkout target, independent of the resource observation revision. */
   readonly checkoutRevision?: string;
+  readonly requiredSourceRef?: string;
   readonly assignment?: RepositoryAssignment;
 }
 
 export interface WorkspaceLease {
+  readonly candidate?: PreparedCandidate;
   readonly workspaceId: string;
   readonly path: string;
   /** Branch actually checked out for this lease, when the provider can attest it. */
@@ -73,4 +76,8 @@ export interface WorkspaceLockProvider {
 export interface WorkspaceLock {
   readonly acquired: boolean;
   release(): Promise<void>;
+}
+
+export interface RepositoryCloneResolver {
+  cloneLocator(resourceId: string, signal: AbortSignal): Promise<string>;
 }

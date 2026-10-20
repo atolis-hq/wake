@@ -339,6 +339,35 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
           {query.data.data.delegation && (
             <Panel>
               <h2>Delivery tree</h2>
+              {query.data.data.delegation.qa && (
+                <div>
+                  <h3>Candidate QA</h3>
+                  <p>
+                    {query.data.data.delegation.qa.candidateId ?? 'No candidate'} ·{' '}
+                    {query.data.data.delegation.qa.verdict ?? 'No verdict'} ·{' '}
+                    {query.data.data.delegation.qa.effective ? 'Current' : 'Needs verification'}
+                  </p>
+                  <p>{query.data.data.delegation.qa.reason}</p>
+                  {query.data.data.delegation.qa.exhausted && <p>Repair budget exhausted</p>}
+                  <ul>
+                    {query.data.data.delegation.qa.repositories.map((entry) => (
+                      <li key={entry.resourceId}>
+                        {entry.resourceId}@{entry.revision}
+                      </li>
+                    ))}
+                  </ul>
+                  <ul>
+                    {query.data.data.delegation.qa.stale.map((entry) => (
+                      <li key={entry}>Stale: {entry}</li>
+                    ))}
+                  </ul>
+                  <ul>
+                    {query.data.data.delegation.qa.findings.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <p>
                 Root:{' '}
                 <Link

@@ -34,10 +34,11 @@ export async function readDeliveryFacts(
       : [],
   );
   const consumed = new Map<string, Output[]>();
-  for (const { event, stream } of all) {
-    const child = instances.get(stream.id);
-    if (child === undefined || event.eventType !== OrchestrationEventType.DelegationInputsResolved)
-      continue;
+  for (const { event } of all) {
+    if (event.eventType !== OrchestrationEventType.DelegationInputsResolved) continue;
+    // Consumption receipts belong to the parent stream and identify their child in the payload.
+    const child = event.payload.childWorkItemId;
+    if (![...instances.values()].includes(child)) continue;
     consumed.set(child, [...(consumed.get(child) ?? []), ...event.payload.consumed]);
   }
   const mine = own.map(({ event }) => event);

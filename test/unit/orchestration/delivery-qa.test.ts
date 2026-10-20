@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
 import type {
   DelegatedAssignment,
+  DelegationReservation,
   DelegationResult,
 } from '../../../src/orchestration/contracts/delegation.js';
 import {
@@ -73,7 +74,11 @@ class FakeRemote {
 }
 
 function build(
-  options: { completion?: 'qa-approved' | 'merge-required'; descendants?: number } = {},
+  options: {
+    completion?: 'qa-approved' | 'merge-required';
+    descendants?: number;
+    repeats?: number;
+  } = {},
 ) {
   const journal = new FaultInjectingJournal(new FakeClock());
   const work = createWorkService(journal);
@@ -86,7 +91,7 @@ function build(
     outcomeSchema: z.object({ kind: z.enum(['done', 'failed']) }).strict(),
     outcomeKinds: ['done', 'failed'],
     resources: [],
-    executionKind: 'deterministic',
+    executionKind: 'agent',
     handler: { execute: async () => ({ kind: 'done' }) as const },
   });
   const stage = {
@@ -104,9 +109,23 @@ function build(
     parent: compileWorkflow(
       'parent',
       {
-        ...stage,
+        stages: {
+          work: {
+            ...stage.stages.work,
+            on: { done: { then: 'qa', repeat: { max: 100 } }, failed: { then: 'done' } },
+          },
+          qa: {
+            ...stage.stages.work,
+            execution: { workspace: 'read-only' },
+            on: {
+              done: { then: 'done' },
+              failed: { then: 'work', repeat: { max: options.repeats ?? 100 } },
+            },
+          },
+        },
         delegation: {
           workflows: ['child'],
+          qa: { stage: 'qa' },
           maxDepth: 1,
           maxDescendants: options.descendants ?? 8,
           maxConcurrentRuns: 4,
@@ -128,6 +147,7 @@ function build(
       artifacts,
       authority: {
         assertCaller: async () => undefined,
+        assertQaCaller: async () => undefined,
         repositories: async () => ['repo-a', 'repo-b'],
       },
       repositories: { resolve: remote.resolve },
@@ -139,6 +159,47 @@ function build(
 }
 
 type Fixture = ReturnType<typeof build>;
+
+/** Drives the ordinary configured route; the fake authority substitutes only for Run storage. */
+async function recordQa(
+  fixture: Fixture,
+  caller: DelegationCaller,
+  command: Parameters<Fixture['service']['recordDeliveryQa']>[1],
+  commandContext: CommandContext,
+  service = fixture.service,
+) {
+  const parent = (await service.get(caller.workflowInstanceId))!;
+  await service.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      outcome: { kind: 'done' },
+    },
+    context(commandContext.commandId + '-enter-qa'),
+  );
+  const qaParent = (await service.get(caller.workflowInstanceId))!;
+  Object.assign(caller, {
+    activationId: qaParent.pendingActivation!.activationId,
+    runId: 'run-' + qaParent.pendingActivation!.activationId,
+  });
+  try {
+    return await service.recordDeliveryQa(caller, command, commandContext);
+  } finally {
+    await service.acceptOutcome(
+      {
+        workflowInstanceId: parent.workflowInstanceId,
+        activationId: caller.activationId,
+        outcome: { kind: 'failed' },
+      },
+      context(commandContext.commandId + '-return'),
+    );
+    const resumed = (await service.get(caller.workflowInstanceId))!;
+    Object.assign(caller, {
+      activationId: resumed.pendingActivation?.activationId ?? caller.activationId,
+      runId: 'run-' + resumed.pendingActivation!.activationId,
+    });
+  }
+}
 
 async function startParent(fixture: Fixture) {
   await fixture.work.create({ workItemId: workId('1'), objective: 'parent' }, context('work-1'));
@@ -353,7 +414,8 @@ it('runs QA against the exact multi-repository revisions and rejects any other r
   // Testing main, or one repository only, cannot satisfy the gate.
   expect(
     await rejection(
-      fixture.service.recordDeliveryQa(
+      recordQa(
+        fixture,
         caller,
         qa('cand-1', { 'repo-a': sha('0'), 'repo-b': sha('b') }),
         context('qa-main'),
@@ -362,16 +424,13 @@ it('runs QA against the exact multi-repository revisions and rejects any other r
   ).toBe('revision-mismatch');
   expect(
     await rejection(
-      fixture.service.recordDeliveryQa(
-        caller,
-        qa('cand-1', { 'repo-a': sha('a') }),
-        context('qa-one'),
-      ),
+      recordQa(fixture, caller, qa('cand-1', { 'repo-a': sha('a') }), context('qa-one')),
     ),
   ).toBe('revision-mismatch');
   expect(
     await rejection(
-      fixture.service.recordDeliveryQa(
+      recordQa(
+        fixture,
         caller,
         qa('unknown', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
         context('qa-unknown'),
@@ -379,7 +438,8 @@ it('runs QA against the exact multi-repository revisions and rejects any other r
     ),
   ).toBe('unknown-candidate');
 
-  await fixture.service.recordDeliveryQa(
+  await recordQa(
+    fixture,
     caller,
     qa('cand-1', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
     context('qa-pass'),
@@ -452,7 +512,8 @@ it('replays a duplicate selection, candidate and QA without a second fact', asyn
       entry.event.eventType.startsWith('orchestration.delivery-'),
     ).length;
   await fixture.service.recordDeliveryCandidate(caller, outputCandidate(children), context('c'));
-  await fixture.service.recordDeliveryQa(
+  await recordQa(
+    fixture,
     caller,
     qa('cand-1', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
     context('q'),
@@ -483,7 +544,8 @@ it('replays a duplicate selection, candidate and QA without a second fact', asyn
   ).toBe(true);
   expect(
     (
-      await fixture.service.recordDeliveryQa(
+      await recordQa(
+        fixture,
         caller,
         qa('cand-1', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
         context('q2'),
@@ -510,14 +572,16 @@ it('treats an unavailable environment as a blocker and never as a pass', async (
   const revisions = { 'repo-a': sha('a'), 'repo-b': sha('b') };
   expect(
     await rejection(
-      fixture.service.recordDeliveryQa(
+      recordQa(
+        fixture,
         caller,
         qa('cand-1', revisions, { environment: { available: false } }),
         context('fake-pass'),
       ),
     ),
   ).toBe('invalid-verdict');
-  await fixture.service.recordDeliveryQa(
+  await recordQa(
+    fixture,
     caller,
     qa('cand-1', revisions, {
       qaId: 'qa-blocked',
@@ -615,13 +679,17 @@ it('requires a fetchable retained ref for assembled independent changes and reje
     undefined,
     () => ({
       artifacts: fixture.artifacts,
-      authority: { assertCaller: async () => undefined, repositories: async () => ['repo-a'] },
+      authority: {
+        assertCaller: async () => undefined,
+        assertQaCaller: async () => undefined,
+        repositories: async () => ['repo-a'],
+      },
       repositories: { resolve: fixture.remote.resolve },
       runHasEnded: async () => true,
     }),
   );
   const revisions = { 'repo-a': sha('c') };
-  await restarted.recordDeliveryQa(await callerOf(fixture), qa('asm', revisions), context('qa'));
+  await recordQa(fixture, await callerOf(fixture), qa('asm', revisions), context('qa'), restarted);
   const view = (await restarted.inspectDelegation(caller, context('inspect'))).delivery!;
   expect(view.candidate?.repositories[0]).toMatchObject({ revision: sha('c') });
 
@@ -629,10 +697,12 @@ it('requires a fetchable retained ref for assembled independent changes and reje
   fixture.remote.refs.set(`repo-a:${ref}`, sha('e'));
   expect(
     await rejection(
-      restarted.recordDeliveryQa(
+      recordQa(
+        fixture,
         await callerOf(fixture),
         qa('asm', revisions, { qaId: 'qa-later' }),
         context('qa-moved'),
+        restarted,
       ),
     ),
   ).toBe('source-unavailable');
@@ -715,6 +785,29 @@ it('replaces a defective terminal child, stales downstream consumers and keeps u
     ),
   ).rejects.toThrow('original required assignment');
 
+  await expect(
+    attempt(
+      replacement(
+        { outputs: [{ name: 'change', kind: 'change', requireReview: false }] },
+        { resourceId: 'repo-a', sourceRef: a!.workItemId, pullRequestBase: 'main' },
+      ),
+    ),
+  ).rejects.toThrow('original review requirement');
+  await expect(
+    attempt(
+      replacement(
+        { outputs: [{ name: 'change', kind: 'change', requireChecks: false }] },
+        { resourceId: 'repo-a', sourceRef: a!.workItemId, pullRequestBase: 'main' },
+      ),
+    ),
+  ).rejects.toThrow('original checks requirement');
+  fixture.remote.refs.set('repo-a:' + a!.workItemId, sha('e'));
+  await expect(
+    attempt(
+      replacement({}, { resourceId: 'repo-a', sourceRef: a!.workItemId, pullRequestBase: 'main' }),
+    ),
+  ).rejects.toThrow('start from the unmerged contribution');
+  fixture.remote.refs.set('repo-a:' + a!.workItemId, sha('a'));
   const second = await delegate(fixture, fingerprint, 'c2', [
     {
       id: 'a2',
@@ -777,7 +870,8 @@ it('stops repair at the root descendant bound and exposes unresolved findings (D
   const fixture = build({ descendants: 2 });
   const { children, caller } = await selectedTwoRepos(fixture);
   await fixture.service.recordDeliveryCandidate(caller, outputCandidate(children), context('c'));
-  await fixture.service.recordDeliveryQa(
+  await recordQa(
+    fixture,
     caller,
     qa(
       'cand-1',
@@ -818,7 +912,8 @@ it('finishes a QA-approved parent without merge but keeps a merge-required paren
     const fixture = build({ completion });
     const { children, caller } = await selectedTwoRepos(fixture);
     await fixture.service.recordDeliveryCandidate(caller, outputCandidate(children), context('c'));
-    await fixture.service.recordDeliveryQa(
+    await recordQa(
+      fixture,
       caller,
       qa('cand-1', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
       context('q'),
@@ -827,6 +922,11 @@ it('finishes a QA-approved parent without merge but keeps a merge-required paren
       .completion;
     expect(decision.complete).toBe(completion === 'qa-approved');
     if (completion === 'merge-required') expect(decision.reason).toContain('integration');
+    await finish(fixture, 'parent-1');
+    await finish(fixture, 'parent-1');
+    const completed = (await fixture.service.get(workflowInstanceId('parent-1')))!;
+    expect(completed.status).toBe(completion === 'qa-approved' ? 'completed' : 'blocked');
+    if (completion === 'merge-required') expect(completed.blockReason).toContain('integration');
   }
 });
 
@@ -859,6 +959,126 @@ it('does not support correcting a child that has not finished and says so explic
     )
     .catch((reason: unknown) => reason);
   expect(error).toMatchObject({ code: 'replacement-unsupported' });
+});
+
+it.each(['missing', 'fail', 'blocked', 'stale'] as const)(
+  'refuses real parent completion with %s QA',
+  async (verdict) => {
+    const fixture = build();
+    const { children, caller } = await selectedTwoRepos(fixture);
+    await fixture.service.recordDeliveryCandidate(
+      caller,
+      outputCandidate(children),
+      context('candidate'),
+    );
+    await expect(
+      fixture.service.recordDeliveryQa(
+        caller,
+        qa('cand-1', { 'repo-a': sha('a'), 'repo-b': sha('b') }),
+        context('self-qa'),
+      ),
+    ).rejects.toThrow('configured QA stage');
+    if (verdict !== 'missing') {
+      await recordQa(
+        fixture,
+        caller,
+        qa(
+          'cand-1',
+          { 'repo-a': sha('a'), 'repo-b': sha('b') },
+          {
+            verdict: verdict === 'stale' ? 'pass' : verdict,
+            findings: verdict === 'stale' ? [] : ['Needs repair'],
+          },
+        ),
+        context('qa'),
+      );
+    }
+    if (verdict === 'stale') {
+      await fixture.service.selectDelivery(
+        caller,
+        select(
+          'c1',
+          children.map((child) => ({
+            assignmentId: child.assignmentId,
+            child: child.workItemId,
+          })),
+          1,
+          'next-selection',
+        ),
+        context('next-selection'),
+      );
+    }
+    await finish(fixture, 'parent-1');
+    await finish(fixture, 'parent-1');
+    expect((await fixture.service.get(workflowInstanceId('parent-1')))!.status).toBe('blocked');
+  },
+);
+
+it('counts other parents under the same root when reporting exhausted repair capacity', async () => {
+  const fixture = build({ descendants: 4 });
+  const { children, caller } = await selectedTwoRepos(fixture);
+  const reservation = (await fixture.journal.readAll(0)).find(
+    (entry) => entry.event.eventType === OrchestrationEventType.DelegationReserved,
+  )!;
+  const original = reservation.event.payload as DelegationReservation;
+  const stream = workflowInstanceStream(workflowInstanceId('parent-1'));
+  await fixture.journal.appendToStream(stream, (await fixture.journal.readStream(stream)).length, [
+    createOrchestrationEventData({
+      eventId: 'other-parent-reservation',
+      eventType: OrchestrationEventType.DelegationReserved,
+      occurredAt: context('other').occurredAt,
+      correlationId: context('other').correlationId,
+      causationId: 'other',
+      actor: context('other').actor,
+      source: { kind: 'internal', id: 'fixture' },
+      payload: {
+        ...original,
+        cohortId: 'other-parent',
+        parentWorkflowInstanceId: workflowInstanceId('nested-parent'),
+        children: original.children.map((child, index) => ({
+          ...child,
+          workItemId: workId('nested-' + index),
+          workflowInstanceId: workflowInstanceId('nested-' + index),
+        })),
+      },
+    }),
+  ]);
+  await fixture.service.recordDeliveryCandidate(
+    caller,
+    outputCandidate(children),
+    context('candidate'),
+  );
+  const result = await recordQa(
+    fixture,
+    caller,
+    qa(
+      'cand-1',
+      { 'repo-a': sha('a'), 'repo-b': sha('b') },
+      { verdict: 'fail', findings: ['Needs repair'] },
+    ),
+    context('fail'),
+  );
+  expect(result.qa.exhausted).toBe(true);
+});
+
+it('reports QA failure-repeat exhaustion without resetting bounds on another Run', async () => {
+  const fixture = build({ repeats: 1 });
+  const { children, caller } = await selectedTwoRepos(fixture);
+  await fixture.service.recordDeliveryCandidate(
+    caller,
+    outputCandidate(children),
+    context('candidate'),
+  );
+  const command = qa(
+    'cand-1',
+    { 'repo-a': sha('a'), 'repo-b': sha('b') },
+    { verdict: 'fail', findings: ['Needs repair'] },
+  );
+  expect((await recordQa(fixture, caller, command, context('first'))).qa.exhausted).toBeUndefined();
+  expect(
+    (await recordQa(fixture, caller, { ...command, qaId: 'last' }, context('last'))).qa.exhausted,
+  ).toBe(true);
+  expect((await fixture.service.get(workflowInstanceId('parent-1')))!.status).toBe('blocked');
 });
 
 it('refuses delivery changes outside the parent current activation', async () => {
