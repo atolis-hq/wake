@@ -8,11 +8,17 @@ import type {
   DelegationCaller,
   DelegationSubmission,
 } from '../contracts/delegation.js';
+import type {
+  DeliveryCandidateCommand,
+  DeliveryQaCommand,
+  DeliverySelectionCommand,
+} from '../contracts/delivery.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { DelegationCommands } from './delegation-commands.js';
 import { DelegationGate } from './delegation-gate.js';
+import { DeliveryCoordinator, type DeliveryDependencies } from './delivery-coordinator.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
@@ -28,7 +34,7 @@ import {
   type WorkService,
 } from '../../work/index.js';
 import type { StartWorkflowInstance } from '../contracts/commands.js';
-import type { CompiledWorkflow, TransitionTarget } from '../contracts/config.js';
+import type { CompiledWorkflow, DelegationPolicy, TransitionTarget } from '../contracts/config.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import type {
   ChildWorkflowRequest,
@@ -48,6 +54,7 @@ import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   ApprovalAuthorityKind,
   ConversationBuiltInCommand,
+  DeliveryCompletion,
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import {
@@ -81,6 +88,7 @@ export class OrchestrationService {
   private readonly delegationCommands: DelegationCommands;
   private readonly delegationGate: DelegationGate;
   private readonly delegatedWork: DelegatedWork;
+  private readonly delivery: DeliveryCoordinator;
   private readonly prerequisiteReasons = (ids: readonly string[], snapshot?: DeliverySnapshot) =>
     this.delegatedWork.prerequisites.reasons(ids, snapshot);
 
@@ -151,6 +159,12 @@ export class OrchestrationService {
       this.delegatedWork,
       dependencies?.authority ?? unavailableDelegationAuthority,
     );
+    this.delivery = new DeliveryCoordinator(
+      repository,
+      deliveryDependencies(dependencies, async (parent) =>
+        completionOf(await this.startWorkflow.definitionFor(parent)),
+      ),
+    );
     this.advanceWorkflow = new AdvanceWorkflow(
       repository,
       this.startWorkflow,
@@ -203,12 +217,40 @@ export class OrchestrationService {
     );
   }
 
-  submitDelegation(caller: DelegationCaller, input: DelegationSubmission, context: CommandContext) {
+  async submitDelegation(
+    caller: DelegationCaller,
+    input: DelegationSubmission,
+    context: CommandContext,
+  ) {
+    await this.delivery.assertReplacements(caller, input);
     return this.delegationCommands.submit(caller, input, context);
   }
 
-  inspectDelegation(caller: DelegationCaller, context: CommandContext) {
-    return this.delegationCommands.inspect(caller, context);
+  selectDelivery(
+    caller: DelegationCaller,
+    input: DeliverySelectionCommand,
+    context: CommandContext,
+  ) {
+    return this.delivery.select(caller, input, context);
+  }
+
+  recordDeliveryCandidate(
+    caller: DelegationCaller,
+    input: DeliveryCandidateCommand,
+    context: CommandContext,
+  ) {
+    return this.delivery.recordCandidate(caller, input, context);
+  }
+
+  recordDeliveryQa(caller: DelegationCaller, input: DeliveryQaCommand, context: CommandContext) {
+    return this.delivery.recordQa(caller, input, context);
+  }
+
+  async inspectDelegation(caller: DelegationCaller, context: CommandContext) {
+    return {
+      ...(await this.delegationCommands.inspect(caller, context)),
+      delivery: await this.delivery.inspectFor(caller),
+    };
   }
 
   deliveryTree(id: WorkItemId) {
@@ -881,6 +923,20 @@ type DelegationDependenciesFactory = (queries: {
 async function unavailableRunCompletion(): Promise<never> {
   throw new Error('Delegation adapters unavailable');
 }
+
+function deliveryDependencies(
+  dependencies: ReturnType<DelegationDependenciesFactory> | undefined,
+  completionFor: DeliveryDependencies['completionFor'],
+): DeliveryDependencies {
+  return {
+    authority: dependencies?.authority ?? unavailableDelegationAuthority,
+    repositories: dependencies?.repositories,
+    completionFor,
+  };
+}
+
+const completionOf = (definition: { readonly delegation?: DelegationPolicy }) =>
+  definition.delegation?.completion ?? DeliveryCompletion.QaApproved;
 
 const unavailableArtifacts: DelegationArtifacts = {
   validateInputs: unavailableRunCompletion,

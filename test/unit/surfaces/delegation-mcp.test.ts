@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 import {
   DelegationAttentionError,
   DelegationConflictError,
+  DeliveryRejectionError,
 } from '../../../src/orchestration/index.js';
 import { registerDelegationTools } from '../../../src/surfaces/mcp/delegation.js';
 import { workId } from '../../support/identities.js';
@@ -72,6 +73,74 @@ it('rejects forged identity arguments and maps typed rejections to tool errors',
     code: 'not-answerable',
     message: 'Only an assignment-context blocker',
   });
+  await client.close();
+});
+
+const selection = {
+  requestId: 'select-1',
+  expectedRevision: 0,
+  entries: [
+    {
+      cohortId: 'cohort-1',
+      assignmentId: 'a',
+      output: { childWorkItemId: workId('2'), outputName: 'change' },
+    },
+  ],
+};
+
+it('binds delivery selection, candidate and QA to the session caller and maps typed rejections', async () => {
+  const select = vi.fn(async () => ({ replay: false }));
+  const candidate = vi.fn(async () => {
+    throw new DeliveryRejectionError('source-unavailable', 'Ref is missing');
+  });
+  const qa = vi.fn(async () => ({ replay: false }));
+  const client = await connect({
+    selectDelivery: select,
+    recordDeliveryCandidate: candidate,
+    recordDeliveryQa: qa,
+  });
+  expect(
+    (await client.callTool({ name: 'wake_delivery_select', arguments: selection })).isError,
+  ).not.toBe(true);
+  expect(select).toHaveBeenCalledWith(
+    caller,
+    selection,
+    expect.objectContaining({ commandId: 'command' }),
+  );
+  const rejected = await client.callTool({
+    name: 'wake_delivery_candidate',
+    arguments: {
+      candidateId: 'cand-1',
+      selectionRevision: 1,
+      repositories: [
+        {
+          resourceId: 'repo',
+          source: {
+            kind: 'retained-ref',
+            ref: 'refs/wake/delivery/root/cand-1/repo',
+            revision: 'a'.repeat(40),
+            contributions: [{ childWorkItemId: workId('2'), outputName: 'change' }],
+          },
+        },
+      ],
+    },
+  });
+  expect(rejected.isError).toBe(true);
+  expect(text(rejected)).toEqual({ code: 'source-unavailable', message: 'Ref is missing' });
+  // Forged identity or a verdict that is not part of the vocabulary never reaches the service.
+  const forged = await client.callTool({
+    name: 'wake_delivery_qa',
+    arguments: {
+      qaId: 'qa-1',
+      candidateId: 'cand-1',
+      verdict: 'approved',
+      revisions: [{ resourceId: 'repo', revision: 'a'.repeat(40) }],
+      environment: { available: true },
+      runId: 'forged',
+    },
+  });
+  expect(forged.isError).toBe(true);
+  expect(qa).not.toHaveBeenCalled();
   await client.close();
 });
 

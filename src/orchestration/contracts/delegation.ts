@@ -57,6 +57,11 @@ export const delegatedAssignmentSchema = z
     context: z.array(delegationRevisionReferenceSchema),
     repository: repositoryAssignmentRequestSchema.optional(),
     prerequisites: z.array(delegationPrerequisiteSchema).optional(),
+    /** Names the original required assignment this corrective child replaces. */
+    replaces: z
+      .object({ cohortId: z.string().min(1), assignmentId: z.string().min(1) })
+      .strict()
+      .optional(),
     outputs: z
       .array(
         z.union([

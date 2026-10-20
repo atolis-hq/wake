@@ -107,6 +107,35 @@ visible; its first observation survives restart. Settled cohorts release termina
 delegating activation's typed input and identity flags; exact results are read
 through the joined-results query rather than added to activity input schemas.
 
+Parent QA and bounded repair (`DeliveryCoordinator`) is agent-led. Wake records and
+validates; the agent decides what to assemble, test and repair. Three parent-stream facts
+carry it: `delivery-selection-revised` (the complete current selection, revisioned and
+compared with `expectedRevision`), `delivery-candidate-recorded` (the exact repository
+revision set, its retained-ref or selected-output sources, contributing outputs and shared
+criteria) and `delivery-qa-recorded` (a typed pass, fail or blocked verdict over exactly the
+candidate's revisions). A selection must cover every output of every original required
+assignment with its own qualifying result or a replacement; a manifest that omits one is
+rejected (`uncovered-requirement`), so a requirement cannot be waived. A replacement is a new
+child whose assignment names `replaces` (cohort and assignment); it must keep every original
+criterion, the repository and the outputs, start from the unmerged contribution when the
+original is unmerged, target the original integration base, and only replace a terminal
+(completed or superseded) child: correcting a running child is unsupported and says so
+(`replacement-unsupported`). Selecting a replacement names the output it replaces, compared
+with the current selection. An output replaced in the selection makes every selected result
+that consumed it (transitively) stale; unrelated results stay effective and earlier facts stay
+history. A candidate cannot be recorded while any selected result is stale. Independent
+changes in one repository need an assembled commit published under
+`refs/wake/delivery/<root>/<candidateId>/`; its commit is resolved through the parent's
+repository authority before the candidate is recorded and again before a passing verdict,
+so a missing or moved ref cannot pass and a restart reconstructs it from the retained ref.
+Refs are retained; nothing deletes them. QA fails closed: a pass needs an available
+environment, the candidate's recipe and no findings. Repair reuses the existing
+`maxDescendants` root bound and workflow repeat/retry limits; a failing verdict recorded when
+the root has no descendant capacity is marked exhausted and inspection returns its
+unresolved findings. The delegation policy's optional `completion` (`qa-approved`, the
+default, or `merge-required`) feeds `completion`: QA approval finishes the first and never
+the second, because governed integration is a later slice.
+
 Repository-bound assignments record an existing Repository Resource, requested
 source ref, resolved source commit and logical PR base in the reservation.
 Replaying a branch request retains its original pin, including across restart.

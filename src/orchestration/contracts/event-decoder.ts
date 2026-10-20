@@ -10,6 +10,7 @@ import {
   delegationResultSchema,
   delegationWaitSchema,
 } from './delegation.js';
+import { deliveryCandidateSchema, deliveryQaSchema, deliverySelectionSchema } from './delivery.js';
 
 import { eventDataSchema, eventEnvelopeSchema, type EventEnvelope } from '@atolis-hq/eventing';
 import {
@@ -330,6 +331,18 @@ const eventSchemas = {
   [OrchestrationEventType.DelegationReconciliationFailed]: workflowEnvelope(
     OrchestrationEventType.DelegationReconciliationFailed,
     z.object({ cohortId: z.string().min(1), reason: z.string().min(1) }).strict(),
+  ),
+  [OrchestrationEventType.DeliverySelectionRevised]: workflowEnvelope(
+    OrchestrationEventType.DeliverySelectionRevised,
+    deliverySelectionSchema,
+  ),
+  [OrchestrationEventType.DeliveryCandidateRecorded]: workflowEnvelope(
+    OrchestrationEventType.DeliveryCandidateRecorded,
+    deliveryCandidateSchema,
+  ),
+  [OrchestrationEventType.DeliveryQaRecorded]: workflowEnvelope(
+    OrchestrationEventType.DeliveryQaRecorded,
+    deliveryQaSchema,
   ),
   [OrchestrationEventType.DelegationReserved]: workflowEnvelope(
     OrchestrationEventType.DelegationReserved,

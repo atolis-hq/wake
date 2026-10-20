@@ -105,6 +105,8 @@ export const DelegationConflictCode = defineClosedVocabulary({
   WaitCycle: 'wait-cycle',
   StalePlan: 'stale-plan',
   AttentionOpen: 'attention-open',
+  ReplacementUnsupported: 'replacement-unsupported',
+  ReplacementInvalid: 'replacement-invalid',
 } as const);
 
 export type DelegationConflictCode = ValueOf<typeof DelegationConflictCode>;
@@ -119,3 +121,56 @@ export const PrerequisiteBlockCode = defineClosedVocabulary({
 } as const);
 
 export type PrerequisiteBlockCode = ValueOf<typeof PrerequisiteBlockCode>;
+
+export const DeliveryRejection = defineClosedVocabulary({
+  /** The submitted revision is not the current one; re-inspect before retrying. */
+  StaleSelection: 'stale-selection',
+  /** An original required assignment has no qualifying output or authorized replacement. */
+  UncoveredRequirement: 'uncovered-requirement',
+  UnknownRequirement: 'unknown-requirement',
+  /** The named output is not a qualifying result of the claimed child. */
+  OutputMismatch: 'output-mismatch',
+  /** A replacement did not name the output currently selected, or is not criteria-preserving. */
+  ReplacementConflict: 'replacement-conflict',
+  /** The selection still contains results whose upstream input was replaced. */
+  StaleOutput: 'stale-output',
+  NoSelection: 'no-selection',
+  CandidateCoverage: 'candidate-coverage',
+  /** A retained ref is missing, outside the delivery namespace, or no longer at its recorded commit. */
+  SourceUnavailable: 'source-unavailable',
+  UnknownCandidate: 'unknown-candidate',
+  /** QA named revisions other than the candidate's exact set. */
+  RevisionMismatch: 'revision-mismatch',
+  InvalidVerdict: 'invalid-verdict',
+  /** An identity was reused for different content. */
+  Conflict: 'identity-conflict',
+} as const);
+
+export type DeliveryRejection = ValueOf<typeof DeliveryRejection>;
+
+export const QaVerdict = defineClosedVocabulary({
+  Pass: 'pass',
+  Fail: 'fail',
+  /** The environment or a source was unavailable; never a pass. */
+  Blocked: 'blocked',
+} as const);
+
+export type QaVerdict = ValueOf<typeof QaVerdict>;
+
+export const CandidateSourceKind = defineClosedVocabulary({
+  /** The selected output revision is itself the tip (a single change or an intentional stack). */
+  Output: 'output',
+  /** An agent-assembled commit published under the delivery's retained ref namespace. */
+  RetainedRef: 'retained-ref',
+} as const);
+
+export type CandidateSourceKind = ValueOf<typeof CandidateSourceKind>;
+
+export const DeliveryCompletion = defineClosedVocabulary({
+  /** The parent may finish once the current candidate has an effective QA pass. */
+  QaApproved: 'qa-approved',
+  /** The parent additionally needs governed integration, which is not yet available. */
+  MergeRequired: 'merge-required',
+} as const);
+
+export type DeliveryCompletion = ValueOf<typeof DeliveryCompletion>;

@@ -764,6 +764,41 @@ named shared context or operator instructions. Work detail shows delivery
 parent/root links, child workflows, status, resources and blockers; existing
 freeze controls stop dispatch for the selected subtree.
 
+### Parent QA and bounded repair
+
+After the delegating stage resumes with joined results, the parent agent assesses and
+verifies the combined work with three Run-bound tools; `wake_delegation_inspect` returns the
+state as `delivery` (selection revision, required outputs, stale results, current candidate,
+QA verdict, repair state and completion).
+
+- `wake_delivery_select` records the complete current selection: for every output of every
+  original assignment, the child output that covers it. A replacement names the output it
+  replaces. Omitting a requirement, selecting an unqualified output or replacing something
+  other than the current choice is rejected, and `expectedRevision` must be the current
+  `selectionRevision`.
+- `wake_delivery_candidate` records the exact combined candidate: one entry per repository
+  with selected changes. Use `{ kind: "output", tip }` for a single change or an intentional
+  stack (list the other members in `includes`), or `{ kind: "retained-ref", ref, revision,
+  contributions }` for a commit the agent assembled. Retained refs live under
+  `refs/wake/delivery/<root WorkItem>/<candidateId>/` and are retained, never deleted. Wake
+  fetches the commit from the authorized repository before recording and before a pass.
+- `wake_delivery_qa` records `pass`, `fail` (with findings) or `blocked` for a candidate. The
+  revisions named must equal the candidate's repository set exactly. An unavailable
+  environment is `blocked`, never a pass, and a pass must follow the candidate's `recipe`.
+
+Repair uses a new child: submit an assignment with `replaces: { cohortId, assignmentId }`
+naming the original. It must keep every original criterion, repository and output; if the
+original change is unmerged it must start from that contribution and keep the original
+pull request base. Only a completed or superseded child can be replaced; correcting a running
+child is not supported (`replacement-unsupported`). New children count against the same root
+`maxDescendants` and workflow repeat/retry limits. When a failing QA verdict is recorded with
+no descendant capacity left, it is marked `exhausted` and the findings stay visible for a
+human. A replaced output makes its consumers stale until they are replaced too.
+
+`delegation.completion` is optional: `qa-approved` (default) lets the parent finish once the
+current candidate has a passing QA verdict without any merge; `merge-required` keeps the
+`completion` decision incomplete until governed integration exists.
+
 ### Queued prerequisites and Git stacks
 
 Assignments may declare `prerequisites`. Each entry selects an `assignmentId`,
