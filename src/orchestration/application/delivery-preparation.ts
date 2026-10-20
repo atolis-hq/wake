@@ -1,4 +1,5 @@
 import { WorkspaceMode, type ExecutionCandidate } from '../../execution/index.js';
+import type { DelegationReservation } from '../contracts/delegation.js';
 import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
 import type { DeliveryCompletionBlock } from '../contracts/delivery.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -28,9 +29,10 @@ export class DeliveryPreparation {
       deliveryState(facts),
       definition.delegation?.completion ?? DeliveryCompletion.QaApproved,
     );
+    const retryStage = await this.delegatingStage(id, facts.reservations.at(-1)!);
     const blocked = (reason: string): DeliveryCompletionBlock => ({
       reason,
-      deliveryGate: { retryStage: definition.entry },
+      deliveryGate: { retryStage },
     });
     if (!decision.complete) return blocked(decision.reason!);
     try {
@@ -103,6 +105,20 @@ export class DeliveryPreparation {
       );
     }
     return [...reservations.values()].reduce((sum, count) => sum + count, 0) >= root.maxDescendants;
+  }
+
+  private async delegatingStage(id: string, reservation: DelegationReservation) {
+    const original = (await this.repository.history(id)).events.find(
+      ({ event }) =>
+        event.eventType === OrchestrationEventType.ActivityRequested &&
+        event.payload.activationId === reservation.activationId,
+    );
+    if (
+      original?.event.eventType !== OrchestrationEventType.ActivityRequested ||
+      original.event.payload.stage === undefined
+    )
+      throw new Error('Missing delegating activation stage');
+    return original.event.payload.stage;
   }
 
   private async facts(parent: WorkflowInstanceView): Promise<DeliveryFacts> {

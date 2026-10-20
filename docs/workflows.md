@@ -815,8 +815,8 @@ blocked, historical-only or stale QA cannot complete the parent. Previously conf
 direct workflows without `delegation.qa` or explicit `delegation.completion` keep their
 existing routes. Work detail API and web views show candidate revisions, staleness, QA
 findings, exhaustion and the completion blocker. A final delivery gate block is eligible for
-operator retry: it starts the coordinating entry stage in a fresh activation, retaining the
-selection, QA history and existing workflow/root budgets. The agent can repair the candidate
+operator retry: it starts the latest cohort's recorded delegating stage in a fresh activation,
+retaining the selection, QA history and existing workflow/root budgets. The agent can repair the candidate
 or rerun QA once the environment is available. Completion source checks distinguish a missing
 or moved ref from an operational fetch failure; a transport failure preserves the QA verdict
 and holds completion until the source can be verified again.

@@ -89,6 +89,8 @@ it.each([
 ] as const)(
   'prepares exact multi-repo QA after restart and enforces the %s handoff (DC-16, DC-18, DC-24, DC-34)',
   async (mode) => {
+    const recovery = mode.startsWith('recover-');
+    let refineRuns = 0;
     const home = await mkdtemp(join(tmpdir(), 'wake-delivery-qa-'));
     homes.push(home);
     const paths = { a: join(home, 'repo-a'), b: join(home, 'repo-b') };
@@ -142,6 +144,7 @@ it.each([
                 },
               },
               parent: {
+                entry: recovery ? 'refine' : 'delegate',
                 delegation: {
                   workflows: ['child'],
                   maxDepth: 1,
@@ -151,6 +154,15 @@ it.each([
                   qa: { stage: 'qa' },
                 },
                 stages: {
+                  ...(recovery
+                    ? {
+                        refine: {
+                          ...stage('none', 'delegate'),
+                          with: { prompt: 'REFINE-STAGE' },
+                          on: { done: { then: 'delegate', repeat: { max: 1 } } },
+                        },
+                      }
+                    : {}),
                   // The delegating stage resumes after the join to assess and QA the combined work.
                   delegate: {
                     ...stage('none', 'qa'),
@@ -269,11 +281,17 @@ it.each([
       repository: { resourceId: repositoryIds[repo], sourceRef: 'main', pullRequestBase: base },
     });
     let reservation!: DelegationReservation;
+    if (recovery)
+      runner.scripts.push(async () => {
+        refineRuns++;
+        return done;
+      });
     runner.scripts.push(async (request) => {
       reservation = await current.orchestration['delegatedWork'].reserve(
         {
           workflowInstanceId: parent.workflowInstanceId,
-          activationId: parent.pendingActivation!.activationId,
+          activationId: (await current.orchestration.get(parent.workflowInstanceId))!
+            .pendingActivation!.activationId,
           runId: request.runId,
         },
         'cohort',
@@ -297,9 +315,15 @@ it.each([
           ),
         ).toBe(false),
       );
-    await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
-    await settle();
-    await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+    const startDelegation = async () => {
+      for (let pass = 0; pass < 4 && reservation === undefined; pass++) {
+        await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+        await settle();
+      }
+      await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+      await settle();
+    };
+    await startDelegation();
     expect(reservation, JSON.stringify(await current.execution.list())).toBeDefined();
     children = reservation.children;
     current = await createRoot();
@@ -876,6 +900,8 @@ it.each([
       );
       const resumed = (await current.orchestration.get(parent.workflowInstanceId))!;
       expect(resumed.deliveryGateBlock).toBeUndefined();
+      expect(resumed.currentStage).toBe('delegate');
+      expect(refineRuns).toBe(1);
       expect(resumed.pendingActivation!.sessionPolicy).toBe('fresh');
       expect(resumed.repeatCounts).toEqual(blocked.repeatCounts);
       expect(resumed.retryCounts).toEqual(blocked.retryCounts);
@@ -893,6 +919,7 @@ it.each([
         'completed',
       );
       expect(qaRounds).toBe(2);
+      expect(refineRuns).toBe(1);
       expect(
         (await current.orchestration.deliveryStateFor(parent.workflowInstanceId)).history,
       ).toHaveLength(2);
