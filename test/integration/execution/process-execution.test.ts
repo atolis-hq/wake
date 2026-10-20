@@ -269,6 +269,8 @@ describe('cliRunner', () => {
         '3',
         '--allowedTools',
         'Read',
+        '--disallowedTools',
+        'ScheduleWakeup',
         '--',
         'ship',
       ],
@@ -543,6 +545,8 @@ describe('cliRunner', () => {
       '12',
       '--allowedTools',
       'Bash(git *) Read',
+      '--disallowedTools',
+      'ScheduleWakeup',
       '--',
       'ship',
     ]);
@@ -561,6 +565,8 @@ describe('cliRunner', () => {
       'stream-json',
       '--verbose',
       '--include-partial-messages',
+      '--disallowedTools',
+      'ScheduleWakeup',
       '--',
       'ship',
     ]);

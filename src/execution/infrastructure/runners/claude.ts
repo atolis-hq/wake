@@ -42,6 +42,10 @@ export function createClaudeRunner(options: CliRunnerOptions = {}): Runner {
   );
 }
 
+// `claude -p` stays alive until a pending wakeup fires, even past its background-wait cap.
+// A finished run would hang until Wake's idle timeout kills it and discards the result.
+const claudeDisallowedTools = ['ScheduleWakeup'];
+
 export function claudeCommandArgs(
   request: RunnerRequest,
   passthroughArgs: readonly string[] = [],
@@ -62,6 +66,8 @@ export function claudeCommandArgs(
     ...(request.allowedTools.length === 0
       ? []
       : ['--allowedTools', claudeAllowedTools(request).join(' ')]),
+    '--disallowedTools',
+    claudeDisallowedTools.join(' '),
     ...(request.mcpServers === undefined || request.mcpServers.length === 0
       ? []
       : ['--mcp-config', JSON.stringify(claudeMcpConfig(request)), '--strict-mcp-config']),
