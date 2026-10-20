@@ -1,5 +1,10 @@
 import { DelegationOutputKind, WorkflowArtifactOutputKind } from '../orchestration/index.js';
-import { presentResource, toWorkItemKey, type WorkDetailResponse } from '../surfaces/index.js';
+import {
+  presentResource,
+  toWorkItemKey,
+  type DeliveryQaResponse,
+  type WorkDetailResponse,
+} from '../surfaces/index.js';
 import type { WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 
@@ -11,7 +16,12 @@ export async function presentDelivery(
   const cohorts = await root.orchestration.deliveryTree(work.workItemId);
   if (cohorts.length === 0 && work.delegation === undefined) return {};
   const delivery = await root.work.deliverySnapshot();
-  const state = await deliveryStateFor(root, work);
+  const parent = await primaryWorkflowFor(root, work);
+  const state =
+    parent === undefined
+      ? undefined
+      : await root.orchestration.deliveryStateFor(parent.workflowInstanceId);
+  const attention = await presentAttention(root, parent);
   const qa = state === undefined ? undefined : presentQa(state);
   const selected = new Set(
     state?.selection?.entries.map((entry) => `${entry.childWorkItemId}/${entry.output.name}`),
@@ -20,16 +30,12 @@ export async function presentDelivery(
   const staleKeys = new Set(stale.map((entry) => `${entry.workItemKey}/${entry.outputName}`));
   return {
     delegation: {
-      ...(qa === undefined ? {} : { qa: { ...qa, staleOutputs: stale } }),
-      cohorts: cohorts.map((cohort) => ({
-        cohortId: cohort.cohortId,
-        settled: cohort.settled,
-        ...(cohort.failureReason === undefined ? {} : { failureReason: cohort.failureReason }),
-      })),
-      rootWorkItemKey: toWorkItemKey(work.delegation?.rootWorkItemId ?? work.workItemId),
-      ...(work.delegation === undefined
-        ? {}
-        : { parentWorkItemKey: toWorkItemKey(work.delegation.parentWorkItemId) }),
+      ...presentHeader(
+        work,
+        cohorts,
+        attention,
+        qa === undefined ? undefined : { ...qa, staleOutputs: stale },
+      ),
       children: await Promise.all(
         cohorts.flatMap((cohort) =>
           cohort.children.map(async (child) => {
@@ -46,6 +52,9 @@ export async function presentDelivery(
               workflowName: child.workflowName,
               status: child.workflow?.status ?? 'registration-pending',
               cohortId: cohort.cohortId,
+              ...(child.prerequisiteBlocker === undefined
+                ? {}
+                : { prerequisiteBlocker: child.prerequisiteBlocker }),
               ...presentPlacement(child, selected, staleKeys),
               ...((availability.reason ?? child.prerequisiteBlocker ?? child.workflow?.blockReason)
                 ? {
@@ -66,6 +75,27 @@ export async function presentDelivery(
 }
 
 type Cohorts = Awaited<ReturnType<CompositionRoot['orchestration']['deliveryTree']>>;
+
+function presentHeader(
+  work: WorkItemView,
+  cohorts: Cohorts,
+  attention: Awaited<ReturnType<typeof presentAttention>>,
+  qa: DeliveryQaResponse | undefined,
+) {
+  return {
+    ...(qa === undefined ? {} : { qa }),
+    ...(attention === undefined ? {} : { attention }),
+    cohorts: cohorts.map((cohort) => ({
+      cohortId: cohort.cohortId,
+      settled: cohort.settled,
+      ...(cohort.failureReason === undefined ? {} : { failureReason: cohort.failureReason }),
+    })),
+    rootWorkItemKey: toWorkItemKey(work.delegation?.rootWorkItemId ?? work.workItemId),
+    ...(work.delegation === undefined
+      ? {}
+      : { parentWorkItemKey: toWorkItemKey(work.delegation.parentWorkItemId) }),
+  };
+}
 
 /** Stale keys are `cohort/assignment/output`; the reason is the one the selection rules apply. */
 function staleOutputs(state: DeliveryStateView | undefined, cohorts: Cohorts) {
@@ -108,6 +138,14 @@ function presentPlacement(
     prerequisites: (child.prerequisiteWorkItemIds ?? []).map(toWorkItemKey),
     ...(child.replaces === undefined ? {} : { replaces: child.replaces }),
     outputs: child.outputs.map((output) => ({
+      ...('repository' in output && output.repository !== undefined
+        ? {
+            repository: {
+              resourceId: output.repository.resourceId,
+              pullRequestBase: output.repository.pullRequestBase,
+            },
+          }
+        : {}),
       name: output.name,
       kind: 'kind' in output ? DelegationOutputKind.Change : WorkflowArtifactOutputKind,
       required: output.required !== false,
@@ -117,16 +155,37 @@ function presentPlacement(
   };
 }
 
-async function deliveryStateFor(root: CompositionRoot, work: WorkItemView) {
-  const parent = (await root.orchestration.listAll()).find(
+async function primaryWorkflowFor(root: CompositionRoot, work: WorkItemView) {
+  return (await root.orchestration.listAll()).find(
     (view) => view.workItemId === work.workItemId && view.parentWorkflowInstanceId === undefined,
   );
-  return parent === undefined
-    ? undefined
-    : await root.orchestration.deliveryStateFor(parent.workflowInstanceId);
 }
 
-type DeliveryStateView = NonNullable<Awaited<ReturnType<typeof deliveryStateFor>>>;
+type DeliveryStateView = Awaited<ReturnType<CompositionRoot['orchestration']['deliveryStateFor']>>;
+
+/** The parent's open attention request and the replies already accepted for it. */
+async function presentAttention(
+  root: CompositionRoot,
+  parent: Awaited<ReturnType<typeof primaryWorkflowFor>>,
+) {
+  if (parent?.delegationAttention === undefined) return undefined;
+  const open = await root.orchestration.openDelegationAttention(
+    parent.workflowInstanceId,
+    parent.delegationAttention.activationId,
+  );
+  if (open === null) return undefined;
+  return {
+    cohortId: open.cohortId,
+    revision: open.revision,
+    blockers: open.blockers.map((blocker) => ({
+      blockerId: blocker.blockerId,
+      workItemKey: toWorkItemKey(blocker.childWorkItemId),
+      kind: blocker.kind,
+      reason: blocker.reason,
+      answered: open.responses.some((reply) => reply.blockerId === blocker.blockerId),
+    })),
+  };
+}
 
 function presentQa(state: DeliveryStateView) {
   return {

@@ -340,6 +340,28 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
           {query.data.data.delegation && (
             <Panel>
               <h2>Delivery tree</h2>
+              {query.data.data.delegation.attention && (
+                <div>
+                  <h3>Waiting on parent assessment</h3>
+                  <ul>
+                    {query.data.data.delegation.attention.blockers.map((blocker) => (
+                      <li key={blocker.blockerId}>
+                        <Link to={'/work/' + encodeURIComponent(blocker.workItemKey)}>
+                          {blocker.kind}
+                        </Link>
+                        : {blocker.reason}
+                        {blocker.answered && ' (reply accepted)'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {query.data.data.delegation.cohorts?.map((cohort) => (
+                <p key={cohort.cohortId}>
+                  Cohort {cohort.cohortId}: {cohort.settled ? 'settled' : 'waiting'}
+                  {cohort.failureReason && ` (${cohort.failureReason})`}
+                </p>
+              ))}
               {query.data.data.delegation.qa && (
                 <div>
                   <h3>Candidate QA</h3>
@@ -418,7 +440,16 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                       </>
                     )}
                     {child.prerequisites && child.prerequisites.length > 0 && (
-                      <> · waits for {child.prerequisites.length} prerequisite(s)</>
+                      <>
+                        {' · prerequisites: '}
+                        {child.prerequisites.map((key, index) => (
+                          <span key={key}>
+                            {index > 0 && ', '}
+                            <Link to={'/work/' + encodeURIComponent(key)}>{key}</Link>
+                          </span>
+                        ))}
+                        {child.prerequisiteBlocker && <> (waiting: {child.prerequisiteBlocker})</>}
+                      </>
                     )}
                     {child.outputs && (
                       <ul>
@@ -426,6 +457,8 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                           <li key={output.name}>
                             {output.name} ({output.kind},{' '}
                             {output.required ? 'required' : 'optional'})
+                            {output.repository &&
+                              ` · ${output.repository.resourceId} → ${output.repository.pullRequestBase}`}
                             {output.selected && ' · selected'}
                             {output.stale && ' · stale'}
                           </li>

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { FileArtifactMcpSessionStore } from '../../../src/artifacts/index.js';
+import { createAnalyticsReports } from '../../../src/bootstrap/analytics-reports.js';
 import { createArtifactMcpServerForSession } from '../../../src/bootstrap/artifact-mcp.js';
 import {
   createCompositionRoot,
@@ -14,6 +15,7 @@ import {
   parseRootConfig,
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
+import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
 import { createActivationScheduler } from '../../../src/control-plane/index.js';
 import {
   isActiveRunStatus,
@@ -32,6 +34,7 @@ import {
   selectGitHubAdapterEvent,
 } from '../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../src/integrations/github/contracts/vocabulary.js';
+import type { TimeSeriesReport } from '../../../src/kernel/index.js';
 import {
   createOrchestrationEventData,
   OrchestrationEventType,
@@ -271,6 +274,45 @@ it('production composition rejects unrelated accepted and draft context, accepts
   ]);
   const resumedParent = (await restarted.orchestration.get(parent.workflowInstanceId))!;
   expect(resumedParent.pendingActivation!.input).toEqual(parent.pendingActivation!.input);
+  // DC-25 through the production report registry: the nested child and grandchild completions
+  // are accepted child results, never delivered roots, and a fresh registry reads the same.
+  const reportAt = async () => {
+    const reports = createAnalyticsReports(f.journal, () => '2026-10-19T00:00:00.000Z');
+    return ((await reports.report('delivery-activity', '1d')).data as TimeSeriesReport).totals;
+  };
+  const counted = await reportAt();
+  expect(counted).toEqual({
+    // Only the standalone `outsider` item is a delivered root.
+    'root-deliveries': 1,
+    'accepted-child-results': 2,
+    'corrective-activations': 0,
+  });
+  expect(await reportAt()).toEqual(counted);
+  // DC-23 nested: the child's detail shows its parent and root; the root tree lists both levels
+  // flat, each row naming its own parent.
+  const nestedView = await presentDelivery(
+    restarted,
+    (await restarted.work.get(child.workItemId))!,
+  );
+  expect(nestedView.delegation).toMatchObject({
+    rootWorkItemKey: toWorkItemKey(parent.workItemId),
+    parentWorkItemKey: toWorkItemKey(parent.workItemId),
+  });
+  expect(nestedView.delegation!.children).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        workItemKey: toWorkItemKey(child.workItemId),
+        parentWorkItemKey: toWorkItemKey(parent.workItemId),
+        cohortId: 'top',
+      }),
+      expect.objectContaining({
+        workItemKey: toWorkItemKey(nested.children[0]!.workItemId),
+        parentWorkItemKey: toWorkItemKey(child.workItemId),
+        cohortId: 'nested',
+        status: 'completed',
+      }),
+    ]),
+  );
   // Accepted child findings are usable in a later cohort, with a new immutable grant.
   const next = await restarted.orchestration['delegatedWork'].reserve(
     { ...caller, activationId: resumedParent.pendingActivation!.activationId, runId: 'later-run' },
@@ -1018,6 +1060,19 @@ it('answers an assignment-context blocker through production composition, replay
           events.filter((entry) => entry.event.eventType === 'artifact-context.delegated').length,
       );
   const before = await delegated();
+  // DC-23: the operator sees the parent is waiting on an assessment and which child blocks it.
+  const waitingView = await presentDelivery(f.root, (await f.root.work.get(parent.workItemId))!);
+  expect(waitingView.delegation!.attention).toMatchObject({
+    cohortId: 'ctx',
+    blockers: [
+      {
+        workItemKey: toWorkItemKey(asker!.workItemId),
+        answered: false,
+        reason: expect.any(String),
+      },
+    ],
+  });
+  expect(waitingView.delegation!.cohorts).toEqual([{ cohortId: 'ctx', settled: false }]);
   await f.root.orchestration['delegatedWork'].attention.respond(
     caller,
     reply,
@@ -1026,6 +1081,9 @@ it('answers an assignment-context blocker through production composition, replay
   const root = await f.restart();
   await root.orchestration['delegatedWork'].attention.respond(caller, reply, context('ctx-replay'));
   expect(await delegated()).toBe(before + 1);
+  // After restart and an accepted reply the same blocker is shown as answered.
+  const answeredView = await presentDelivery(root, (await root.work.get(parent.workItemId))!);
+  expect(answeredView.delegation!.attention?.blockers[0]).toMatchObject({ answered: true });
   expect((await root.orchestration.get(asker!.workflowInstanceId))!.status).toBe('active');
   expect((await root.orchestration.get(steady!.workflowInstanceId))!.status).toBe('active');
   // The parent hands a question to a human: it is published as an accepted outcome while the

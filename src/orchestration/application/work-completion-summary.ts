@@ -10,7 +10,7 @@ import { selectWorkEvent, WorkEventType } from '../../work/index.js';
 import { selectWorkflowOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 
-interface CompletionFacts {
+export interface CompletionFacts {
   readonly created: Map<string, number>;
   readonly titles: Map<string, string>;
   readonly instances: Map<string, string>;
@@ -19,8 +19,12 @@ interface CompletionFacts {
   readonly delegated: Set<string>;
 }
 
-export async function queryWorkCompletionSummary(journal: EventJournal, query: ReportQuery) {
-  const facts = await readCompletionFacts(journal, query);
+export async function queryWorkCompletionSummary(
+  journal: EventJournal,
+  query: ReportQuery,
+  shared?: CompletionFacts,
+) {
+  const facts = shared ?? (await readCompletionFacts(journal, query));
   const from = Date.parse(query.window.from),
     to = Date.parse(query.window.to);
   let workItemsDone = 0,

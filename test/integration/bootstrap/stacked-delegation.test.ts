@@ -473,6 +473,13 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         (child) => child.workItemKey === toWorkItemKey(childOf('a2').workItemId),
       )!.blockReason,
     ).toContain('branch moved');
+    // DC-23: the blocked stacked child names its prerequisite for navigation and why it waits,
+    // while an unaffected sibling with satisfied prerequisites reports no blocker.
+    const rows = new Map(detail!.data.delegation!.children.map((row) => [row.workItemKey, row]));
+    const blockedRow = rows.get(toWorkItemKey(childOf('a2').workItemId))!;
+    expect(blockedRow.prerequisites).toContain(toWorkItemKey(childOf('a1').workItemId));
+    expect(blockedRow.prerequisiteBlocker).toContain('branch moved');
+    expect(rows.get(toWorkItemKey(childOf('b2').workItemId))!.prerequisiteBlocker).toBeUndefined();
     // Preserve historical receipts; returning to the exact source is an explicit agent operation.
     await git(paths.a, 'update-ref', 'refs/heads/' + childOf('a1').workItemId, heads.get('a1')!);
     const upstreamPr = (await root.resources.findByExternalKey({

@@ -1505,6 +1505,20 @@ it.each(['/approved', '/accepted', '/changes Please revise.'])(
 it('shows delivery ancestry, child status, repository links and blockers (DC-23)', async () => {
   const client = detailClient(null, undefined, [], undefined, 'DONE', false, [], [], false, {
     rootWorkItemKey: 'wk_root',
+    attention: {
+      cohortId: 'cohort',
+      revision: 2,
+      blockers: [
+        {
+          blockerId: 'b1',
+          workItemKey: 'wk_child',
+          kind: 'context',
+          reason: 'Needs the API version',
+          answered: true,
+        },
+      ],
+    },
+    cohorts: [{ cohortId: 'cohort', settled: false }],
     parentWorkItemKey: 'wk_parent',
     children: [
       {
@@ -1517,8 +1531,18 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
         cohortId: 'cohort',
         repository: { resourceId: 'repository-1', pullRequestBase: 'release' },
         prerequisites: ['wk_upstream'],
+        prerequisiteBlocker: 'Upstream branch moved',
         replaces: { cohortId: 'cohort', assignmentId: 'original' },
-        outputs: [{ name: 'change', kind: 'change', required: true, selected: true, stale: true }],
+        outputs: [
+          {
+            name: 'change',
+            kind: 'change',
+            required: true,
+            selected: true,
+            stale: true,
+            repository: { resourceId: 'repository-2', pullRequestBase: 'release' },
+          },
+        ],
         blockReason: 'Upstream branch moved; agent assessment required',
         resources: [
           {
@@ -1561,7 +1585,15 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
     // DC-23: workflow position, repository base, prerequisites, correction and evidence state.
     expect(screen.getByText(/stage implement/)).toBeTruthy();
     expect(screen.getByText(/repository-1 → release/)).toBeTruthy();
-    expect(screen.getByText(/waits for 1 prerequisite/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'wk_upstream' }).getAttribute('href')).toBe(
+      '/work/wk_upstream',
+    );
+    expect(screen.getByText(/waiting: Upstream branch moved/)).toBeTruthy();
+    expect(screen.getByText(/repository-2 → release/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Waiting on parent assessment' })).toBeTruthy();
+    expect(screen.getByText(/Needs the API version/)).toBeTruthy();
+    expect(screen.getByText(/reply accepted/)).toBeTruthy();
+    expect(screen.getByText(/Cohort cohort: waiting/)).toBeTruthy();
     expect(screen.getByText(/corrects original/)).toBeTruthy();
     expect(screen.getByText(/change \(change, required\)/)).toBeTruthy();
     expect(screen.getByText(/selected/)).toBeTruthy();

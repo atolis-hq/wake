@@ -28,6 +28,9 @@ export function decodeDelivery(
     rootWorkItemKey: string(record.rootWorkItemKey, child(path, 'rootWorkItemKey')),
     ...optionalStringProperty(record, 'parentWorkItemKey', path),
     ...(record.qa === undefined ? {} : { qa: decodeQa(record.qa, child(path, 'qa')) }),
+    ...(record.attention === undefined
+      ? {}
+      : { attention: decodeAttention(record.attention, child(path, 'attention')) }),
     ...(record.cohorts === undefined
       ? {}
       : {
@@ -52,18 +55,8 @@ export function decodeDelivery(
         cohortId: string(item.cohortId, child(path, 'cohortId')),
         ...(item.repository === undefined
           ? {}
-          : {
-              repository: {
-                resourceId: string(
-                  object(item.repository, child(path, 'repository')).resourceId,
-                  child(path, 'repository.resourceId'),
-                ),
-                pullRequestBase: string(
-                  object(item.repository, child(path, 'repository')).pullRequestBase,
-                  child(path, 'repository.pullRequestBase'),
-                ),
-              },
-            }),
+          : { repository: decodeRepository(item.repository, child(path, 'repository')) }),
+        ...optionalStringProperty(item, 'prerequisiteBlocker', path),
         ...(item.prerequisites === undefined
           ? {}
           : { prerequisites: array(item.prerequisites, child(path, 'prerequisites'), string) }),
@@ -92,6 +85,9 @@ export function decodeDelivery(
                   required: boolean(row.required, child(path, 'required')),
                   selected: boolean(row.selected, child(path, 'selected')),
                   stale: boolean(row.stale, child(path, 'stale')),
+                  ...(row.repository === undefined
+                    ? {}
+                    : { repository: decodeRepository(row.repository, child(path, 'repository')) }),
                 };
               }),
             }),
@@ -99,6 +95,32 @@ export function decodeDelivery(
         resources: array(item.resources, child(path, 'resources'), decodeResourceItem),
       };
     }),
+  };
+}
+
+function decodeAttention(value: unknown, path: string) {
+  const record = object(value, path);
+  return {
+    cohortId: string(record.cohortId, child(path, 'cohortId')),
+    revision: number(record.revision, child(path, 'revision')),
+    blockers: array(record.blockers, child(path, 'blockers'), (value, path = '') => {
+      const row = object(value, path);
+      return {
+        blockerId: string(row.blockerId, child(path, 'blockerId')),
+        workItemKey: string(row.workItemKey, child(path, 'workItemKey')),
+        kind: string(row.kind, child(path, 'kind')),
+        reason: string(row.reason, child(path, 'reason')),
+        answered: boolean(row.answered, child(path, 'answered')),
+      };
+    }),
+  };
+}
+
+function decodeRepository(value: unknown, path: string) {
+  const record = object(value, path);
+  return {
+    resourceId: string(record.resourceId, child(path, 'resourceId')),
+    pullRequestBase: string(record.pullRequestBase, child(path, 'pullRequestBase')),
   };
 }
 

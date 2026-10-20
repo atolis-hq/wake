@@ -8,7 +8,7 @@ import {
 } from '../../kernel/index.js';
 import { selectOrchestrationEvent } from '../contracts/event-decoder.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { readCompletionFacts } from './work-completion-summary.js';
+import { readCompletionFacts, type CompletionFacts } from './work-completion-summary.js';
 
 export const DeliveryActivityReportId = defineClosedVocabulary({
   Activity: 'delivery-activity',
@@ -107,8 +107,12 @@ function correctiveStarts(facts: DeliveryFacts): Map<string, number> {
   return firstStart;
 }
 
-export async function queryDeliveryActivity(journal: EventJournal, query: ReportQuery) {
-  const roots = await readCompletionFacts(journal, query);
+export async function queryDeliveryActivity(
+  journal: EventJournal,
+  query: ReportQuery,
+  shared?: CompletionFacts,
+) {
+  const roots = shared ?? (await readCompletionFacts(journal, query));
   const facts: DeliveryFacts = {
     resultTimes: new Map(),
     correctiveInstances: new Set(),

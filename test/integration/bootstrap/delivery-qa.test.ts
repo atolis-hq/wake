@@ -39,6 +39,7 @@ import {
   ResourceCorrelationRole,
   resourceId,
 } from '../../../src/resources/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
@@ -744,6 +745,28 @@ it.each([
       const stale = await current.orchestration.deliveryStateFor(parent.workflowInstanceId);
       expect(stale.stale).toContain('cohort/a2/delivery');
       expect(stale.stale).not.toContain('cohort/b1/delivery');
+      // DC-23: the same stale set, as the operator sees it, after a restart-equivalent rebuild.
+      const shown = await presentDelivery(current, (await current.work.get(parentWork))!);
+      expect(shown.delegation!.qa!.staleOutputs).toEqual([
+        {
+          workItemKey: toWorkItemKey(a2.workItemId),
+          outputName: 'delivery',
+          reason: expect.stringContaining('replaced'),
+        },
+      ]);
+      const rows = new Map(shown.delegation!.children.map((entry) => [entry.workItemKey, entry]));
+      expect(rows.get(toWorkItemKey(a2.workItemId))!.outputs![0]).toMatchObject({
+        name: 'delivery',
+        stale: true,
+      });
+      expect(rows.get(toWorkItemKey(b1.workItemId))!.outputs![0]).toMatchObject({ stale: false });
+      expect(rows.get(toWorkItemKey(fixes[0]!.workItemId))).toMatchObject({
+        replaces: { cohortId: 'cohort', assignmentId: a1.assignmentId },
+        outputs: [{ name: 'delivery', selected: true, stale: false }],
+      });
+      expect(rows.get(toWorkItemKey(a1.workItemId))!.outputs![0]).toMatchObject({
+        selected: false,
+      });
       const fixRun = (await current.execution.list()).find(
         (run) =>
           run.workflowInstanceId === fixes[1]!.workflowInstanceId &&

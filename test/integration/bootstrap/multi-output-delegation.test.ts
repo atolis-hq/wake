@@ -20,6 +20,7 @@ import {
   parseRootConfig,
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
+import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
 import { isActiveRunStatus, RunStatus } from '../../../src/execution/index.js';
 import type { DelegationReservation } from '../../../src/orchestration/contracts/delegation.js';
 import {
@@ -417,6 +418,21 @@ it('publishes two child-owned PRs with independent provenance, exact review head
     ['web', headTwo],
   ]);
   await root.orchestration.reconcileChildCompletions(context('join'));
+  // DC-23: a multi-output child shows each output's own repository and base, not just the child's.
+  const shown = await presentDelivery(root, (await root.work.get(parentWork))!);
+  expect(shown.delegation!.children[0]).toMatchObject({
+    repository: { resourceId: repositoryId, pullRequestBase: 'integration' },
+    outputs: [
+      { name: 'api', kind: 'change', required: true },
+      {
+        name: 'web',
+        kind: 'change',
+        required: true,
+        repository: { resourceId: repositoryId, pullRequestBase: 'release' },
+      },
+    ],
+  });
+  expect(shown.delegation!.children[0]!.outputs![0]).not.toHaveProperty('repository');
   const results = await root.orchestration.joinedDelegationResults(
     parent.workflowInstanceId,
     'bound-cohort',

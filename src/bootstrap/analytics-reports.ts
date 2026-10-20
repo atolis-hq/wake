@@ -13,6 +13,7 @@ import {
   createWorkThroughputReport,
   queryDeliveryActivity,
   queryWorkCompletionSummary,
+  readCompletionFacts,
 } from '../orchestration/index.js';
 import type { ResourceRepositoryIdentityResolver } from '../resources/index.js';
 import { createRunRepositoryLookup } from './run-repository-lookup.js';
@@ -51,10 +52,12 @@ export function createAnalyticsReports(
         window: reportWindow(windowId, collectedAt),
         ...(signal === undefined ? {} : { signal }),
       };
+      // Root completion facts are read once and shared by both work-derived summaries.
+      const completion = await readCompletionFacts(journal, query);
       const [runs, work, delivery] = await Promise.all([
         queryRunAnalytics(journal, query),
-        queryWorkCompletionSummary(journal, query),
-        queryDeliveryActivity(journal, query),
+        queryWorkCompletionSummary(journal, query, completion),
+        queryDeliveryActivity(journal, query, completion),
       ]);
       return {
         data: {

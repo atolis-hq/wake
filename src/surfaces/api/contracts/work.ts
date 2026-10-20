@@ -72,6 +72,19 @@ export interface WorkDetailResponse {
     readonly qa?: DeliveryQaResponse;
     readonly rootWorkItemKey: WorkItemKey;
     readonly parentWorkItemKey?: WorkItemKey;
+    /** Present while the parent is waiting on an assessment of blocked children. */
+    readonly attention?: {
+      readonly cohortId: string;
+      readonly revision: number;
+      readonly blockers: readonly {
+        readonly blockerId: string;
+        readonly workItemKey: WorkItemKey;
+        readonly kind: string;
+        readonly reason: string;
+        /** A parent reply has been accepted for this blocker. */
+        readonly answered: boolean;
+      }[];
+    };
     readonly cohorts?: readonly {
       readonly cohortId: string;
       /** The join has resolved; an unsettled cohort is still waiting on required children. */
@@ -88,6 +101,8 @@ export interface WorkDetailResponse {
       readonly cohortId: string;
       readonly repository?: { readonly resourceId: string; readonly pullRequestBase: string };
       readonly prerequisites?: readonly WorkItemKey[];
+      /** Set only while a prerequisite is actually holding this child back. */
+      readonly prerequisiteBlocker?: string;
       /** Original required assignment this corrective child replaces. */
       readonly replaces?: { readonly cohortId: string; readonly assignmentId: string };
       readonly outputs?: readonly {
@@ -96,6 +111,8 @@ export interface WorkDetailResponse {
         readonly required: boolean;
         readonly selected: boolean;
         readonly stale: boolean;
+        /** Declared per-output repository and PR base, when it differs from the child's. */
+        readonly repository?: { readonly resourceId: string; readonly pullRequestBase: string };
       }[];
       readonly blockReason?: string;
       readonly resources: readonly ResourceItemResponse[];
