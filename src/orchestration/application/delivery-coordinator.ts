@@ -175,11 +175,14 @@ export class DeliveryCoordinator {
       })),
       selection: facts.selections.at(-1) ?? null,
       history: facts.qa,
-      completion: completionDecision(
-        state,
-        (await this.dependencies.definitionFor(parent)).delegation?.completion ??
-          DeliveryCompletion.QaApproved,
-      ),
+      completion:
+        parent.deliveryGateBlock !== undefined
+          ? { complete: false, reason: parent.blockReason! }
+          : completionDecision(
+              state,
+              (await this.dependencies.definitionFor(parent)).delegation?.completion ??
+                DeliveryCompletion.QaApproved,
+            ),
     };
   }
 
@@ -208,8 +211,8 @@ export class DeliveryCoordinator {
     }
   }
 
-  completionReason(id: string) {
-    return this.preparation.completionReason(id);
+  completionBlock(id: string) {
+    return this.preparation.completionBlock(id);
   }
 
   prepare(id: string) {

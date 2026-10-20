@@ -1,3 +1,4 @@
+import { RepositorySourceError, RepositorySourceFailure } from '../../execution/index.js';
 import type { DelegationRepositories } from '../contracts/delegation-ports.js';
 import { DeliveryRejectionError, type DeliveryCandidate } from '../contracts/delivery.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
@@ -34,7 +35,13 @@ export async function verifyCandidateSources(
         ...source,
       });
     } catch (error) {
-      throw unavailable(error instanceof Error ? error.message : 'fetch failed');
+      const detail = error instanceof Error ? error.message : 'unknown source verification failure';
+      if (
+        error instanceof RepositorySourceError &&
+        error.kind === RepositorySourceFailure.RefUnavailable
+      )
+        throw unavailable(detail);
+      throw unavailable('operational fetch/check failed; candidate not verified: ' + detail);
     }
     if (resolved.sourceRevision.toLowerCase() !== entry.revision.toLowerCase())
       throw unavailable(`it now points at ${resolved.sourceRevision}, not ${entry.revision}`);

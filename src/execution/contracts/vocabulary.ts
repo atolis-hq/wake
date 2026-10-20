@@ -104,3 +104,10 @@ export function isAmbiguityResolutionBlockReason(reason: string | undefined): bo
     (reason !== undefined && legacyAmbiguityBlockReason.test(reason))
   );
 }
+
+export const RepositorySourceFailure = defineClosedVocabulary({
+  FetchFailed: 'fetch-failed',
+  RefUnavailable: 'ref-unavailable',
+} as const);
+
+export type RepositorySourceFailure = ValueOf<typeof RepositorySourceFailure>;

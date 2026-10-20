@@ -16,7 +16,13 @@ import {
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
 import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
-import { isActiveRunStatus, RunStatus, type RunnerRequest } from '../../../src/execution/index.js';
+import {
+  isActiveRunStatus,
+  runId,
+  RunRepository,
+  RunStatus,
+  type RunnerRequest,
+} from '../../../src/execution/index.js';
 import type { DelegationReservation } from '../../../src/orchestration/contracts/delegation.js';
 import {
   compileWorkflow,
@@ -72,7 +78,15 @@ const done = { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status
 // Enough read-only stages that no child completes before its PR has been observed.
 const checks = Array.from({ length: 8 }, (_, index) => `check-${index}`);
 
-it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
+it.each([
+  'pass',
+  'blocked',
+  'exhausted',
+  'merge-required',
+  'repair',
+  'recover-source',
+  'recover-environment',
+] as const)(
   'prepares exact multi-repo QA after restart and enforces the %s handoff (DC-16, DC-18, DC-24, DC-34)',
   async (mode) => {
     const home = await mkdtemp(join(tmpdir(), 'wake-delivery-qa-'));
@@ -105,7 +119,8 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
       { key: 'org/a#2', head: headA2, base: 'integration-a' },
       { key: 'org/b#1', head: headB1, base: 'integration-b' },
     ];
-    let hideQueued = mode === 'repair';
+    const visiblePulls = new Set<string>();
+    let sourceOutage = false;
     const createRoot = (): Promise<CompositionRoot> =>
       createCompositionRoot(home, {
         config: parseRootConfig({
@@ -168,18 +183,17 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
           integrations: {
             fake: {
               enabled: true,
-              events: children
-                .map((child, index) => ({
-                  key: pulls[index]!.key,
-                  title: 'Agent-created PR',
-                  kind: 'pull-request',
-                  revision: pulls[index]!.head,
-                  branch: child.workItemId,
-                  baseBranch: pulls[index]!.base,
-                  checks: 'passing',
-                  acceptedReview: true,
-                }))
-                .filter((event) => !hideQueued || event.branch !== children[1]?.workItemId),
+              events: children.map((child, index) => ({
+                key: pulls[index]!.key,
+                title: 'Agent-created PR',
+                kind: 'pull-request',
+                revision: pulls[index]!.head,
+                branch: child.workItemId,
+                baseBranch: pulls[index]!.base,
+                checks: visiblePulls.has(child.workItemId) ? 'passing' : 'pending',
+                eligible: visiblePulls.has(child.workItemId),
+                acceptedReview: true,
+              })),
             },
           },
         }),
@@ -188,7 +202,10 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
         projections: new InMemoryProjectionStore(),
         decorateRunner: () => runner,
         decorateRepositoryCloneResolver: () => ({
-          cloneLocator: async (id: string) => clones.get(id)!,
+          cloneLocator: async (id: string) => {
+            if (sourceOutage) throw new Error('Temporary remote transport outage');
+            return clones.get(id)!;
+          },
         }),
       });
     let current = await createRoot();
@@ -287,15 +304,25 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
     children = reservation.children;
     current = await createRoot();
 
+    const runRepository = new RunRepository(journal);
     const dispatch = async (child: Child) => {
       await current.processorRuntime.catchUp('register-output');
       await current.advanceOnce({ workItemId: child.workItemId, maxProgress: 1 });
       await settle(child.workflowInstanceId);
       await current.processorRuntime.catchUp('register-output');
-      const run = (await current.execution.list())
+      const latest = (await current.execution.list())
         .filter((entry) => entry.workflowInstanceId === child.workflowInstanceId)
         .at(-1);
-      if (run === undefined) return;
+      if (latest === undefined) return;
+      const run = await vi.waitFor(
+        async () => {
+          const view = (await runRepository.load(runId(latest.runId))).view!;
+          expect(isActiveRunStatus(view.status)).toBe(false);
+          return view;
+        },
+        { timeout: 10_000 },
+      );
+      await current.processorRuntime.catchUp('settled-output');
       expect(run.status, JSON.stringify(run.failure)).toBe('succeeded');
       expect(run.outcome).toBeDefined();
       const view = (await current.orchestration.get(child.workflowInstanceId))!;
@@ -451,12 +478,13 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
       verdict: 'pass' as const,
       revisions: [
         { resourceId: repositoryIds.a, revision: assembled },
-        { resourceId: repositoryIds.b, revision: headB1 },
+        { resourceId: repositoryIds.b, revision: headB1.toUpperCase() },
       ],
       environment: { available: true },
       findings: [],
       ...overrides,
     });
+    let qaRounds = 0;
     const verify = async (request: RunnerRequest, restarted: CompositionRoot) => {
       const caller = await callerFor(request);
       if (repaired) {
@@ -529,14 +557,14 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
         ),
       ).rejects.toThrow();
       const verdict =
-        mode === 'blocked'
+        mode === 'blocked' || (mode === 'recover-environment' && qaRounds === 0)
           ? 'blocked'
           : mode === 'exhausted' || mode === 'repair'
             ? 'fail'
             : 'pass';
-      const final = qaCommand('qa-final', {
+      const final = qaCommand(`qa-final-${qaRounds++}`, {
         verdict,
-        environment: { available: mode !== 'blocked' },
+        environment: { available: verdict !== 'blocked' },
         findings:
           verdict === 'pass' ? [] : ['Configured test environment or candidate needs repair'],
       });
@@ -550,22 +578,23 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
         (await restarted.orchestration.recordDeliveryQa(caller, final, context('qa-replay')))
           .replay,
       ).toBe(true);
+      if (mode === 'recover-source' && qaRounds === 1) sourceOutage = true;
     };
     let repaired = false;
     let repairChildren: readonly Child[] = [];
     const observe = async () => {
-      const runs = await current.execution.list();
-      if (
-        !repairChildren.every((child) =>
-          runs.some(
-            (run) =>
-              run.workflowInstanceId === child.workflowInstanceId &&
-              run.workspace?.mode === 'branch',
-          ),
-        )
-      )
-        return;
       await current.processorRuntime.catchUp('register-before-observation');
+      let changed = false;
+      for (const run of await current.execution.list()) {
+        if (run.status !== RunStatus.Succeeded || run.workspace?.mode !== 'branch') continue;
+        const child = children.find((child) => child.workflowInstanceId === run.workflowInstanceId);
+        if (child !== undefined && !visiblePulls.has(child.workItemId)) {
+          visiblePulls.add(child.workItemId);
+          changed = true;
+        }
+      }
+      // Keep verification evidence available, but publish observations only after the agent's report.
+      if (changed) current = await createRoot();
       await current.intakePipeline.run(new AbortController().signal);
     };
     const repair = async (request: RunnerRequest) => {
@@ -704,6 +733,11 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
     };
     let scriptError: unknown;
     const qaStage = async (request: RunnerRequest) => {
+      if (
+        (await current.orchestration.get(parent.workflowInstanceId))!.delegationAttention !==
+        undefined
+      )
+        return done;
       try {
         await runQaStage(request);
       } catch (error) {
@@ -714,6 +748,7 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
       return done;
     };
     const runQaStage = async (request: RunnerRequest) => {
+      if (mode.startsWith('recover-') && qaRounds > 0) return;
       if (
         mode === 'repair' &&
         (await current.orchestration.deliveryStateFor(parent.workflowInstanceId)).history.length > 0
@@ -748,17 +783,6 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
       ).every((view) => view?.status === 'completed');
     for (let round = 0; round < checks.length * 3 + 6 && !(await completed()); round++) {
       if (round > 0) {
-        if (
-          hideQueued &&
-          (await current.execution.list()).some(
-            (run) =>
-              run.workflowInstanceId === children[1]!.workflowInstanceId &&
-              run.workspace?.mode === 'branch',
-          )
-        ) {
-          hideQueued = false;
-          current = await createRoot();
-        }
         await current.processorRuntime.catchUp('register-output');
         // The provider reveals one observation per pass; every PR must be observed first.
         for (let pass = 0; pass < pulls.length; pass++) {
@@ -792,7 +816,7 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
       }
       await current.orchestration.reconcileChildCompletions(context('repair-join-external'));
     };
-    const assertHandoff = async () => {
+    const driveParent = async () => {
       await advanceRepairs();
       for (
         let pass = 0;
@@ -806,6 +830,9 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
         await settle();
         await advanceRepairs();
       }
+    };
+    const assertHandoff = async () => {
+      await driveParent();
       expect(
         (await current.orchestration.get(parent.workflowInstanceId))!.status,
         JSON.stringify(
@@ -835,6 +862,42 @@ it.each(['pass', 'blocked', 'exhausted', 'merge-required', 'repair'] as const)(
     };
     await assertHandoff();
     expect(scriptError).toBeUndefined();
+    if (mode.startsWith('recover-')) {
+      const blocked = (await current.orchestration.get(parent.workflowInstanceId))!;
+      expect(blocked.deliveryGateBlock).toEqual({ retryStage: 'delegate' });
+      expect(blocked.blockReason).toContain(
+        mode === 'recover-source' ? 'operational fetch/check failed' : 'QA verdict is blocked',
+      );
+      sourceOutage = false;
+      current = await createRoot();
+      await current.orchestration.retryBlockedFailedStage(
+        parent.workflowInstanceId,
+        context('retry-delivery-gate'),
+      );
+      const resumed = (await current.orchestration.get(parent.workflowInstanceId))!;
+      expect(resumed.deliveryGateBlock).toBeUndefined();
+      expect(resumed.pendingActivation!.sessionPolicy).toBe('fresh');
+      expect(resumed.repeatCounts).toEqual(blocked.repeatCounts);
+      expect(resumed.retryCounts).toEqual(blocked.retryCounts);
+      await current.orchestration.retryBlockedFailedStage(
+        parent.workflowInstanceId,
+        context('retry-delivery-gate'),
+      );
+      expect(
+        (await current.orchestration.get(parent.workflowInstanceId))!.pendingActivation!
+          .activationId,
+      ).toBe(resumed.pendingActivation!.activationId);
+      await driveParent();
+      expect(scriptError).toBeUndefined();
+      expect((await current.orchestration.get(parent.workflowInstanceId))!.status).toBe(
+        'completed',
+      );
+      expect(qaRounds).toBe(2);
+      expect(
+        (await current.orchestration.deliveryStateFor(parent.workflowInstanceId)).history,
+      ).toHaveLength(2);
+      return;
+    }
     if (mode === 'repair') {
       expect(repaired).toBe(true);
       expect(

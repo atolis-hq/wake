@@ -21,7 +21,12 @@ import type {
   DelegationReservation,
   DelegationResult,
 } from './delegation.js';
-import type { DeliveryCandidate, DeliveryQa, DeliverySelection } from './delivery.js';
+import type {
+  DeliveryCandidate,
+  DeliveryCompletionBlock,
+  DeliveryQa,
+  DeliverySelection,
+} from './delivery.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -202,7 +207,10 @@ export interface OrchestrationEventPayloads {
     readonly count: number;
   };
   readonly [OrchestrationEventType.InstanceCompleted]: Readonly<Record<never, never>>;
-  readonly [OrchestrationEventType.InstanceBlocked]: { readonly reason: string };
+  readonly [OrchestrationEventType.InstanceBlocked]: {
+    readonly reason: string;
+    readonly deliveryGate?: DeliveryCompletionBlock['deliveryGate'];
+  };
   readonly [OrchestrationEventType.OperatorRetryRequested]: {
     readonly activationId: ActivationId;
     readonly commandId: string;

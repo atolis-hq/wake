@@ -51,7 +51,7 @@ export function createDelegationAuthority(
       const prepared = run?.workspace?.candidate;
       const key = (entries: readonly { resourceId: string; revision: string }[]) =>
         entries
-          .map((entry) => entry.resourceId + '@' + entry.revision)
+          .map((entry) => entry.resourceId + '@' + entry.revision.toLowerCase())
           .sort()
           .join(',');
       if (

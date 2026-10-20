@@ -76,6 +76,7 @@ export interface WorkflowInstanceView {
   readonly delegationWait?: { readonly cohortId: string; readonly activationId: ActivationId };
   readonly status: WorkflowStatus;
   readonly blockReason?: string;
+  readonly deliveryGateBlock?: { readonly retryStage: StageName };
   readonly currentStage: StageName;
   readonly pendingActivation?: ActivityActivationView;
   readonly repeatCounts: Readonly<Record<string, number>>;

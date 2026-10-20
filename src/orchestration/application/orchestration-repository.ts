@@ -1,4 +1,5 @@
 import { cachedJournalView, type CachedJournalView, type EventJournal } from '@atolis-hq/eventing';
+import type { DeliveryCompletionBlock } from '../contracts/delivery.js';
 import {
   decodeOrchestrationEvent,
   selectWorkflowOrchestrationEvent,
@@ -26,7 +27,7 @@ export class OrchestrationRepository {
 
   constructor(
     private readonly journal: EventJournal,
-    private readonly completionReason?: (id: string) => Promise<string | undefined>,
+    private readonly completionBlock?: (id: string) => Promise<DeliveryCompletionBlock | undefined>,
   ) {
     this.listed = cachedJournalView(journal, (events) => {
       const owned = events.flatMap((entry) => {
@@ -101,11 +102,11 @@ export class OrchestrationRepository {
         .map(decodeOrchestrationEvent)
         .filter(isWorkflowEvent);
     if (drafts.some((draft) => draft.eventType === OrchestrationEventType.InstanceCompleted)) {
-      const reason = await this.completionReason?.(id);
-      if (reason !== undefined)
+      const block = await this.completionBlock?.(id);
+      if (block !== undefined)
         drafts = drafts.map((draft) =>
           draft.eventType === OrchestrationEventType.InstanceCompleted
-            ? { ...draft, eventType: OrchestrationEventType.InstanceBlocked, payload: { reason } }
+            ? { ...draft, eventType: OrchestrationEventType.InstanceBlocked, payload: block }
             : draft,
         );
     }

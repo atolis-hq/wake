@@ -140,3 +140,8 @@ legacy verdicts without provenance remain historical and cannot satisfy completi
 Run-start workspace facts optionally carry the candidate identity, selection revision,
 and every prepared repository path/revision. These facts attest execution preparation,
 not interpretation of acceptance prose or patch semantics.
+
+A final delivery gate denial records `orchestration.instance-blocked` with optional
+`deliveryGate.retryStage` recovery metadata. Operator retry restarts that coordinating
+stage with a fresh activation without resetting repeat, retry or descendant budgets.
+Legacy blocks without this metadata retain their existing recovery rules.

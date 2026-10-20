@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { brandedStringSchema } from '../../kernel/index.js';
 import { workItemId } from '../../work/index.js';
 import { delegationResultSchema } from './delegation.js';
+import type { StageName } from './identifiers.js';
 import { CandidateSourceKind, QaVerdict, type DeliveryRejection } from './vocabulary.js';
 
 const revision = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i);
@@ -157,6 +158,12 @@ export const deliveryQaSchema = deliveryQaCommandSchema
   .strict();
 
 export type DeliveryQa = z.infer<typeof deliveryQaSchema>;
+
+/** A final delivery gate can be reassessed through ordinary operator retry. */
+export interface DeliveryCompletionBlock {
+  readonly reason: string;
+  readonly deliveryGate: { readonly retryStage: StageName };
+}
 
 export class DeliveryRejectionError extends Error {
   constructor(

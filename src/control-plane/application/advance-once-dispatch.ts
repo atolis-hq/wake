@@ -223,7 +223,10 @@ export async function runDispatchLoop(
         run.outcome !== undefined &&
         isRunnerQuotaOutcome(run.outcome)
       ) {
-        // Quota retries preserve the stage and its budget even while dispatch is paused.
+        // No isDispatchPaused check here: a quota retry re-requests the same
+        // stage's activity without publishing an outcome or consuming retry
+        // budget, so it must not be held behind maintenance pause the way an
+        // outward-publishing acceptOutcome call is below.
         const retried = await ctx.orchestration.retryRunnerQuotaFailure?.(
           selected.workflow.workflowInstanceId,
           {

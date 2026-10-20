@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RepositorySourceFailure } from './vocabulary.js';
 
 export const repositoryAssignmentSchema = z
   .object({
@@ -20,3 +21,14 @@ export interface RepositoryAssignment {
 export type RepositoryAssignmentRequest = Omit<RepositoryAssignment, 'sourceRevision'> & {
   readonly sourceRevision?: string | undefined;
 };
+
+export class RepositorySourceError extends Error {
+  constructor(
+    readonly kind: RepositorySourceFailure,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'RepositorySourceError';
+  }
+}

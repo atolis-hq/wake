@@ -212,3 +212,26 @@ it('reuses a direct workflow workspace when the work item moves from an issue to
     await pullRequest.release();
   }
 });
+
+it('distinguishes missing retained refs from operational fetch failures', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-source-diagnostics-'));
+  roots.push(root);
+  const source = await repository(root, 'source');
+  const request = {
+    resourceId: resId('source'),
+    sourceRef: 'refs/wake/delivery/root/candidate/missing',
+    pullRequestBase: 'main',
+  };
+  await expect(
+    resolveGitSource({ cloneLocator: async () => source }, request),
+  ).rejects.toMatchObject({
+    kind: 'ref-unavailable',
+    message: expect.stringContaining('remote ref is missing'),
+  });
+  await expect(
+    resolveGitSource({ cloneLocator: async () => join(root, 'unavailable-remote') }, request),
+  ).rejects.toMatchObject({
+    kind: 'fetch-failed',
+    message: expect.stringContaining('fetch failed; verify connectivity and permissions'),
+  });
+});

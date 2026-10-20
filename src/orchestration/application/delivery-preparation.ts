@@ -1,5 +1,6 @@
 import { WorkspaceMode, type ExecutionCandidate } from '../../execution/index.js';
 import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
+import type { DeliveryCompletionBlock } from '../contracts/delivery.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { CandidateSourceKind, DeliveryCompletion } from '../contracts/vocabulary.js';
@@ -15,7 +16,7 @@ export class DeliveryPreparation {
     private readonly dependencies: DeliveryDependencies,
   ) {}
 
-  async completionReason(id: string): Promise<string | undefined> {
+  async completionBlock(id: string): Promise<DeliveryCompletionBlock | undefined> {
     const parent = (await this.repository.loadRequired(id)).view;
     const definition = await this.dependencies.definitionFor(parent);
     // Existing direct workflows retain their configured routes.
@@ -27,7 +28,11 @@ export class DeliveryPreparation {
       deliveryState(facts),
       definition.delegation?.completion ?? DeliveryCompletion.QaApproved,
     );
-    if (!decision.complete) return decision.reason;
+    const blocked = (reason: string): DeliveryCompletionBlock => ({
+      reason,
+      deliveryGate: { retryStage: definition.entry },
+    });
+    if (!decision.complete) return blocked(decision.reason!);
     try {
       await verifyCandidateSources(
         parent,
@@ -37,7 +42,9 @@ export class DeliveryPreparation {
       );
       return undefined;
     } catch (error) {
-      return error instanceof Error ? error.message : 'Candidate source unavailable';
+      return blocked(
+        error instanceof Error ? error.message : 'Operational candidate source verification failed',
+      );
     }
   }
 

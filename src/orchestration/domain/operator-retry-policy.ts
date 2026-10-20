@@ -29,15 +29,27 @@ const FailedOutcomeSignal = signalName(ActivityOutcomeKind.Failed);
 
 export function isOperatorRetryEligible(view: WorkflowInstanceView): boolean {
   const pending = view.pendingActivation;
+  const deliveryGate =
+    view.status === WorkflowStatus.Blocked && view.deliveryGateBlock !== undefined;
   const eligibleActivation =
     pending !== undefined &&
-    pending.status === ActivityActivationStatus.Completed &&
+    retryableActivationStatus(pending.status, deliveryGate) &&
     pending.supplemental !== true &&
-    pending.followOnIndex === undefined &&
-    view.acceptedOutcomes.includes(pending.activationId);
+    (pending.followOnIndex === undefined || deliveryGate) &&
+    (deliveryGate || view.acceptedOutcomes.includes(pending.activationId));
   if (!eligibleActivation || pending === undefined) return false;
   if (view.status === WorkflowStatus.Blocked) return isRetryEligibleBlock(view, pending);
   return isRetryEligibleFailedWait(view);
+}
+
+function retryableActivationStatus(
+  status: ActivityActivationStatus,
+  deliveryGate: boolean,
+): boolean {
+  return (
+    status === ActivityActivationStatus.Completed ||
+    (deliveryGate && status === ActivityActivationStatus.Waiting)
+  );
 }
 
 function isRetryEligibleBlock(
@@ -45,6 +57,7 @@ function isRetryEligibleBlock(
   pending: NonNullable<WorkflowInstanceView['pendingActivation']>,
 ): boolean {
   return (
+    view.deliveryGateBlock !== undefined ||
     view.blockReason === AwaitTimeoutBlockReason ||
     (view.blockReason === 'unconfigured outcome failed' &&
       view.lastOutcome?.kind === ActivityOutcomeKind.Failed) ||
@@ -189,7 +202,9 @@ function requestRetry(
       reason: 'workflow is not in a retryable failed-stage state',
     };
 
-  const stage = definition.stages[stageName(state.currentStage)]!;
+  const retryStage = state.deliveryGateBlock?.retryStage ?? state.currentStage;
+  const stage = definition.stages[retryStage]!;
+  if (state.deliveryGateBlock !== undefined) sessionPolicy = 'fresh';
   const events: WorkflowOrchestrationEventData[] = [
     stateDraft(
       state,
@@ -203,6 +218,17 @@ function requestRetry(
       },
       1,
     ),
+  ];
+  if (retryStage !== state.currentStage)
+    events.push(
+      stateDraft(
+        state,
+        input,
+        { eventType: OrchestrationEventType.StageEntered, payload: { stage: retryStage } },
+        2,
+      ),
+    );
+  events.push(
     stateDraft(
       state,
       input,
@@ -215,14 +241,14 @@ function requestRetry(
           stage.with,
           {
             execution: stage.execution,
-            stage: stageName(state.currentStage),
+            stage: retryStage,
             ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
           },
         ),
       },
-      2,
+      events.length + 1,
     ),
-  ];
+  );
   return { kind: 'append', events };
 }
 

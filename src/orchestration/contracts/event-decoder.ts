@@ -505,7 +505,15 @@ const eventSchemas = {
   ),
   [OrchestrationEventType.InstanceBlocked]: workflowEnvelope(
     OrchestrationEventType.InstanceBlocked,
-    z.object({ reason: z.string() }).strict(),
+    z
+      .object({
+        reason: z.string(),
+        deliveryGate: z
+          .object({ retryStage: brandedStringSchema(stageName) })
+          .strict()
+          .optional(),
+      })
+      .strict(),
   ),
   [OrchestrationEventType.OperatorRetryRequested]: workflowEnvelope(
     OrchestrationEventType.OperatorRetryRequested,

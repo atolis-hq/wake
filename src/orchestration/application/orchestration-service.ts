@@ -124,7 +124,7 @@ export class OrchestrationService {
     this.journal = journal;
     this.work = work;
     const repository = new OrchestrationRepository(journal, (id) =>
-      this.delivery.completionReason(id),
+      this.delivery.completionBlock(id),
     );
     this.repository = repository;
     this.delegationGate = new DelegationGate(
