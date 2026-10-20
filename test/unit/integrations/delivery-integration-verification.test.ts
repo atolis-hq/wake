@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { createPullRequestService } from '../../../src/activities/index.js';
 import { runId, type RunView } from '../../../src/execution/index.js';
+import type { GitHubPullRequestPayload } from '../../../src/integrations/github/contracts/payloads.js';
+import { verifiedCheckSubject } from '../../../src/integrations/github/infrastructure/pr-check-subject.js';
 import {
   createDeliveryIntegrationVerification,
   type ProviderInstance,
@@ -126,17 +128,46 @@ it('requires provider identity/base verification and a fresh trusted review afte
     context('old-checks-polled', '2026-10-20T00:02:30.000Z'),
   );
   expect(await verification.verifyTarget(request)).toBe(false);
-  await world.pullRequests.observe(
-    {
-      ...observed,
-      checkEvidence: {
-        headRevision: observed.headRevision,
-        baseRevision: observed.baseRevision,
-        startedAt: '2026-10-20T00:02:30.000Z',
+  let testedBase = 'b'.repeat(40);
+  let testedRevision = 'old-test-merge';
+  const checkClient = {
+    listPullRequests: async () => [],
+    listPullRequestFiles: async () => [],
+    getCommit: async () => ({
+      sha: testedRevision,
+      parents: [{ sha: testedBase }, { sha: observed.headRevision }],
+    }),
+    listCheckRunsForRef: async () => [
+      {
+        head_sha: testedRevision,
+        status: 'completed',
+        conclusion: 'success',
+        started_at: '2026-10-20T00:02:30.000Z',
       },
-    },
-    context('fresh-checks', '2026-10-20T00:03:00.000Z'),
-  );
+    ],
+    getCombinedStatusForRef: async () => [],
+  };
+  let providerPr = {
+    head: { sha: observed.headRevision },
+    base: { sha: observed.baseRevision },
+    merge_commit_sha: testedRevision,
+  } as GitHubPullRequestPayload;
+  const report = async (id: string) => {
+    const evidence = await verifiedCheckSubject(checkClient, 'owner', 'repo', providerPr, 100);
+    await world.pullRequests.observe(
+      { ...observed, checkEvidence: evidence.checkEvidence },
+      context(id, '2026-10-20T00:03:00.000Z'),
+    );
+  };
+  // This old-base execution starts after registration, so time alone would accept it.
+  await report('late-old-base-checks');
+  expect(await verification.verifyTarget(request)).toBe(false);
+  verification = restarted();
+  expect(await verification.verifyTarget(request)).toBe(false);
+  testedBase = observed.baseRevision;
+  testedRevision = 'maintained-test-merge';
+  providerPr = { ...providerPr, merge_commit_sha: testedRevision };
+  await report('verified-current-base-checks');
   expect(await verification.verifyTarget(request)).toBe(true);
   verification = restarted();
   expect(await verification.verifyTarget(request)).toBe(true);

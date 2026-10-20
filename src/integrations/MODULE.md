@@ -71,3 +71,9 @@ subject, with every reported check or status started after the new maintenance s
 `passing` value, re-polling an older execution, missing timestamps or incomplete provider evidence
 cannot satisfy this gate. Check evidence is journaled even when the aggregate state remains
 `passing`, and the same subject and execution-time rules apply after restart.
+
+GitHub establishes this provenance only from successful check runs on an immutable test-merge
+commit whose ordered parents match the selected base and head. Checks fetched only by source
+head SHA, legacy statuses, missing commit parents, and executions on an older test merge do
+not establish the tested base, regardless of their start times. Repositories requiring checks
+for maintained subjects must run checks on the PR test-merge commit.

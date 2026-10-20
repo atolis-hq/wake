@@ -529,6 +529,17 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
         maintained.set(id, revision);
         await writeProvider();
         const main = await git(paths[repo], 'rev-parse', 'main');
+        const testedRevision = await git(
+          paths[repo],
+          'commit-tree',
+          revision + '^{tree}',
+          '-p',
+          main,
+          '-p',
+          revision,
+          '-m',
+          'Test maintained subject',
+        );
         const resource = (await root.pullRequests.get(target.resourceId as never))!;
         await root.pullRequests.observe(
           {
@@ -537,6 +548,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
             baseRevision: main,
             checks: 'passing',
             checkEvidence: {
+              testedRevision,
               headRevision: revision,
               baseRevision: main,
               startedAt: new Date().toISOString(),
@@ -611,6 +623,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
           {
             ...checked,
             checkEvidence: {
+              testedRevision,
               headRevision: revision,
               baseRevision: main,
               startedAt: new Date().toISOString(),

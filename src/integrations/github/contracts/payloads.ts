@@ -47,6 +47,7 @@ export interface GitHubPullRequestPayload extends GitHubIssuePayload {
 }
 
 export interface GitHubCheckRunPayload {
+  readonly head_sha?: string;
   readonly id?: number;
   readonly name?: string;
   readonly status?: string;

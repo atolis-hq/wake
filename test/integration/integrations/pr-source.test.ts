@@ -37,6 +37,7 @@ const octokit = vi.hoisted(() => ({
   paginateIterator: vi.fn(),
   listPullRequests: vi.fn(),
   getPullRequest: vi.fn(),
+  getCommit: vi.fn(),
   listCheckRunsForRef: vi.fn(),
   getCombinedStatusForRef: vi.fn(),
   listPullRequestFiles: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('@octokit/rest', () => ({
     return {
       paginate: Object.assign(octokit.paginate, { iterator: octokit.paginateIterator }),
       rest: {
+        git: { getCommit: octokit.getCommit },
         pulls: {
           list: octokit.listPullRequests,
           get: octokit.getPullRequest,
@@ -728,17 +730,31 @@ it('persists the actual merged commit independently of the reviewed head, includ
   });
 });
 
-it('keeps original check execution time when a base-only move is polled and persists a fresh rerun across restart', async () => {
+it('rejects late old-base executions across restart and records only checks on a verified maintained test merge', async () => {
   let base = 'base-a';
-  let startedAt = '2026-10-20T00:00:00.000Z';
-  const runtime = sourceRuntime(
-    fakeClient({
-      pullRequests: async () => [{ ...pullRequest(), base: { sha: base } }],
+  let testedBase = 'base-a';
+  let testedRevision = 'test-merge-a';
+  const startedAt = '2026-10-20T00:05:00.000Z';
+  const runtime = sourceRuntime({
+    ...fakeClient({
+      pullRequests: async () => [
+        { ...pullRequest(), base: { sha: base }, merge_commit_sha: testedRevision },
+      ],
       checkRuns: async () => [
-        { name: 'required', status: 'completed', conclusion: 'success', started_at: startedAt },
+        {
+          name: 'required',
+          head_sha: testedRevision,
+          status: 'completed',
+          conclusion: 'success',
+          started_at: startedAt,
+        },
       ],
     }),
-  );
+    getCommit: async () => ({
+      sha: testedRevision,
+      parents: [{ sha: testedBase }, { sha: 'head-a' }],
+    }),
+  });
   await admitPullRequest(runtime, 'check-subject', 'owner/repo#7');
   const observe = async () => {
     await runtime.poll.pollOnce(new AbortController().signal);
@@ -750,21 +766,41 @@ it('keeps original check execution time when a base-only move is polled and pers
     return runtime.pullRequests.get(resource!);
   };
   expect((await observe())?.checkEvidence).toEqual({
+    testedRevision,
     headRevision: 'head-a',
-    baseRevision: 'base-a',
+    baseRevision: base,
     startedAt,
   });
   base = 'base-b';
   const moved = (await observe())!;
-  expect(moved).toMatchObject({
+  expect(moved.checks).toBe('passing');
+  expect(moved.checkEvidence).toBeUndefined();
+  const restarted = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
+  expect((await restarted.get(moved.resourceId))?.checkEvidence).toBeUndefined();
+  testedBase = base;
+  testedRevision = 'test-merge-b';
+  const fresh = (await observe())!;
+  expect(fresh.checkEvidence).toEqual({
+    testedRevision,
     headRevision: 'head-a',
     baseRevision: base,
-    checks: 'passing',
-    checkEvidence: { startedAt: '2026-10-20T00:00:00.000Z' },
+    startedAt,
   });
-  startedAt = '2026-10-20T00:05:00.000Z';
-  const fresh = (await observe())!;
-  expect(fresh.checkEvidence).toEqual({ headRevision: 'head-a', baseRevision: base, startedAt });
-  const restarted = createPullRequestService(runtime.journal, runtime.work, runtime.resources);
   expect((await restarted.get(fresh.resourceId))?.checkEvidence).toEqual(fresh.checkEvidence);
+});
+
+it('reads immutable commit parents through the production GitHub client', async () => {
+  octokit.getCommit.mockResolvedValue({
+    data: { sha: 'test-merge', parents: [{ sha: 'base' }, { sha: 'head' }] },
+  });
+  const client = createGitHubClient('token');
+  expect(await client.getCommit('owner', 'repo', 'test-merge')).toEqual({
+    sha: 'test-merge',
+    parents: [{ sha: 'base' }, { sha: 'head' }],
+  });
+  expect(octokit.getCommit).toHaveBeenCalledWith({
+    owner: 'owner',
+    repo: 'repo',
+    commit_sha: 'test-merge',
+  });
 });

@@ -99,7 +99,7 @@ async function freshChecks(
   if (!request.requireChecks) return true;
   const view = await pullRequests.get(id);
   const evidence = view?.checkEvidence;
-  if (evidence === undefined || request.baseRevision === undefined) return false;
+  if (evidence?.testedRevision === undefined || request.baseRevision === undefined) return false;
   return (
     evidence.headRevision.toLowerCase() === request.revision.toLowerCase() &&
     evidence.baseRevision.toLowerCase() === request.baseRevision.toLowerCase() &&

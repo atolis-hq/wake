@@ -29,32 +29,18 @@ import {
 import { withoutWakeMarkers } from './content-fingerprint.js';
 import type { PollBatch } from './poll-watermark.js';
 import { verifiedCheckSubject } from './pr-check-subject.js';
-import { readPullRequestEvidence, type CheckEvidence } from './pr-evidence.js';
+import {
+  readPullRequestEvidence,
+  type CheckEvidence,
+  type PullRequestEvidenceClient,
+} from './pr-evidence.js';
 
-export interface GitHubPullRequestSourceClient {
+export interface GitHubPullRequestSourceClient extends PullRequestEvidenceClient {
   listPullRequests(
     owner: string,
     repo: string,
     maxResults: number,
   ): Promise<readonly GitHubPullRequestPayload[]>;
-  listCheckRunsForRef(
-    owner: string,
-    repo: string,
-    ref: string,
-    maxResults?: number,
-  ): Promise<readonly GitHubCheckRunPayload[]>;
-  getCombinedStatusForRef(
-    owner: string,
-    repo: string,
-    ref: string,
-    maxResults?: number,
-  ): Promise<readonly GitHubCommitStatusPayload[]>;
-  listPullRequestFiles(
-    owner: string,
-    repo: string,
-    pullNumber: number,
-    maxResults?: number,
-  ): Promise<readonly string[]>;
 }
 
 interface GitHubPullRequestSourceInput {
@@ -96,12 +82,20 @@ export async function pullRequestEventsFor(
         pullRequest.number,
         input.maxResults,
       );
+      const checkSubject = await verifiedCheckSubject(
+        input.client,
+        owner,
+        repo,
+        pullRequest,
+        input.maxResults,
+      );
       return {
         complete: evidence.complete && changedFiles.complete,
         draft: pullRequestObservation({
           repository: input.repository,
           pullRequest,
           evidence,
+          checkSubject,
           changedFiles: changedFiles.files,
           ...(input.adapter === undefined ? {} : { adapter: input.adapter }),
         }),
@@ -119,6 +113,7 @@ function pullRequestObservation(input: {
   readonly repository: string;
   readonly pullRequest: GitHubPullRequestPayload;
   readonly evidence: CheckEvidence;
+  readonly checkSubject: Awaited<ReturnType<typeof verifiedCheckSubject>>;
   readonly changedFiles: readonly string[] | undefined;
   readonly adapter?: AdapterId;
 }): Extract<GitHubAdapterEventData, { eventType: typeof GitHubEventType.WorkObserved }> {
@@ -148,7 +143,7 @@ function pullRequestObservation(input: {
     headRevision: revision,
     baseRevision: fallback(pullRequest.base?.sha, UnknownGitHubRevision),
     checks,
-    ...verifiedCheckSubject(input.evidence, revision, pullRequest.base?.sha),
+    ...input.checkSubject,
     actor: {
       id: fallback(pullRequest.user?.login, UnknownGitHubIdentity),
       kind: actorKind(pullRequest.user?.type),

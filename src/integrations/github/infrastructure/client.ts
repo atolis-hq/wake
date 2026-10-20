@@ -177,6 +177,10 @@ function createGitHubReadClient(octokit: Octokit, cache: ReturnType<typeof creat
       }),
     getIssueLabels: (owner: string, repo: string, issueNumber: number) =>
       getIssueLabels(octokit, cache, owner, repo, issueNumber),
+    getCommit: async (owner: string, repo: string, ref: string) => {
+      const result = await octokit.rest.git.getCommit({ owner, repo, commit_sha: ref });
+      return { sha: result.data.sha, parents: result.data.parents.map(({ sha }) => ({ sha })) };
+    },
     getPullRequest: (owner: string, repo: string, pullNumber: number) =>
       getPullRequest(octokit, cache, owner, repo, pullNumber),
     listReviews: (

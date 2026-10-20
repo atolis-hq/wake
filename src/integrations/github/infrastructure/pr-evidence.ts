@@ -12,7 +12,12 @@ export interface ChangedFiles {
   readonly complete: boolean;
 }
 
-interface PullRequestEvidenceClient {
+export interface PullRequestEvidenceClient {
+  getCommit?(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<{ readonly sha: string; readonly parents: readonly { readonly sha: string }[] }>;
   listCheckRunsForRef(
     owner: string,
     repo: string,
@@ -47,7 +52,7 @@ export async function readPullRequestEvidence(
   ]);
 }
 
-async function readCheckEvidence(
+export async function readCheckEvidence(
   client: PullRequestEvidenceClient,
   owner: string,
   repo: string,
