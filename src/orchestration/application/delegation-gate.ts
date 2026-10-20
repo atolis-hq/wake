@@ -42,6 +42,15 @@ export class DelegationGate {
     return view.delegationFence === undefined;
   }
 
+  /** The attention activation is the one parent activation a fenced cohort may dispatch. */
+  private dispatchable(view: WorkflowInstanceView): boolean {
+    return (
+      this.allows(view) ||
+      (view.delegationAttention !== undefined &&
+        view.delegationAttention.activationId === view.pendingActivation?.activationId)
+    );
+  }
+
   async fenced(id: WorkflowInstanceId): Promise<boolean> {
     const view = (await this.repository.load(id)).view;
     return view !== null && (!this.allows(view) || (await this.unavailable(view)));
@@ -86,6 +95,7 @@ export class DelegationGate {
     operation: () => Promise<T>,
     held: () => Promise<T>,
     historical: (view: WorkflowInstanceView) => Promise<T>,
+    attention?: () => Promise<T>,
   ): Promise<T> {
     const view = (await this.repository.load(id)).view;
     if (view === null) return operation();
@@ -94,8 +104,21 @@ export class DelegationGate {
     const admission = (await this.prerequisiteReasons?.([view.workItemId]))?.get(view.workItemId);
     if (admission?.abandoned === true) return historical(view);
     if (admission?.reason !== undefined) throw new DelegationPendingError(id);
+    // An attention outcome restores the cohort wait; it never reaches ordinary routing.
+    if (attention !== undefined && view.delegationAttention?.activationId === activationId)
+      return attention();
+    return this.fencedOutcome(view, activationId, operation, held);
+  }
+
+  private fencedOutcome<T>(
+    view: WorkflowInstanceView,
+    activationId: ActivationId,
+    operation: () => Promise<T>,
+    held: () => Promise<T>,
+  ): Promise<T> {
     if (this.allows(view)) return operation();
-    if (view.delegationFence?.activationId !== activationId) throw new DelegationPendingError(id);
+    if (view.delegationFence?.activationId !== activationId)
+      throw new DelegationPendingError(view.workflowInstanceId);
     return held();
   }
 
@@ -110,7 +133,7 @@ export class DelegationGate {
   ): Promise<T[]> {
     const unfenced = items.filter((item) => {
       const view = viewOf(item);
-      return view !== null && this.allows(view);
+      return view !== null && this.dispatchable(view);
     });
     if (unfenced.length === 0) return [];
     const snapshot = await this.work.deliverySnapshot();

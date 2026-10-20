@@ -67,6 +67,12 @@ export interface WorkflowInstanceView {
   readonly causalCycleId?: string;
   readonly requestId?: string;
   readonly delegationFence?: { readonly cohortId: string; readonly activationId: ActivationId };
+  /** Set while a coalesced attention activation owns the parent; the cohort wait is suspended. */
+  readonly delegationAttention?: {
+    readonly cohortId: string;
+    readonly attentionKey: string;
+    readonly activationId: ActivationId;
+  };
   readonly delegationWait?: { readonly cohortId: string; readonly activationId: ActivationId };
   readonly status: WorkflowStatus;
   readonly blockReason?: string;

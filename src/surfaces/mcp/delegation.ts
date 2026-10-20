@@ -1,7 +1,9 @@
 import type { CommandContext } from '@atolis-hq/eventing';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  DelegationAttentionError,
   DelegationConflictError,
+  delegationAttentionReplySchema,
   delegationSubmissionSchema,
   type DelegationCaller,
   type OrchestrationService,
@@ -33,6 +35,32 @@ export function registerDelegationTools(
         return { content: [{ type: 'text', text: JSON.stringify(reservation) }] };
       } catch (error) {
         if (!(error instanceof DelegationConflictError)) throw error;
+        return {
+          isError: true,
+          content: [
+            { type: 'text', text: JSON.stringify({ code: error.code, message: error.message }) },
+          ],
+        };
+      }
+    },
+  );
+  server.registerTool(
+    'wake_delegation_respond',
+    {
+      description:
+        'Answer one assignment-context blocker from the attention request returned by wake_delegation_inspect. Name the child, blocker and expectedRevision, and list the exact accepted artifact revisions the child may read. Only a child blocked for assignment context can be resumed; failures need follow-up work in a new cohort and human review, consent or approval gates cannot be answered here. End the activity normally afterwards; unresolved reasons stay tracked and the cohort wait resumes.',
+      inputSchema: delegationAttentionReplySchema,
+    },
+    async (reply) => {
+      try {
+        const attention = await input.orchestration.respondToDelegationAttention(
+          await input.caller(),
+          reply,
+          input.commandContext(),
+        );
+        return { content: [{ type: 'text', text: JSON.stringify(attention) }] };
+      } catch (error) {
+        if (!(error instanceof DelegationAttentionError)) throw error;
         return {
           isError: true,
           content: [

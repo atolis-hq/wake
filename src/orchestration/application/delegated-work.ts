@@ -2,6 +2,7 @@ import type { WorkItemId } from '../../work/index.js';
 import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 /* eslint-disable max-lines */
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
+import type { ActivityName } from '../../activities/index.js';
 import { activationId } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
@@ -29,6 +30,10 @@ import {
 import { nextOrdinal } from '../domain/decision-events.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
+import {
+  DelegationAttention,
+  type DelegationAttentionDependencies,
+} from './delegation-attention.js';
 import {
   delegationDraft,
   delegationEventId,
@@ -62,6 +67,7 @@ const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
 export class DelegatedWork {
   private readonly ledger: DelegationLedger;
   readonly prerequisites: DelegationPrerequisites;
+  readonly attention: DelegationAttention;
   private readonly artifacts: DelegationArtifacts;
   private readonly repositories: DelegationRepositories | undefined;
   private readonly runHasEnded: (runId: string) => Promise<boolean>;
@@ -77,10 +83,20 @@ export class DelegatedWork {
       readonly repositories?: DelegationRepositories | undefined;
       readonly runHasEnded: (runId: string) => Promise<boolean>;
       readonly authority?: DelegationAuthority | undefined;
+      readonly supportsAttention?: ((activity: ActivityName) => boolean) | undefined;
+      readonly resumeChild?: DelegationAttentionDependencies['resumeChild'] | undefined;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
     this.artifacts = dependencies.artifacts;
+    this.attention = new DelegationAttention(repository, this.ledger, {
+      artifacts: dependencies.artifacts,
+      supportsAttention: (activity) => dependencies.supportsAttention?.(activity) ?? true,
+      resumeChild: (id, context) =>
+        dependencies.resumeChild?.(id, context) ?? Promise.resolve(null),
+      contextWorkItems: (parent) => this.contextWorkItems(parent),
+      canContinue: (reservation) => this.canJoin(reservation),
+    });
     this.prerequisites = new DelegationPrerequisites(
       repository,
       this.ledger,
@@ -367,6 +383,13 @@ export class DelegatedWork {
     const availability = await this.deliveryAvailability(reservation.parentWorkItemId);
     if (availability.reason !== undefined) throw new Error(availability.reason);
     const current = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
+    // One unresolved cohort per parent: a second cohort cannot share the waiting parent, so
+    // replacements are submitted once the cohort settles and the parent is resumed.
+    if (current.delegationAttention !== undefined)
+      throw new DelegationConflictError(
+        DelegationConflictCode.AttentionOpen,
+        'Submit replacement work after the cohort settles; an open attention assessment cannot start a second cohort',
+      );
     if (
       current.pendingActivation?.activationId !== caller.activationId ||
       current.status !== WorkflowStatus.Active
@@ -453,6 +476,24 @@ export class DelegatedWork {
     }
     if (!(await this.ensureWait(reservation, context))) return;
     const root = await this.registerChildren(artifacts, reservation, context);
+    await this.advanceMembers(artifacts, root, reservation, context);
+    // Live attention only while independent members are unfinished; a fully terminal batch takes
+    // the ordinary unsuccessful continuation, which already carries every blocker.
+    if (!this.allTerminal(await this.ledger.events(), reservation))
+      await this.attention.raise(reservation, context);
+    if (await this.settleUnusable(reservation, context)) return;
+    const results = selectedResults(await this.ledger.events(), reservation);
+    if (await this.childrenQualified(reservation, results, context))
+      await this.join(reservation, results, context);
+  }
+
+  /** Independent members keep advancing; a blocked member is skipped, never retried blindly. */
+  private async advanceMembers(
+    artifacts: DelegationArtifacts,
+    root: WorkflowInstanceId,
+    reservation: DelegationReservation,
+    context: CommandContext,
+  ): Promise<void> {
     const read = await this.prerequisites.read();
     for (const child of reservation.children) {
       const events = await this.ledger.events();
@@ -461,10 +502,6 @@ export class DelegatedWork {
       if (await this.preparePrerequisites(root, reservation, child, context, read))
         await this.advanceChild(artifacts, root, reservation, child, context);
     }
-    if (await this.settleUnusable(reservation, context)) return;
-    const results = selectedResults(await this.ledger.events(), reservation);
-    if (await this.childrenQualified(reservation, results, context))
-      await this.join(reservation, results, context);
   }
 
   private async settleUnusable(
@@ -472,27 +509,9 @@ export class DelegatedWork {
     context: CommandContext,
   ): Promise<boolean> {
     const events = await this.ledger.events();
-    const failed = new Set(
-      events.flatMap(({ event }) =>
-        event.eventType === OrchestrationEventType.DelegationChildBlocked
-          ? [event.payload.childWorkItemId]
-          : [],
-      ),
-    );
-    const first = reservation.children.find((child) => failed.has(child.workItemId));
-    if (first === undefined) return false;
-    for (let pass = 0; pass < reservation.children.length; pass++)
-      for (const child of reservation.children)
-        if (child.prerequisiteWorkItemIds?.some((id) => failed.has(id)))
-          failed.add(child.workItemId);
-    const selected = new Set(
-      selectedResults(events, reservation).map((result) => result.childWorkItemId),
-    );
-    if (
-      reservation.children.every(
-        (child) => failed.has(child.workItemId) || selected.has(child.workItemId),
-      )
-    ) {
+    const failed = failedChildren(events, reservation);
+    if (failed.size === 0) return false;
+    if (this.allTerminal(events, reservation)) {
       if (!(await this.canJoin(reservation))) return true;
       await this.abandon(reservation, failed, context);
       await this.join(
@@ -503,6 +522,23 @@ export class DelegatedWork {
       );
     }
     return true;
+  }
+
+  /** Every member either failed (with its dependents) or produced its selected result. */
+  private allTerminal(
+    events: Awaited<ReturnType<DelegationLedger['events']>>,
+    reservation: DelegationReservation,
+  ): boolean {
+    const failed = failedChildren(events, reservation);
+    const selected = new Set(
+      selectedResults(events, reservation).map((result) => result.childWorkItemId),
+    );
+    return (
+      failed.size > 0 &&
+      reservation.children.every(
+        (child) => failed.has(child.workItemId) || selected.has(child.workItemId),
+      )
+    );
   }
 
   private async abandon(
@@ -776,10 +812,8 @@ export class DelegatedWork {
     reason: string,
     context: CommandContext,
   ): Promise<void> {
-    if (!reservation.children.some((entry) => (entry.prerequisites?.length ?? 0) > 0)) {
-      await this.fail(reservation, reason, context);
-      return;
-    }
+    // Every cohort keeps independent members running: the failure is a durable blocker the
+    // parent assesses, and the cohort settles unsuccessfully only once all members are terminal.
     await this.ledger.appendOnce(
       reservation.parentWorkflowInstanceId,
       context,
@@ -898,6 +932,27 @@ export class DelegatedWork {
       }
     }
   }
+}
+
+/** Recorded blockers plus the dependents that can no longer start. */
+function failedChildren(
+  events: Awaited<ReturnType<DelegationLedger['events']>>,
+  reservation: DelegationReservation,
+): Set<string> {
+  const members = new Set(reservation.children.map((child) => child.workItemId));
+  const failed = new Set(
+    events.flatMap(({ event }) =>
+      event.eventType === OrchestrationEventType.DelegationChildBlocked &&
+      members.has(event.payload.childWorkItemId)
+        ? [event.payload.childWorkItemId]
+        : [],
+    ),
+  );
+  if (failed.size === 0) return failed;
+  for (let pass = 0; pass < reservation.children.length; pass++)
+    for (const child of reservation.children)
+      if (child.prerequisiteWorkItemIds?.some((id) => failed.has(id))) failed.add(child.workItemId);
+  return failed;
 }
 
 function rootRunLimit(

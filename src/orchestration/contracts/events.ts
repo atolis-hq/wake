@@ -14,7 +14,13 @@ import type {
   StageConfig,
   TransitionTarget,
 } from './config.js';
-import type { DelegationInputs, DelegationReservation, DelegationResult } from './delegation.js';
+import type {
+  DelegationAttentionRequest,
+  DelegationAttentionResponse,
+  DelegationInputs,
+  DelegationReservation,
+  DelegationResult,
+} from './delegation.js';
 import type {
   CommandName,
   OrchestrationGroupId,
@@ -42,6 +48,9 @@ export const OrchestrationEventType = {
   DelegationWaitStarted: 'orchestration.delegation-wait-started',
   DelegationJoined: 'orchestration.delegation-joined',
   DelegationFailed: 'orchestration.delegation-failed',
+  DelegationAttentionRequested: 'orchestration.delegation-attention-requested',
+  DelegationAttentionResponded: 'orchestration.delegation-attention-responded',
+  DelegationAttentionResolved: 'orchestration.delegation-attention-resolved',
   DelegationReconciliationFailed: 'orchestration.delegation-reconciliation-failed',
   WorkflowDefinitionRegistered: 'orchestration.workflow-definition-registered',
   InstanceStarted: 'orchestration.instance-started',
@@ -94,6 +103,17 @@ export interface OrchestrationEventPayloads {
     readonly reason: string;
   };
   readonly [OrchestrationEventType.SignalDeferred]: DeferredWorkflowSignal;
+  readonly [OrchestrationEventType.DelegationAttentionRequested]: DelegationAttentionRequest;
+  readonly [OrchestrationEventType.DelegationAttentionResponded]: DelegationAttentionResponse;
+  readonly [OrchestrationEventType.DelegationAttentionResolved]: {
+    readonly cohortId: string;
+    readonly attentionKey: string;
+    readonly activationId: ActivationId;
+    /** The batched human question, published through the ordinary accepted-outcome route. */
+    readonly escalation?: string;
+    /** The assessment run itself failed; the cohort is untouched and may be re-assessed. */
+    readonly assessmentFailure?: string;
+  };
   readonly [OrchestrationEventType.DelegationFailed]: {
     readonly cohortId: string;
     readonly reason: string;

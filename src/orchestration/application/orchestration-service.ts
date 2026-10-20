@@ -3,7 +3,11 @@ import type {
   DelegationAuthority,
   DelegationRepositories,
 } from '../contracts/delegation-ports.js';
-import type { DelegationCaller, DelegationSubmission } from '../contracts/delegation.js';
+import type {
+  DelegationAttentionReply,
+  DelegationCaller,
+  DelegationSubmission,
+} from '../contracts/delegation.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
@@ -63,6 +67,7 @@ import {
   type ConversationCommandResult,
 } from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
+import { attentionVerdict } from './delegation-attention-state.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
@@ -79,6 +84,9 @@ export class OrchestrationService {
   private readonly prerequisiteReasons = (ids: readonly string[], snapshot?: DeliverySnapshot) =>
     this.delegatedWork.prerequisites.reasons(ids, snapshot);
 
+  private readonly resumeClarification = (id: WorkflowInstanceId, context: CommandContext) =>
+    this.advanceWorkflow.resumeNeedsClarificationStage(id, context);
+
   private readonly repository: OrchestrationRepository;
   private readonly deferredSignals: DeferredSignals;
   private readonly startWorkflow: StartWorkflow;
@@ -94,6 +102,8 @@ export class OrchestrationService {
   private readonly definitions: WorkflowDefinitionRegistry;
   private readonly work: WorkService;
 
+  // Composition root for the module's services; splitting it would only scatter the wiring.
+  // eslint-disable-next-line max-lines-per-function
   constructor(
     journal: EventJournal,
     work: WorkService,
@@ -129,6 +139,8 @@ export class OrchestrationService {
         artifacts: dependencies?.artifacts ?? unavailableArtifacts,
         repositories: dependencies?.repositories,
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+        supportsAttention: isAgentActivity,
+        resumeChild: this.resumeClarification,
       },
     );
     this.delegationCommands = new DelegationCommands(
@@ -263,8 +275,59 @@ export class OrchestrationService {
           return (await this.repository.loadRequired(command.workflowInstanceId)).view;
         },
         async (view) => view,
+        () => this.endAttention(command, context),
       ),
     );
+  }
+
+  /**
+   * Every ending restores the cohort wait, so independent members keep running and their
+   * results stay joinable (a join that completed meanwhile then proceeds). A structured
+   * human question is also recorded as an accepted outcome, which the ordinary publication
+   * route delivers to a human; a failed assessment run is recorded and re-raised a bounded
+   * number of times. The cohort is never settled or cancelled by the assessment itself.
+   */
+  private async endAttention(
+    command: {
+      workflowInstanceId: WorkflowInstanceId;
+      activationId: ActivationId;
+      outcome: ActivityOutcome;
+    },
+    context: CommandContext,
+  ) {
+    await this.delegatedWork.attention.resolve(
+      command.workflowInstanceId,
+      command.activationId,
+      context,
+      attentionVerdict(command.outcome),
+    );
+    await this.delegatedWork.reconcile(context);
+    return (await this.repository.loadRequired(command.workflowInstanceId)).view;
+  }
+
+  /** Delegated children still blocked on a question this work item's parent escalated to a human. */
+  async escalatedReplyTargets(workItemId: WorkItemId) {
+    const targets: WorkItemId[] = [];
+    for (const parent of await this.advanceWorkflow.listAll())
+      if (parent.workItemId === workItemId)
+        for (const target of await this.delegatedWork.attention.escalatedTargets(parent))
+          targets.push(target.childWorkItemId as WorkItemId);
+    return targets;
+  }
+
+  /** The open attention request when `activationId` is the attention activation, else null. */
+  async openDelegationAttention(id: WorkflowInstanceId, activationId: ActivationId) {
+    const view = (await this.repository.load(id)).view;
+    if (view?.delegationAttention?.activationId !== activationId) return null;
+    return this.delegatedWork.attention.current(view);
+  }
+
+  respondToDelegationAttention(
+    caller: DelegationCaller,
+    reply: DelegationAttentionReply,
+    context: CommandContext,
+  ) {
+    return this.delegationCommands.respond(caller, reply, context);
   }
 
   waitForSignal(

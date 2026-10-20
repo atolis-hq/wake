@@ -69,8 +69,39 @@ queued cohort then settles as failed and atomically requests a fresh parent
 assessment activation after the reserving Run ends. Affected unfinished child
 workflows are superseded. The agent may explicitly submit a replacement batch
 under normal authority and limits, with new immutable receipts and fresh outputs.
-Live attention before independent siblings finish is deferred. Batches without
-prerequisites retain their existing terminal-failure behavior. A completed child
+Live parent attention coalesces the unresolved reasons (recorded child blockers and children
+blocked on an agent clarification) into one assessment activation at the delegating stage,
+keyed by cohort revision and blocker identities. `delegationAttention` on the parent view
+suspends the cohort wait, so attention and the successful join share the parent's single
+activation: a join completing meanwhile stays pending in the journal and proceeds when the
+assessment ends, and a blocker arriving meanwhile waits for the next one. Each blocker is
+raised once; a still-blocked member stays visible and is never polled. A fully terminal
+batch keeps the ordinary unsuccessful continuation. The attention outcome never takes
+ordinary routing: it only restores the wait. A reply (`respondToDelegationAttention`)
+names the child, blocker and assignment revision, is bound to the attention activation's
+Run, and resumes only a child blocked for assignment context; terminal failures and
+human-only gates are rejected, exact accepted references are granted through the
+Artifacts port, and budgets are untouched. A delegating activity that is not an agent
+records one operator diagnostic instead of an attention activation. This applies to every
+cohort, with or without prerequisites: a failed member is a durable blocker, independent
+members keep starting and running, and the cohort settles unsuccessfully only once every
+member is terminal. A child parked by its own routing (blocked after exhausted retries, or
+waiting on a human route after a failed outcome) is put to the parent as a failure blocker.
+The attention activation's outcome never settles or cancels the cohort: every ending restores
+the cohort wait, so independent members keep running and their results stay joinable. A
+structured blocked or needs-clarification result is a batched human question: it is also
+recorded as an accepted outcome, which the existing publication route delivers to a human,
+and its text is kept on the resolved fact; a deliberate `FAILED` the parent agent reports is
+escalated the same way. A human reply on the parent is routed by the conversation reactor into
+the conversation of each child still blocked on an escalated question, where the ordinary reply
+path resumes it, so the answer moves the delivery without settling or joining the cohort. A
+failed, rejected or infrastructure-blocked assessment run (runner failure, authentication,
+ambiguous or invalid result, unverified completion) records the failure and a diagnostic, and
+re-raises the same blockers up to three times; the last attempt also leaves one operator
+escalation diagnostic. While an assessment is open, a
+second cohort is refused (`attention-open`); replacements are submitted once the cohort
+settles and the parent is resumed. Bootstrap adds a typed attention section to the
+agent prompt for the attention activation. A completed child
 without visible outputs gets one subsequent reconciliation command to make them
 visible; its first observation survives restart. Settled cohorts release terminal-child capacity; running siblings remain reserved. Continuation preserves the
 delegating activation's typed input and identity flags; exact results are read

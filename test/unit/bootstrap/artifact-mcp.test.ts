@@ -88,8 +88,10 @@ const context: ExecutionAttemptContext = {
   resources: [],
 };
 
-function orchestration(): Pick<OrchestrationService, 'listAll'> {
-  return { listAll: async () => [] };
+function orchestration(
+  attention: Awaited<ReturnType<OrchestrationService['openDelegationAttention']>> = null,
+): Pick<OrchestrationService, 'listAll' | 'openDelegationAttention'> {
+  return { listAll: async () => [], openDelegationAttention: async () => attention };
 }
 
 async function directory(): Promise<string> {
@@ -97,6 +99,35 @@ async function directory(): Promise<string> {
   directories.push(path);
   return path;
 }
+
+it('tells the delegating agent that an attention activation is an assessment', async () => {
+  const provision = createArtifactMcpProvisioner({
+    artifacts: { get: async () => ({ revisions: [] }), visibleTo: async () => [] } as never,
+    orchestration: orchestration({
+      cohortId: 'cohort-1',
+      attentionKey: 'cohort-1@1:grant-1:failed',
+      activationId: 'act' as never,
+      revision: 1,
+      blockers: [
+        {
+          blockerId: 'grant-1:failed',
+          childWorkItemId: 'work-2' as never,
+          kind: 'failed',
+          reason: 'Child failed',
+        },
+      ],
+      responses: [],
+    }) as never,
+    sessions: new FileArtifactMcpSessionStore(await directory(), () => '2026-09-19T12:00:00.000Z'),
+    wakeRoot: '/wake',
+    now: () => '2026-09-19T12:00:00.000Z',
+    nextId: () => 'artifact-1',
+  });
+  const capability = await provision({ runId: 'run-1', activation, context });
+  expect(capability.prompt).toContain('Delegation attention');
+  expect(capability.prompt).toContain('grant-1:failed');
+  expect(capability.prompt).toContain('not a request to delegate again');
+});
 
 it('exposes only Wake-owned tools without provider configuration or recovery storage', async () => {
   const sessions = new FileArtifactMcpSessionStore(

@@ -113,6 +113,45 @@ const delegationSamples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.DelegationAttentionRequested,
+    {
+      cohortId: 'cohort-1',
+      attentionKey: 'cohort-1@1:grant-1:failed',
+      activationId: activationId('workflow-1:activity:2'),
+      revision: 1,
+      blockers: [
+        {
+          blockerId: 'grant-1:failed',
+          childWorkItemId: workId('2'),
+          kind: 'failed',
+          reason: 'Child failed',
+        },
+      ],
+    },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationAttentionResponded,
+    {
+      cohortId: 'cohort-1',
+      attentionKey: 'cohort-1@1:grant-1:context',
+      childWorkItemId: workId('2'),
+      blockerId: 'grant-1:context',
+      expectedRevision: 1,
+      references: [{ workItemId: workId('1'), revisionId: 'revision-1' }],
+    },
+    workflow,
+  ),
+  eventEnvelope(
+    OrchestrationEventType.DelegationAttentionResolved,
+    {
+      cohortId: 'cohort-1',
+      attentionKey: 'cohort-1@1:grant-1:failed',
+      activationId: activationId('workflow-1:activity:2'),
+    },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.DelegationReconciliationFailed,
     { cohortId: 'cohort-1', reason: 'Storage unavailable' },
     workflow,

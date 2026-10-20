@@ -25,7 +25,12 @@ function commands(
     } as never,
     { definitionFor: async () => ({ delegation }) } as never,
     { currentDefinition: () => ({ fingerprint: 'fp' }) } as never,
-    { reserve, repositoryScope: async () => inherited, inspect: async () => [] } as never,
+    {
+      reserve,
+      repositoryScope: async () => inherited,
+      inspect: async () => [],
+      attention: { current: async () => null },
+    } as never,
     {
       assertCaller: async () => undefined,
       repositories: async () => repositories,
