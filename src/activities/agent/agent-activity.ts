@@ -23,17 +23,7 @@ export interface AgentContextReader {
     readonly comments: readonly AgentContextComment[];
     readonly omittedComments?: number;
     readonly pullRequest?: AgentContextPullRequest;
-    readonly assignment?: AgentContextAssignment;
   }>;
-}
-
-/** The parent-authored brief of a delegated child, which has no provider ticket of its own. */
-export interface AgentContextAssignment {
-  readonly objective: string;
-  readonly criteria: readonly string[];
-  readonly outputs: readonly { readonly name: string; readonly kind: string }[];
-  /** Accepted artifact revisions granted to the child; read with wake_artifacts_read. */
-  readonly context: readonly { readonly workItemId: string; readonly revisionId: string }[];
 }
 
 export interface AgentContextPullRequest {
@@ -293,7 +283,6 @@ interface AgentUntrustedContext {
   readonly comments: readonly AgentContextComment[];
   readonly omittedComments?: number;
   readonly pullRequest?: AgentContextPullRequest;
-  readonly assignment?: AgentContextAssignment;
 }
 
 async function buildUntrustedContext(
@@ -312,7 +301,6 @@ async function buildUntrustedContext(
     comments: context.comments,
     ...(context.omittedComments === undefined ? {} : { omittedComments: context.omittedComments }),
     ...(context.pullRequest === undefined ? {} : { pullRequest: context.pullRequest }),
-    ...(context.assignment === undefined ? {} : { assignment: context.assignment }),
   };
 }
 
@@ -332,9 +320,6 @@ function untrustedDataBlock(context: AgentUntrustedContext, isResume: boolean): 
       JSON.stringify(
         {
           ...(isResume ? {} : { issue: { title: context.issueTitle, body: context.issueBody } }),
-          ...(isResume || context.assignment === undefined
-            ? {}
-            : { assignment: context.assignment }),
           comments: context.comments,
           ...(context.pullRequest === undefined ? {} : { pullRequest: context.pullRequest }),
         },

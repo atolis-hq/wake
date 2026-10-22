@@ -22,6 +22,7 @@ import {
   type AgentRunnerResult,
   type RunnerRequest,
 } from '../../../src/execution/index.js';
+import { createGitHubAgentContextReader } from '../../../src/integrations/github/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -446,6 +447,21 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         childOf('b3').workItemId,
       ),
     ).toContainEqual({ workItemId: childOf('a1').workItemId, revisionId: 'api-contract-v1' });
+    // A child opens with its assignment as the first conversation message, and the agent's
+    // context carries it, so the work item itself only needs a short objective.
+    const opening = (await root.conversations.forWorkItem(childOf('b3').workItemId))!.entries[0]!;
+    expect(opening).toMatchObject({
+      entryId: `delegation:${childOf('b3').grantId}`,
+      origin: { kind: 'control-plane', actorId: `delegation:${parentWork}` },
+    });
+    expect(opening.body).toContain('Acceptance criteria:');
+    const agentContext = await createGitHubAgentContextReader(
+      root.journal,
+      root.resources,
+      {},
+      root.conversations,
+    ).forWorkItem(childOf('b3').workItemId);
+    expect(agentContext.comments.map((comment) => comment.body)).toContain(opening.body);
     // The artifact screen lists what a parent or sibling granted, labelled with its source.
     const consumerView = await (
       await createSurfaceApplications(root)

@@ -49,8 +49,19 @@ export type RepositoryAssignmentRequest = z.infer<typeof repositoryAssignmentReq
 export const delegatedAssignmentSchema = z
   .object({
     assignmentId: z.string().min(1),
-    objective: z.string().trim().min(1),
-    criteria: z.array(z.string().trim().min(1)).min(1),
+    objective: z
+      .string()
+      .trim()
+      .min(1)
+      .describe(
+        'A one-line summary of the task. It becomes the child work item title, so keep it short and put instructions in criteria or a granted artifact.',
+      ),
+    criteria: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .describe(
+        'The specific, checkable requirements. They are delivered to the child, with the objective, as the opening message of its conversation.',
+      ),
     workflowName: brandedStringSchema(workflowName),
     repositoryResourceIds: z.array(z.string().min(1)).optional(),
     workflowFingerprint: z.string().min(1),

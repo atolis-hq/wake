@@ -10,7 +10,11 @@ import type { ActivityName } from '../../activities/index.js';
 import { activationId } from '../../activities/index.js';
 import { repositoryAssignmentSchema, WorkspaceMode } from '../../execution/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
-import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
+import type {
+  DelegationArtifacts,
+  DelegationBriefs,
+  DelegationRepositories,
+} from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
   DelegationCaller,
@@ -32,6 +36,7 @@ import {
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
+import { renderDelegatedBrief } from '../domain/delegated-brief.js';
 import { assertCriteriaPreserving, originalOf } from '../domain/delivery-replacement.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
@@ -94,6 +99,7 @@ export class DelegatedWork {
       readonly authority?: DelegationAuthority | undefined;
       readonly supportsAttention?: ((activity: ActivityName) => boolean) | undefined;
       readonly resumeChild?: DelegationAttentionDependencies['resumeChild'] | undefined;
+      readonly briefs?: DelegationBriefs | undefined;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
@@ -197,23 +203,6 @@ export class DelegatedWork {
           ]
         : [],
     );
-  }
-
-  /** The parent-authored brief for a delegated child, or undefined for ordinary work. */
-  async assignmentFor(workItemId: string) {
-    const child = (await this.ledger.reservations())
-      .flatMap((entry) => entry.children)
-      .find((entry) => entry.workItemId === workItemId);
-    if (child === undefined) return undefined;
-    return {
-      objective: child.objective,
-      criteria: child.criteria,
-      outputs: child.outputs.map((output) => ({
-        name: output.name,
-        kind: 'kind' in output ? output.kind : 'artifact',
-      })),
-      context: child.context,
-    };
   }
 
   async repositoryFor(workItemId: string) {
@@ -799,6 +788,15 @@ export class DelegatedWork {
             rootWorkItemId: reservation.rootWorkItemId,
             ancestors: reservation.ancestors,
           },
+        },
+        childContext,
+      );
+      await this.dependencies.briefs?.open(
+        {
+          workItemId: child.workItemId,
+          entryId: `delegation:${child.grantId}`,
+          authorId: `delegation:${reservation.parentWorkItemId}`,
+          body: renderDelegatedBrief(child),
         },
         childContext,
       );

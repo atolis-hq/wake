@@ -365,33 +365,6 @@ describe('agent activity template context', () => {
     expect(prompt.split('</wake-untrusted-data>')).toHaveLength(2);
   });
 
-  it('puts a delegated assignment in the untrusted data block of a start prompt only', async () => {
-    const requests: Array<{ readonly prompt: string }> = [];
-    const assignment = {
-      objective: 'Create a.txt',
-      criteria: ['a.txt contains alpha'],
-      outputs: [{ name: 'change', kind: 'change' }],
-      context: [{ workItemId: 'work-1', revisionId: 'artifact-1' }],
-    };
-    const activity = createAgentActivity(
-      {
-        async render() {
-          return { prompt: 'x' };
-        },
-      },
-      {
-        async forWorkItem() {
-          return { title: 'Create a.txt', body: '', comments: [], assignment };
-        },
-      },
-    );
-
-    await execute(activity, (request) => requests.push(request));
-
-    const json = requests[0]!.prompt.split('Structured ticket context (JSON):\n')[1]!;
-    expect(JSON.parse(json.split('\n</wake-untrusted-data>')[0]!)).toMatchObject({ assignment });
-  });
-
   it('uses empty issue and comment values without a context reader', async () => {
     const rendered: unknown[] = [];
     const activity = createAgentActivity({

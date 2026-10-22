@@ -27,7 +27,7 @@ export function registerDelegationTools(
     'wake_delegation_submit',
     {
       description:
-        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results or terminal failure facts. Inspect failureReason and blockers before submitting replacement assignments in a new cohort; existing receipts remain immutable.',
+        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. An assignment objective is a one-line summary that titles the child work item; the child reads its objective and criteria as the opening message of its conversation, so put detail in criteria or a granted artifact. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results or terminal failure facts. Inspect failureReason and blockers before submitting replacement assignments in a new cohort; existing receipts remain immutable.',
       inputSchema: delegationSubmissionSchema,
     },
     async (command) => {

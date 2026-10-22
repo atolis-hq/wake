@@ -728,6 +728,14 @@ artifact context references and named outputs (name and path). Wake pins each
 current workflow definition. Caller, Run, activation and reservation limits
 are server-owned; agents cannot supply them.
 
+A child work item's title is the assignment's `objective`, so it should be a one-line summary. Wake
+delivers the assignment to the child as the opening message of its conversation (authored by
+`delegation:<parent work item>`, so it is never read as a command): the objective, the acceptance
+criteria, the declared outputs and the artifact revisions granted to it. Detail belongs in the
+criteria or in an artifact granted as context. Granted artifacts are readable by the child's agent
+and appear in its artifact manifest and on its Artifacts tab, labelled with the work item that
+published them.
+
 Optional repositoryResourceIds narrow the invoking assignment's permitted scope;
 for a root this scope comes from correlated Repository Resources. When a root has none,
 its first delegation request (or `wake_delegation_inspect`) binds the repository the

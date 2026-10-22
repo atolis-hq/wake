@@ -37,6 +37,19 @@ export interface DelegationArtifacts {
   ): Promise<DelegationResult['outputs'] | null>;
 }
 
+/** Delivers an assignment to the child as the opening message of its conversation. */
+export interface DelegationBriefs {
+  open(
+    input: {
+      readonly workItemId: DelegationReservation['parentWorkItemId'];
+      readonly entryId: string;
+      readonly authorId: string;
+      readonly body: string;
+    },
+    context: CommandContext,
+  ): Promise<void>;
+}
+
 export interface DelegationAuthority {
   assertQaCaller?(
     caller: DelegationCaller,

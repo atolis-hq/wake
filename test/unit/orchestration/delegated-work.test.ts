@@ -38,6 +38,7 @@ import {
   TransitionTargetKind,
   workflowInstanceStream,
   type DelegationArtifacts,
+  type DelegationBriefs,
   type DelegationRepositories,
   type WorkflowInstanceView,
   type WorkflowOrchestrationEventData,
@@ -191,6 +192,7 @@ function build(
       names,
     ),
   };
+  const opened: Parameters<DelegationBriefs['open']>[0][] = [];
   const service = createOrchestrationService(
     journal,
     work,
@@ -201,10 +203,11 @@ function build(
       artifacts,
       authority: { assertCaller: async () => undefined, repositories: async () => [] },
       ...(repositories === undefined ? {} : { repositories }),
+      briefs: { open: async (input) => void opened.push(input) },
       runHasEnded: async (id) => !activeRuns.has(id),
     }),
   );
-  return { journal, work, service, artifacts, definitions, activeRuns, activities };
+  return { journal, work, service, artifacts, definitions, activeRuns, activities, opened };
 }
 
 type Fixture = ReturnType<typeof build>;
@@ -647,22 +650,35 @@ it('isolates a broken cohort while unrelated outcomes, later cohorts and watch c
   ).toBeGreaterThan(0);
 });
 
-it('exposes a delegated child assignment and nothing for other work', async () => {
+it('opens each child with its assignment and keeps the work item title a short summary', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
   const reservation = await fixture.service['delegatedWork'].reserve(
     caller,
-    'cohort-1',
-    [assignment(fingerprint, 'a')],
-    context('reserve'),
+    'brief',
+    [
+      {
+        ...assignment(fingerprint, 'a'),
+        objective: 'Add a.txt',
+        criteria: ['a.txt contains alpha', 'No other file changes'],
+        context: [{ workItemId: workId('1'), revisionId: 'brief-1' }],
+      },
+    ],
+    context('brief'),
   );
-  expect(await fixture.service.delegatedAssignment(reservation.children[0]!.workItemId)).toEqual({
-    objective: 'Do a',
-    criteria: ['Findings published'],
-    outputs: [{ name: 'findings', kind: 'artifact' }],
-    context: [],
+  const child = reservation.children[0]!;
+
+  // The work item carries only the summary; the substance is delivered as the opening message.
+  expect((await fixture.work.get(child.workItemId))?.objective).toBe('Add a.txt');
+  expect(fixture.opened).toHaveLength(1);
+  expect(fixture.opened[0]).toMatchObject({
+    workItemId: child.workItemId,
+    entryId: `delegation:${child.grantId}`,
+    authorId: `delegation:${reservation.parentWorkItemId}`,
   });
-  expect(await fixture.service.delegatedAssignment(reservation.parentWorkItemId)).toBeUndefined();
+  expect(fixture.opened[0]!.body).toContain('Add a.txt');
+  expect(fixture.opened[0]!.body).toContain('- a.txt contains alpha');
+  expect(fixture.opened[0]!.body).toContain('brief-1');
 });
 
 it('keeps a completed child pending while its output may still become visible, then blocks it', async () => {

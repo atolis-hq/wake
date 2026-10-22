@@ -1,6 +1,7 @@
 import type {
   DelegationArtifacts,
   DelegationAuthority,
+  DelegationBriefs,
   DelegationRepositories,
 } from '../contracts/delegation-ports.js';
 import type {
@@ -156,6 +157,7 @@ export class OrchestrationService {
         runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
         supportsAttention: isAgentActivity,
         resumeChild: this.resumeClarification,
+        briefs: dependencies?.briefs,
       },
     );
     this.delegationCommands = new DelegationCommands(
@@ -223,10 +225,6 @@ export class OrchestrationService {
 
   changeOutputAssignments(workItemId: string) {
     return this.delegatedWork.changeOutputAssignments(workItemId);
-  }
-
-  delegatedAssignment(workItemId: string) {
-    return this.delegatedWork.assignmentFor(workItemId);
   }
 
   repositoryAssignment(workItemId: string) {
@@ -984,6 +982,7 @@ type DelegationDependenciesFactory = (queries: {
   artifacts: DelegationArtifacts;
   authority?: DelegationAuthority;
   repositories?: DelegationRepositories;
+  briefs?: DelegationBriefs;
   integration?: DeliveryIntegration;
   runHasEnded: (runId: string) => Promise<boolean>;
 };

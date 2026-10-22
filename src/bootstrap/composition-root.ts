@@ -30,7 +30,7 @@ import {
   type TriggerConfig,
   type TriggerService,
 } from '../control-plane/index.js';
-import { createConversationService } from '../conversations/index.js';
+import { createConversationService, recordOpeningEntry } from '../conversations/index.js';
 import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
@@ -83,12 +83,12 @@ import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
 import { delegatedGrantReferences, withDelegatedGrants } from './delegated-artifact-context.js';
-import { withDelegatedAssignment } from './delegated-assignment-context.js';
 import { createDelegationAuthority } from './delegation-authority.js';
 import { createDeliveryIntegration } from './delivery-integration.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
+import { withObjectiveTitle } from './objective-title-context.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
 import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
@@ -229,7 +229,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       pullRequests,
       resources,
       wakeRoot,
-      withDelegatedAssignment(
+      withObjectiveTitle(
         createGitHubAgentContextReader(
           journal,
           resources,
@@ -239,7 +239,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           },
           conversations,
         ),
-        (workItemId) => orchestration.delegatedAssignment(workItemId),
+        work,
       ),
       // Resolved lazily: Orchestration is composed after the registry it compiles against.
       { authorize: (request) => orchestration.authorizeParentAction(request) },
@@ -300,6 +300,9 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           providers: () => providerInstances.promise,
         }),
       ),
+      briefs: {
+        open: (input, context) => recordOpeningEntry(conversations, input, context),
+      },
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
         return (

@@ -2,6 +2,8 @@ export * from './application/conversation-projection.js';
 
 export * from './application/conversation-service.js';
 
+export * from './application/opening-entry.js';
+
 export * from './contracts/commands.js';
 
 export * from './contracts/events.js';
