@@ -82,6 +82,7 @@ import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { withDelegatedAssignment } from './delegated-assignment-context.js';
 import { createDelegationAuthority } from './delegation-authority.js';
 import { createDeliveryIntegration } from './delivery-integration.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
@@ -226,14 +227,17 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       pullRequests,
       resources,
       wakeRoot,
-      createGitHubAgentContextReader(
-        journal,
-        resources,
-        {
-          publicUiUrl: config.surfaces.web.publicUrl,
-          githubAdapters: githubAdapters(config),
-        },
-        conversations,
+      withDelegatedAssignment(
+        createGitHubAgentContextReader(
+          journal,
+          resources,
+          {
+            publicUiUrl: config.surfaces.web.publicUrl,
+            githubAdapters: githubAdapters(config),
+          },
+          conversations,
+        ),
+        (workItemId) => orchestration.delegatedAssignment(workItemId),
       ),
       // Resolved lazily: Orchestration is composed after the registry it compiles against.
       { authorize: (request) => orchestration.authorizeParentAction(request) },

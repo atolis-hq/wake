@@ -47,6 +47,8 @@ export function decodeDelivery(
       const item = object(value, path);
       return {
         workItemKey: string(item.workItemKey, child(path, 'workItemKey')),
+        workItemId: string(item.workItemId, child(path, 'workItemId')),
+        ...optionalStringProperty(item, 'externalRef', path),
         parentWorkItemKey: string(item.parentWorkItemKey, child(path, 'parentWorkItemKey')),
         objective: string(item.objective, child(path, 'objective')),
         workflowName: string(item.workflowName, child(path, 'workflowName')),

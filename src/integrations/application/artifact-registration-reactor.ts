@@ -177,13 +177,14 @@ export class ArtifactRegistrationReactor {
       await this.recordUnresolved(provider, record, verified, attempt);
       return;
     }
-    await this.registerVerified(record, verified, workItemId);
+    await this.registerVerified(record, verified, workItemId, provider);
   }
 
   private async registerVerified(
     record: ArtifactRecord,
     verified: Exclude<Awaited<ReturnType<ProviderInstance['verifyArtifact']>>, string>,
     workItemId: string,
+    provider: ProviderInstance,
   ): Promise<void> {
     const existing = await this.dependencies.resources.findByExternalKey(verified.externalKey);
     // Re-discover an existing resource so a re-report records its newly verified head.
@@ -209,7 +210,9 @@ export class ArtifactRegistrationReactor {
       );
     } catch {
       // Resources records primary conflicts durably; this flow never guesses a secondary relation.
+      return;
     }
+    await provider.reobserve?.(verified.externalKey);
   }
 
   private async recordUnresolved(

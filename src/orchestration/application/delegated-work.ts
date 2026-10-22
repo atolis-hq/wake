@@ -66,6 +66,9 @@ import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.
 
 const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
 
+/** How long completed-child outputs may stay invisible before the child is blocked. */
+const OUTPUT_VISIBILITY_GRACE_MS = 120_000;
+
 /**
  * Durable delegation of independent child WorkItems. Reservation is the single commit point;
  * every later boundary is reconciled idempotently from it, and the parent stays fenced until join.
@@ -114,7 +117,11 @@ export class DelegatedWork {
     this.runHasEnded = dependencies.runHasEnded;
   }
 
-  async inspect(id: WorkItemId) {
+  /**
+   * `verify` re-checks upstream outputs with the provider. Reads default to recorded facts
+   * because that check costs provider round trips on every call.
+   */
+  async inspect(id: WorkItemId, options: { readonly verify?: boolean } = {}) {
     const item = await this.work.get(id);
     const root = item?.delegation?.rootWorkItemId ?? id;
     const events = await this.ledger.events();
@@ -136,7 +143,9 @@ export class DelegatedWork {
             ...child,
             work: await this.work.get(child.workItemId),
             prerequisiteBlocker:
-              (await read.reason(child.workItemId)) ?? childBlocker(events, child.workItemId),
+              (options.verify === true
+                ? await read.reason(child.workItemId)
+                : read.recordedReason(child.workItemId)) ?? childBlocker(events, child.workItemId),
             consumedInputs: read.inputs(child.workItemId),
             workflow: read.workflow(child.workflowInstanceId) ?? null,
           })),
@@ -188,6 +197,23 @@ export class DelegatedWork {
           ]
         : [],
     );
+  }
+
+  /** The parent-authored brief for a delegated child, or undefined for ordinary work. */
+  async assignmentFor(workItemId: string) {
+    const child = (await this.ledger.reservations())
+      .flatMap((entry) => entry.children)
+      .find((entry) => entry.workItemId === workItemId);
+    if (child === undefined) return undefined;
+    return {
+      objective: child.objective,
+      criteria: child.criteria,
+      outputs: child.outputs.map((output) => ({
+        name: output.name,
+        kind: 'kind' in output ? output.kind : 'artifact',
+      })),
+      context: child.context,
+    };
   }
 
   async repositoryFor(workItemId: string) {
@@ -904,7 +930,10 @@ export class DelegatedWork {
       });
       return;
     }
-    if (observed.event.causationId !== context.commandId)
+    // Provider evidence (e.g. a PR observation) lags the child's completion, so a later
+    // pass alone does not prove the output is missing; only a bounded wait does.
+    const waitedMs = Date.parse(context.occurredAt) - Date.parse(observed.event.occurredAt);
+    if (observed.event.causationId !== context.commandId && waitedMs >= OUTPUT_VISIBILITY_GRACE_MS)
       await this.failChild(
         reservation,
         child,

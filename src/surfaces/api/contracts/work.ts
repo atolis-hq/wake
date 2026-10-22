@@ -93,6 +93,9 @@ export interface WorkDetailResponse {
     }[];
     readonly children: readonly {
       readonly workItemKey: WorkItemKey;
+      readonly workItemId: string;
+      /** Provider reference of the child's primary resource (e.g. its PR), once it has one. */
+      readonly externalRef?: string;
       readonly parentWorkItemKey: WorkItemKey;
       readonly objective: string;
       readonly workflowName: string;

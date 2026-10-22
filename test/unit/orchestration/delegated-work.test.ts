@@ -49,10 +49,10 @@ import { workId } from '../../support/identities.js';
 
 afterEach(() => vi.restoreAllMocks());
 
-const context = (commandId: string): CommandContext => ({
+const context = (commandId: string, occurredAt = '2026-07-30T12:00:00.000Z'): CommandContext => ({
   commandId,
   correlationId: correlationId('delegation-1'),
-  occurredAt: '2026-07-30T12:00:00.000Z',
+  occurredAt,
   actor: { kind: 'system', id: 'test' },
 });
 
@@ -647,6 +647,62 @@ it('isolates a broken cohort while unrelated outcomes, later cohorts and watch c
   ).toBeGreaterThan(0);
 });
 
+it('exposes a delegated child assignment and nothing for other work', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a')],
+    context('reserve'),
+  );
+  expect(await fixture.service.delegatedAssignment(reservation.children[0]!.workItemId)).toEqual({
+    objective: 'Do a',
+    criteria: ['Findings published'],
+    outputs: [{ name: 'findings', kind: 'artifact' }],
+    context: [],
+  });
+  expect(await fixture.service.delegatedAssignment(reservation.parentWorkItemId)).toBeUndefined();
+});
+
+it('keeps a completed child pending while its output may still become visible, then blocks it', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a')],
+    context('reserve'),
+  );
+  const child = reservation.children[0]!;
+  await complete(fixture, child.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('first'));
+  expect(await count(fixture, OrchestrationEventType.DelegationReconciliationFailed)).toBe(1);
+  // Back-to-back passes (provider evidence typically lands within seconds) must not block it.
+  await fixture.service.reconcileChildCompletions(context('second', '2026-07-30T12:00:02.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(0);
+  // The output becoming visible inside the window selects the result.
+  fixture.artifacts.published.add(child.workItemId);
+  await fixture.service.reconcileChildCompletions(context('visible', '2026-07-30T12:00:03.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationResultSelected)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(0);
+});
+
+it('blocks a completed child whose output stays invisible past the grace window', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a')],
+    context('reserve'),
+  );
+  await complete(fixture, reservation.children[0]!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('first'));
+  await fixture.service.reconcileChildCompletions(context('late', '2026-07-30T12:05:00.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(1);
+});
+
 it.each(['failed', 'missing-output'])(
   'settles and blocks on a %s child across restart without stranding siblings',
   async (failure) => {
@@ -662,7 +718,10 @@ it.each(['failed', 'missing-output'])(
     await complete(fixture, child.workflowInstanceId, failure === 'failed' ? 'failed' : 'done');
     const restarted = build(fixture.journal, fixture.artifacts);
     await restarted.service.reconcileChildCompletions(context('restart'));
-    await restarted.service.reconcileChildCompletions(context('duplicate'));
+    // A missing output is only blocked once the visibility grace has elapsed.
+    await restarted.service.reconcileChildCompletions(
+      context('duplicate', failure === 'missing-output' ? '2026-07-30T12:05:00.000Z' : undefined),
+    );
     // Raised once for the failed member; the running sibling keeps its pending work.
     expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(1);
     expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
@@ -1942,6 +2001,38 @@ it('deduplicates shared prerequisite verification within a gate pass and skips s
   verification.mockClear();
   await fixture.service.reconcileChildCompletions(context('settled-history'));
   expect(verification).not.toHaveBeenCalled();
+});
+
+it('inspects blockers from recorded facts without verifying outputs with the provider', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'inspect',
+    [
+      assignment(fingerprint, 'source'),
+      {
+        ...assignment(fingerprint, 'consumer'),
+        prerequisites: [
+          { assignmentId: 'source', output: 'findings', condition: 'accepted-output' as const },
+        ],
+      },
+    ],
+    context('inspect'),
+  );
+  const consumer = batch.children[1]!.workItemId;
+  const verification = vi.spyOn(fixture.artifacts, 'prerequisiteOutput');
+  const waiting = (tree: Awaited<ReturnType<typeof fixture.service.deliveryTree>>) =>
+    tree[0]!.children.find((child) => child.workItemId === consumer)!.prerequisiteBlocker;
+
+  expect(waiting(await fixture.service.deliveryTree(batch.parentWorkItemId))).toBe(
+    'Waiting for accepted-output output source/findings',
+  );
+  expect(verification).not.toHaveBeenCalled();
+
+  // Explicit verification still evaluates against the provider.
+  await fixture.service.deliveryTree(batch.parentWorkItemId, { verify: true });
+  expect(verification).toHaveBeenCalled();
 });
 
 it('bounds prerequisite diagnostics when provider error messages keep changing', async () => {

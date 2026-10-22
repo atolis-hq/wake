@@ -225,6 +225,10 @@ export class OrchestrationService {
     return this.delegatedWork.changeOutputAssignments(workItemId);
   }
 
+  delegatedAssignment(workItemId: string) {
+    return this.delegatedWork.assignmentFor(workItemId);
+  }
+
   repositoryAssignment(workItemId: string) {
     return this.delegatedWork.repositoryFor(workItemId);
   }
@@ -316,8 +320,8 @@ export class OrchestrationService {
     };
   }
 
-  deliveryTree(id: WorkItemId) {
-    return this.delegatedWork.inspect(id);
+  deliveryTree(id: WorkItemId, options?: { readonly verify?: boolean }) {
+    return this.delegatedWork.inspect(id, options);
   }
 
   deliveryRunLimit(id: WorkItemId) {

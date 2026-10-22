@@ -94,6 +94,48 @@ export class PrerequisiteReadiness {
     return this.workflows.get(id);
   }
 
+  /**
+   * Why a child is held back, from recorded facts only. Read paths use this because the full
+   * evaluation asks the provider to re-verify upstream outputs; drift is detected by
+   * reconciliation, which records a block this method then reports.
+   */
+  recordedReason(id: string, seen = new Set<string>()): string | undefined {
+    const blocked = this.blockers.get(id);
+    if (blocked !== undefined) return blocked.reason;
+    const child = this.children.get(id);
+    // Pinned inputs mean every prerequisite was met when the child was started.
+    if (child === undefined || this.receipts.has(id) || seen.has(id)) return undefined;
+    for (const edge of child.prerequisites ?? []) {
+      const upstream = this.upstreamOf(child, edge);
+      if (upstream === undefined) continue;
+      return this.recordedUpstreamReason(upstream, edge, new Set([...seen, id]));
+    }
+    return undefined;
+  }
+
+  private upstreamOf(child: Child, edge: DelegationPrerequisite): Child | undefined {
+    const owner = this.owners.get(child.workItemId);
+    return [...this.children.values()].find(
+      (entry) =>
+        this.owners.get(entry.workItemId) === owner && entry.assignmentId === edge.assignmentId,
+    );
+  }
+
+  private recordedUpstreamReason(
+    upstream: Child,
+    edge: DelegationPrerequisite,
+    seen: Set<string>,
+  ): string | undefined {
+    const inherited = this.recordedReason(upstream.workItemId, seen);
+    if (inherited !== undefined) return inherited;
+    const workflow = this.workflows.get(upstream.workflowInstanceId);
+    if (workflow === undefined) return `Waiting for upstream ${upstream.assignmentId}`;
+    return (
+      workflowReason(workflow, edge) ??
+      `Waiting for ${edge.condition} output ${upstream.assignmentId}/${edge.output}`
+    );
+  }
+
   async reason(id: string): Promise<string | undefined> {
     return (await this.block(id))?.reason;
   }

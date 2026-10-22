@@ -120,6 +120,11 @@ export interface ProviderInstance {
       readonly pullRequestBase?: string;
     },
   ): Promise<VerifiedArtifact | ArtifactVerificationResult>;
+  /**
+   * Re-applies the latest journaled observation of a resource Wake has just begun tracking,
+   * for observations that arrived before the resource had a WorkItem.
+   */
+  readonly reobserve?: (externalKey: ExternalResourceKey) => Promise<void>;
   // Optional live reachability probe a caller (e.g. doctor diagnostics) can invoke
   // generically; resolves when the external system is reachable, rejects otherwise.
   readonly checkConnectivity?: () => Promise<void>;

@@ -461,24 +461,23 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       0,
     );
     expect(
-      (await root.orchestration.deliveryTree(parentWork))[0]!.children.find(
+      (await root.orchestration.deliveryTree(parentWork, { verify: true }))[0]!.children.find(
         (child) => child.assignmentId === 'b2',
       )!.prerequisiteBlocker,
     ).toBeUndefined();
     const detail = await (
       await createSurfaceApplications(root)
     ).api.work.detail(toWorkItemKey(parentWork));
-    expect(
-      detail!.data.delegation!.children.find(
-        (child) => child.workItemKey === toWorkItemKey(childOf('a2').workItemId),
-      )!.blockReason,
-    ).toContain('branch moved');
     // DC-23: the blocked stacked child names its prerequisite for navigation and why it waits,
     // while an unaffected sibling with satisfied prerequisites reports no blocker.
     const rows = new Map(detail!.data.delegation!.children.map((row) => [row.workItemKey, row]));
     const blockedRow = rows.get(toWorkItemKey(childOf('a2').workItemId))!;
     expect(blockedRow.prerequisites).toContain(toWorkItemKey(childOf('a1').workItemId));
-    expect(blockedRow.prerequisiteBlocker).toContain('branch moved');
+    // Rows carry the id and the provider reference of their PR so the UI can label them.
+    expect(blockedRow.workItemId).toBe(childOf('a2').workItemId);
+    expect(blockedRow.externalRef).toBe('org/a#2');
+    // Live drift is not computed on read; the UI shows blockers that reconciliation recorded.
+    expect(blockedRow.prerequisiteBlocker).toBeUndefined();
     expect(rows.get(toWorkItemKey(childOf('b2').workItemId))!.prerequisiteBlocker).toBeUndefined();
     // Preserve historical receipts; returning to the exact source is an explicit agent operation.
     await git(paths.a, 'update-ref', 'refs/heads/' + childOf('a1').workItemId, heads.get('a1')!);
@@ -492,7 +491,8 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       context('base-moved'),
     );
     root = await open();
-    const movedBase = (await root.orchestration.deliveryTree(parentWork))[0]!.children;
+    const movedBase = (await root.orchestration.deliveryTree(parentWork, { verify: true }))[0]!
+      .children;
     expect(
       movedBase.find((child) => child.assignmentId === 'a2')!.prerequisiteBlocker,
     ).toBeUndefined();

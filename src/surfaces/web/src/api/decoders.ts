@@ -185,6 +185,8 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     totalDurationMs: number(record.totalDurationMs, child(path, 'totalDurationMs')),
     activeRuns: decodeBoardCardActiveRuns(record.activeRuns, child(path, 'activeRuns')),
     ...optionalStringProperty(record, 'externalRef', path),
+    ...optionalStringProperty(record, 'parentWorkItemKey', path),
+    ...optionalNumberProperty(record, 'childCount', path),
   };
 };
 

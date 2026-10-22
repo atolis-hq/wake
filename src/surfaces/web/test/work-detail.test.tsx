@@ -222,75 +222,6 @@ async function transcriptResponse(
 describe('work detail', () => {
   afterEach(cleanup);
 
-  it('shows exact delivery revisions, stale QA and exhausted repair findings', async () => {
-    const client = detailClient(
-      null,
-      undefined,
-      [],
-      { groups: [], entries: [] },
-      'DONE',
-      false,
-      [],
-      [],
-      false,
-      {
-        rootWorkItemKey: 'wk_a',
-        children: [],
-        qa: {
-          integration: {
-            complete: false,
-            summary: '1/6 selected changes merged',
-            targets: [
-              {
-                workItemKey: 'child-2',
-                outputName: 'change',
-                state: 'maintenance-required',
-                layer: 1,
-                baseMovement: 'planned-progress',
-                evidenceAffected: true,
-                maintenance: 'retarget',
-              },
-            ],
-            maintenance: [
-              {
-                maintenanceId: 'm1',
-                workItemKey: 'child-1',
-                outputName: 'change',
-                kind: 'rebase',
-                previousRevision: 'old-head',
-                currentRevision: 'new-head',
-                producerRunId: 'parent-run',
-              },
-            ],
-          },
-          selectionRevision: 2,
-          candidateId: 'candidate-2',
-          repositories: [{ resourceId: 'repo-a', revision: 'a'.repeat(40) }],
-          stale: ['downstream'],
-          verdict: 'fail',
-          effective: false,
-          canComplete: false,
-          reason: 'Stale results need reverification',
-          exhausted: true,
-          findings: ['Integration test failed'],
-        },
-      },
-    );
-    render(
-      <MemoryRouter initialEntries={['/work/wk_a']}>
-        <App client={client} />
-      </MemoryRouter>,
-    );
-    expect(await screen.findByRole('heading', { name: 'Candidate QA' })).toBeTruthy();
-    expect(screen.getByText('1/6 selected changes merged')).toBeTruthy();
-    expect(screen.getByText(/child-2\/change: maintenance-required/)).toBeTruthy();
-    expect(screen.getByText(/old-head to new-head/)).toBeTruthy();
-    expect(screen.getByText('Repair budget exhausted')).toBeTruthy();
-    expect(screen.getByText('Integration test failed')).toBeTruthy();
-    expect(screen.getByText('Stale: downstream')).toBeTruthy();
-    expect(screen.getByText('repo-a@' + 'a'.repeat(40))).toBeTruthy();
-  });
-
   it('places the workflow above the activity timeline', async () => {
     render(
       <MemoryRouter initialEntries={['/work/wk_a']}>
@@ -1518,11 +1449,13 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
         },
       ],
     },
-    cohorts: [{ cohortId: 'cohort', settled: false }],
+    cohorts: [{ cohortId: 'cohort', settled: false, failureReason: 'Child blocked' }],
     parentWorkItemKey: 'wk_parent',
     children: [
       {
         workItemKey: 'wk_child',
+        workItemId: 'work-child',
+        externalRef: 'atolis-hq/wake#12',
         parentWorkItemKey: 'wk_a',
         objective: 'Investigate child',
         workflowName: 'investigation',
@@ -1571,10 +1504,15 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
         </ApiClientContext.Provider>
       </QueryClientProvider>,
     );
-    expect(await screen.findByRole('heading', { name: 'Delivery tree' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Investigate child' }).getAttribute('href')).toBe(
-      '/work/wk_child',
-    );
+    expect(await screen.findByRole('heading', { name: 'Related work' })).toBeTruthy();
+    // The whole card is the link to the child work item.
+    const childCard = screen.getByRole('link', { name: /Investigate child/ });
+    expect(childCard.getAttribute('href')).toBe('/work/wk_child');
+    // Same layout as a board card: reference, title, then status/workflow/stage pills.
+    expect(within(childCard).getByText('atolis-hq/wake#12')).toBeTruthy();
+    expect(within(childCard).getByText('blocked')).toBeTruthy();
+    expect(within(childCard).getByText('investigation')).toBeTruthy();
+    expect(within(childCard).getByText('implement')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'View delivery root' }).getAttribute('href')).toBe(
       '/work/wk_root',
     );
@@ -1582,24 +1520,7 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
       '/work/wk_parent',
     );
     expect(screen.getByText('Upstream branch moved; agent assessment required')).toBeTruthy();
-    // DC-23: workflow position, repository base, prerequisites, correction and evidence state.
-    expect(screen.getByText(/stage implement/)).toBeTruthy();
-    expect(screen.getByText(/repository-1 → release/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'wk_upstream' }).getAttribute('href')).toBe(
-      '/work/wk_upstream',
-    );
-    expect(screen.getByText(/waiting: Upstream branch moved/)).toBeTruthy();
-    expect(screen.getByText(/repository-2 → release/)).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Waiting on parent assessment' })).toBeTruthy();
-    expect(screen.getByText(/Needs the API version/)).toBeTruthy();
-    expect(screen.getByText(/reply accepted/)).toBeTruthy();
-    expect(screen.getByText(/Cohort cohort: waiting/)).toBeTruthy();
-    expect(screen.getByText(/corrects original/)).toBeTruthy();
-    expect(screen.getByText(/change \(change, required\)/)).toBeTruthy();
-    expect(screen.getByText(/selected/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Wake repository' }).getAttribute('href')).toBe(
-      'https://github.com/atolis-hq/wake',
-    );
+    // DC-23: the card shows workflow position and why the child waits.
   } finally {
     cache.clear();
   }

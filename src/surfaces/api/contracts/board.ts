@@ -23,6 +23,10 @@ export interface BoardCardResponse {
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardCardCondition;
+  /** Present on delegated children: the work item that delegated this one. */
+  readonly parentWorkItemKey?: string;
+  /** Present on a delegating parent: how many child work items it created. */
+  readonly childCount?: number;
   readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
   /** Whether the primary workflow needs a gate-budget extension to continue. */

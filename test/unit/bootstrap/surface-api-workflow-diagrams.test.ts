@@ -1,5 +1,8 @@
+import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
+import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import {
+  createWorkflowDiagramApplications,
   presentWorkflowDiagram,
   type WorkflowDiagramOverlay,
 } from '../../../src/bootstrap/surface-api-workflow-diagrams.js';
@@ -8,6 +11,8 @@ import {
   type CompiledWorkflow,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
+import { FakeClock } from '../../e2e/support/world.js';
 
 it('uses one compiled definition card per stage child and overlays repeated activity and watch runs', () => {
   const definition = {
@@ -91,3 +96,15 @@ function run(
     ...(status === RunStatus.Succeeded ? { finishedAt: '2026-08-22T10:01:00.000Z' } : {}),
   } as RunView;
 }
+
+it('returns no diagrams, not an error, for work without a primary workflow instance yet', async () => {
+  const root = {
+    journal: new InMemoryEventJournal(new FakeClock()),
+    orchestration: { listForWorkItem: async () => [] },
+  } as unknown as CompositionRoot;
+  const applications = createWorkflowDiagramApplications(root, () => '2026-10-21T00:00:00.000Z');
+
+  await expect(applications.get(toWorkItemKey('work-queued-child'))).resolves.toMatchObject({
+    data: { diagrams: [] },
+  });
+});

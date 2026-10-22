@@ -196,6 +196,55 @@ export class InboundTranslator {
   private readonly conversationCapabilities: readonly ConversationSurfaceCapability[];
   private conversationRecordRecoveryPending: boolean | undefined;
 
+  /**
+   * Applies the newest journaled observation of a pull request Wake has just correlated to
+   * a WorkItem. A poll that saw the PR earlier was skipped as unowned, and unchanged evidence
+   * is not re-emitted, so without this the PR would never gain its WorkItem observation.
+   */
+  async reapplyObservation(externalKey: string): Promise<void> {
+    if (this.journal === undefined || this.resources === undefined) return;
+    const pullRequests = this.pullRequests;
+    if (pullRequests === undefined) return;
+    const latest = await this.latestPullRequestObservation(externalKey);
+    if (latest === undefined) return;
+    const resourceIdValue = await this.lookup?.resourceIdForExternalKey({
+      adapter: this.adapter,
+      key: externalKey,
+    });
+    if (resourceIdValue === null || resourceIdValue === undefined) return;
+    const primary = (await this.resources.correlations(resourceIdValue)).find(
+      (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+    );
+    if (primary === undefined) return;
+    await this.applyReobservation({
+      payload: latest.event.payload,
+      context: {
+        ...commandContext(latest),
+        commandId: `${latest.event.eventId}:reobserve:${resourceIdValue}`,
+      },
+      pullRequests,
+      resourceId: resourceIdValue,
+      workItemId: primary.workItemId,
+    });
+  }
+
+  private async latestPullRequestObservation(
+    externalKey: string,
+  ): Promise<GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved> | undefined> {
+    let latest: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved> | undefined;
+    for (const envelope of await this.journal!.readStream(integrationStream(this.adapter))) {
+      const owned = selectGitHubAdapterEvent(envelope);
+      if (
+        owned !== null &&
+        isGitHubAdapterEventType(owned, GitHubEventType.WorkObserved) &&
+        owned.event.payload.kind === 'pull-request' &&
+        owned.event.payload.externalKey === externalKey
+      )
+        latest = owned;
+    }
+    return latest;
+  }
+
   private async reconcileOnce(): Promise<void> {
     if (this.journal === undefined || this.work === undefined || this.resources === undefined) {
       throw new Error('InboundTranslator services are required to run evidence translation');

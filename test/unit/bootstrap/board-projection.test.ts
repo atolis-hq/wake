@@ -90,6 +90,41 @@ function runStartedEvent(
 }
 
 describe('operator board projection', () => {
+  it('links delegated children to their parent card and counts them on the parent', () => {
+    const parent = workId('parent');
+    const first = workId('child-1');
+    const second = workId('child-2');
+    const delegation = {
+      parentWorkItemId: parent,
+      rootWorkItemId: parent,
+      ancestors: [parent],
+    };
+    const view = [
+      eventEnvelope(WorkEventType.ItemCreated, { objective: 'Parent' }, workItemStream(parent), 1),
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'First', delegation },
+        workItemStream(first),
+        2,
+      ),
+      eventEnvelope(
+        WorkEventType.ItemCreated,
+        { objective: 'Second', delegation },
+        workItemStream(second),
+        3,
+      ),
+    ].reduce(
+      (state, event) => boardProjection.project(state, event),
+      boardProjection.initial('global'),
+    );
+
+    expect(view.cards[parent]).toMatchObject({ childCount: 2 });
+    expect(view.cards[parent]?.parentWorkItemKey).toBeUndefined();
+    expect(view.cards[first]).toMatchObject({ parentWorkItemKey: toWorkItemKey(parent) });
+    expect(view.cards[first]?.childCount).toBeUndefined();
+    expect(view.cards[second]).toMatchObject({ parentWorkItemKey: toWorkItemKey(parent) });
+  });
+
   it('projects a primary preparation as an active starting run before execution begins', () => {
     const item = workId('board-preparing-primary');
     const workflowId = workflowInstanceId(`primary:${item}`);
