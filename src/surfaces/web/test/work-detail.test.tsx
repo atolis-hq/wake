@@ -253,6 +253,56 @@ describe('work detail', () => {
     expect(screen.getByRole('heading', { name: 'Activity timeline' })).toBeTruthy();
   });
 
+  it('lists artifacts other work made available to this one, apart from its own', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/work/wk_a']}>
+        <App
+          client={detailClient(
+            null,
+            undefined,
+            [],
+            undefined,
+            undefined,
+            false,
+            [],
+            [
+              {
+                revisionId: 'own-1',
+                producer: 'workflow-1/implement',
+                path: 'notes.md',
+                occurredAt: asOf,
+                href: '/api/v1/work-items/wk_a/artifacts/own-1',
+              },
+              {
+                revisionId: 'brief-1',
+                producer: 'workflow-parent/plan',
+                path: 'task-1.md',
+                occurredAt: asOf,
+                href: '/api/v1/work-items/wk_parent/artifacts/brief-1',
+                source: { workItemKey: 'wk_parent', relation: 'granted' },
+              },
+            ],
+          )}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('tab', { name: 'Artifacts' }));
+
+    expect(screen.getByText('Published artifacts')).toBeTruthy();
+    expect(screen.getByText('Available from related work')).toBeTruthy();
+    // The inherited artifact links to the work item that published it and says how it got here.
+    const source = screen.getByRole('link', { name: 'workflow-parent/plan' });
+    expect(source.getAttribute('href')).toBe('/work/wk_parent');
+    expect(screen.getByText(/\(Granted\)/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'task-1.md' }).getAttribute('href')).toBe(
+      '/api/v1/work-items/wk_parent/artifacts/brief-1',
+    );
+    expect(screen.getByRole('link', { name: 'notes.md' }).getAttribute('href')).toBe(
+      '/api/v1/work-items/wk_a/artifacts/own-1',
+    );
+  });
+
   it('shows published artifact metadata and its API download link', async () => {
     const user = userEvent.setup();
     render(

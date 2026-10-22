@@ -143,6 +143,12 @@ export interface WorkDetailResponse {
     readonly byteLength?: number;
     readonly digest?: string;
     readonly href: string;
+    /** Set when another work item published this artifact and it is in this item's context. */
+    readonly source?: {
+      readonly workItemKey: WorkItemKey;
+      /** `granted` by a delegating parent, or `shared` through a trigger context. */
+      readonly relation: 'granted' | 'shared';
+    };
   }[];
   readonly conversation: {
     /** Whether this authenticated surface may create control-plane entries. */

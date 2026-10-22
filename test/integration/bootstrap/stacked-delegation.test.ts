@@ -446,6 +446,24 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         childOf('b3').workItemId,
       ),
     ).toContainEqual({ workItemId: childOf('a1').workItemId, revisionId: 'api-contract-v1' });
+    // The artifact screen lists what a parent or sibling granted, labelled with its source.
+    const consumerView = await (
+      await createSurfaceApplications(root)
+    ).api.work.detail(toWorkItemKey(childOf('b3').workItemId));
+    expect(consumerView!.data.artifacts).toContainEqual(
+      expect.objectContaining({
+        path: expect.stringContaining('contract.md'),
+        source: { workItemKey: toWorkItemKey(childOf('a1').workItemId), relation: 'granted' },
+        href: expect.stringContaining(encodeURIComponent(toWorkItemKey(childOf('a1').workItemId))),
+      }),
+    );
+    // The publisher lists it as its own artifact, never as inherited context.
+    const publisherView = await (
+      await createSurfaceApplications(root)
+    ).api.work.detail(toWorkItemKey(childOf('a1').workItemId));
+    expect(
+      publisherView!.data.artifacts.filter((artifact) => artifact.source !== undefined),
+    ).toEqual([]);
     expect(receipt.repository).toMatchObject({
       resourceId: repositories.b,
       sourceRevision: heads.get('b2'),

@@ -82,6 +82,7 @@ import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { delegatedGrantReferences, withDelegatedGrants } from './delegated-artifact-context.js';
 import { withDelegatedAssignment } from './delegated-assignment-context.js';
 import { createDelegationAuthority } from './delegation-authority.js';
 import { createDeliveryIntegration } from './delivery-integration.js';
@@ -147,6 +148,7 @@ export interface CompositionRoot {
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly artifacts: ReturnType<typeof createArtifactService>;
+  readonly artifactContexts: ArtifactContextService;
   readonly operatorInstructions: OperatorInstructionsService;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
@@ -361,7 +363,10 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       wakeRoot: paths.wakeRoot,
       now: () => clock.now().toISOString(),
       nextId: () => ids.next('artifact'),
-      sharedContext: artifactTriggerContext.provision,
+      sharedContext: withDelegatedGrants(
+        artifactTriggerContext.provision,
+        delegatedGrantReferences({ work, contexts: artifactContexts }),
+      ),
       operatorInstructions,
       journal,
     }),
@@ -413,6 +418,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     subscriptionRunSerialiser,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,
@@ -463,6 +469,7 @@ export async function createCompositionRoot(
     subscriptionRunSerialiser,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,
@@ -569,6 +576,7 @@ export async function createCompositionRoot(
     activities,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,

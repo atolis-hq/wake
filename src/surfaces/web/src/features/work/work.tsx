@@ -36,6 +36,7 @@ import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
+import { ArtifactTable, type WorkArtifact } from './artifact-table.js';
 import { RelatedWork } from './delegation-sections.js';
 import { MarkdownArtifactViewer } from './markdown-artifact-viewer.js';
 
@@ -206,11 +207,7 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
   const [tab, setTab] = useState<
     'overview' | 'runs' | 'conversation' | 'events' | 'transcripts' | 'artifacts'
   >('overview');
-  const [viewedArtifact, setViewedArtifact] = useState<{
-    revisionId: string;
-    path: string;
-    href: string;
-  } | null>(null);
+  const [viewedArtifact, setViewedArtifact] = useState<WorkArtifact | null>(null);
   const conversationViewport = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const [readingHistory, setReadingHistory] = useState(false);
@@ -533,42 +530,16 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
               {viewedArtifact ? (
                 <MarkdownArtifactViewer
                   key={`${workItemKey}:${viewedArtifact.revisionId}`}
-                  workItemKey={workItemKey}
+                  workItemKey={viewedArtifact.source?.workItemKey ?? workItemKey}
                   artifact={viewedArtifact}
                   onClose={() => setViewedArtifact(null)}
                 />
               ) : query.data.data.artifacts.length === 0 ? (
                 <EmptyState>No published artifacts</EmptyState>
               ) : (
-                <DataTable
-                  caption="Published artifacts"
-                  rows={query.data.data.artifacts}
-                  rowKey={(artifact) => artifact.revisionId}
-                  columns={[
-                    { label: 'Producer', render: (artifact) => artifact.producer },
-                    {
-                      label: 'Path',
-                      render: (artifact) => <a href={artifact.href}>{artifact.path}</a>,
-                    },
-                    {
-                      label: 'View',
-                      render: (artifact) =>
-                        /\.md$/i.test(artifact.path) ? (
-                          <Button
-                            variant="secondary"
-                            onClick={() => setViewedArtifact(artifact)}
-                            aria-label={`View ${artifact.path}`}
-                          >
-                            View
-                          </Button>
-                        ) : null,
-                    },
-                    { label: 'Type', render: (artifact) => artifact.mediaType ?? 'binary' },
-                    {
-                      label: 'Bytes',
-                      render: (artifact) => artifact.byteLength?.toLocaleString() ?? '?',
-                    },
-                  ]}
+                <ArtifactSections
+                  artifacts={query.data.data.artifacts}
+                  onView={setViewedArtifact}
                 />
               )}
             </section>
@@ -1235,4 +1206,29 @@ function parseActivityOutcome(value: string): { readonly kind: string } | undefi
   } catch {
     return undefined;
   }
+}
+
+/** Own artifacts first, then those other work items made available to this one. */
+function ArtifactSections({
+  artifacts,
+  onView,
+}: {
+  readonly artifacts: readonly WorkArtifact[];
+  readonly onView: (artifact: WorkArtifact) => void;
+}) {
+  const own = artifacts.filter((artifact) => artifact.source === undefined);
+  const inherited = artifacts.filter((artifact) => artifact.source !== undefined);
+  return (
+    <>
+      {own.length > 0 && <ArtifactTable caption="Published artifacts" rows={own} onView={onView} />}
+      {inherited.length > 0 && (
+        <ArtifactTable
+          caption="Available from related work"
+          rows={inherited}
+          showSource
+          onView={onView}
+        />
+      )}
+    </>
+  );
 }
