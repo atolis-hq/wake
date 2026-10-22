@@ -772,6 +772,106 @@ named shared context or operator instructions. Work detail shows delivery
 parent/root links, child workflows, status, resources and blockers; existing
 freeze controls stop dispatch for the selected subtree.
 
+### Setting up a delegating parent and its children
+
+Delegation needs no special workflow shape, but several settings decide whether it works. The
+configuration below is a working pair, checked against real GitHub with local agent runners:
+three stacked PRs, a child question answered by a human, and no merges (neither workflow has a
+`pr.merge` stage).
+
+~~~yaml
+workflows:
+  delegation-parent:
+    entry: delegate
+    delegation:
+      workflows: [child-impl]
+      maxDepth: 1
+      maxDescendants: 4
+      maxConcurrentRuns: 2
+    stages:
+      delegate:
+        activity: agent
+        with: { template: delegate }
+        execution: { workspace: read-only, runnerPool: standard }
+        requiresApproval: false
+        on:
+          rejected: { then: await-human }
+          blocked: { then: await-human }
+          failed: { then: await-human }
+          done: { then: done }
+  child-impl:
+    entry: implement
+    stages:
+      implement:
+        activity: agent
+        with: { template: child-implement }
+        execution: { workspace: branch, runnerPool: standard }
+        requiresApproval: false
+        on:
+          rejected: { then: await-human }
+          failed: { then: await-human }
+          done: { then: done }
+~~~
+
+Settings that matter:
+
+- **`requiresApproval: false`** on both stages, or each is held for approval first.
+- **Leave `blocked` unrouted on the child's agent stage.** A child that ends `NEEDS_CLARIFICATION`
+  is only recognised as asking for help while its workflow status is `blocked`. Routing `blocked`
+  to a human wait makes it `waiting`: no assessment is requested, nothing is published, and the
+  child stalls silently. Wake's "declared outcome `blocked` has no route" warning is expected here;
+  do not add the route to silence it.
+- **Change outputs default to requiring an accepted review and passing checks.** A workflow with
+  no review stage must have its assignments set `requireReview: false` and `requireChecks: false`
+  on each change output, or its children never qualify. A workflow's own `outputs` map (name,
+  `kind`, `required`) only prevents an assignment from omitting or weakening an output; review,
+  check and repository settings stay on the assignment.
+- **Each change output needs a repository** (`resourceId`, `sourceRef`, `pullRequestBase`); the
+  Repository Resource ID is returned by `wake_delegation_inspect`.
+- **A child's PR is reported by name.** The child's final message must carry the PR in a
+  `wake-artifacts` fence with the output's name, or its change output is never registered:
+
+  ~~~
+  { "artifacts": [{ "name": "change", "kind": "pr", "url": "<pull request URL>" }] }
+  ~~~
+
+What each prompt should say:
+
+- **Parent.** Call `wake_delegation_inspect` first. If it returns `attention`, work was already
+  delegated: do not submit again (see below). Otherwise submit one cohort with a one-line
+  `objective` per task (it titles the child work item), the specifics in `criteria`, the change
+  output above, and for stacked tasks `prerequisites` of `{ condition: pushed-change, useAsBase:
+  true }` on the previous task's `change` output.
+- **Child.** Its assignment is the first message of its conversation, which is already in its
+  context. It should create the PR against the base named in its workspace, never merge, report
+  the PR as above, and never invent information the assignment lacks: it should end
+  `NEEDS_CLARIFICATION` and ask instead.
+
+**Native GitHub stacks.** Wake links nothing itself. A child can join its PR to the stack of its
+upstream PR with the `gh stack` extension, which the sandbox image installs (pinned, system-wide;
+the entrypoint links it into the container home). The PR object returned by the GitHub API carries
+a `stack.number` once it is in a stack. A child whose base is not the default branch reads that
+number from its upstream PR (`gh api repos/<owner>/<repo>/pulls/<n> --jq .stack.number`) and runs
+`gh stack link <stack number> <its branch>`, or `gh stack link <upstream branch> <its branch>` when
+the upstream PR is not in a stack yet. The agent needs `gh stack link`, `gh pr list` and a
+read-only `gh api` call in its allowed tools. Wake does not check that the link was made.
+
+**Questions from a child.** A child does not message its parent. It ends with a normal outcome,
+and Wake routes the question:
+
+1. The child ends `NEEDS_CLARIFICATION`; its status becomes `blocked`.
+2. Wake wakes the delegating stage with an attention activation, and the parent's
+   `wake_delegation_inspect` shows the blocker.
+3. The parent can answer only by `wake_delegation_respond`, which grants already accepted
+   artifact revisions; it cannot type a reply. Otherwise it ends `NEEDS_CLARIFICATION` itself,
+   listing every open question.
+4. That result is published to the parent's GitHub issue through the ordinary route. A human
+   reply on the issue is recorded on the parent's conversation and copied to the conversation of
+   exactly the children still blocked on that escalation, which then resume. A comment never
+   reaches any other child.
+
+Children without a provider issue publish nothing to GitHub: only the parent's runs appear there.
+
 ### Named child outputs
 
 An assignment may mix artifact outputs (name and path) with several change outputs
