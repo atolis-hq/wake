@@ -469,3 +469,85 @@ it('ignores a replayed wait event whose signal is no longer the current wait', a
 it('posts nothing for a merge-stage wait with an unrelated signal', async () => {
   expect(await reactToMergeWait({ waitingFor: { signalKind: 'other' } })).toEqual([]);
 });
+
+async function publishChildRun(correlations: readonly object[]) {
+  const appended: {
+    readonly payload: { readonly resourceId: string; readonly report: unknown };
+  }[] = [];
+  const entries: string[] = [];
+  const reactor = new AgentRunPublicationReactor({
+    journal: {
+      readStream: async () => workflowHistory('implement'),
+      appendToStream: async (_stream: unknown, _sequence: number, events: unknown[]) => {
+        appended.push(...(events as typeof appended));
+      },
+    },
+    runs: {
+      load: async () => ({
+        view: {
+          runId: 'run-child',
+          activity: 'agent',
+          workflowInstanceId: 'workflow-1',
+          activationId: 'activation-1',
+          startedAt: '2026-08-08T00:00:00.000Z',
+          finishedAt: '2026-08-08T00:01:00.000Z',
+          agent: { outcome: 'DONE', displayBody: 'Added b.txt.', metadata: {} },
+        },
+      }),
+    },
+    resources: { correlationsForWork: async () => correlations },
+    orchestration: {
+      listAll: async () => [
+        { workflowInstanceId: 'workflow-1', workItemId: 'work-00000000000000000000000001' },
+      ],
+    },
+    work: { get: async () => ({ objective: 'Add b.txt' }) },
+    conversations: {
+      createForWorkItem: async () => undefined,
+      record: async (entry: { readonly body: string }) => void entries.push(entry.body),
+    },
+  } as never);
+  await (
+    reactor as never as {
+      publish: (id: string, at: string, cause: string, correlation: string) => Promise<void>;
+    }
+  ).publish('run-child', '2026-08-08T00:01:00.000Z', 'cause-1', 'correlation-1');
+  return { published: appended[0], entries };
+}
+
+const parentIssue = {
+  role: 'secondary',
+  provenance: 'delegated',
+  resourceId: 'resource-00000000000000000000000009',
+};
+
+it('publishes a delegated child run onto its parent resource, naming the child', async () => {
+  const { published, entries } = await publishChildRun([parentIssue]);
+
+  expect(published?.payload.resourceId).toBe(parentIssue.resourceId);
+  expect(published?.payload.report).toMatchObject({
+    displayBody: expect.stringMatching(/^\*\*Child work:\*\* Add b\.txt\n\nAdded b\.txt\./),
+  });
+  // The child's own conversation keeps the unlabelled report.
+  expect(entries).toEqual(['Added b.txt.']);
+});
+
+it('prefers the resource a child owns over the one it was delegated from', async () => {
+  const { published } = await publishChildRun([
+    parentIssue,
+    {
+      role: 'primary',
+      provenance: 'agent-reported',
+      resourceId: 'resource-00000000000000000000000002',
+    },
+  ]);
+
+  expect(published?.payload.resourceId).toBe('resource-00000000000000000000000002');
+  expect(JSON.stringify(published?.payload.report)).not.toContain('Child work');
+});
+
+it('does not publish for work with no resource at all', async () => {
+  const { published } = await publishChildRun([]);
+
+  expect(published).toBeUndefined();
+});

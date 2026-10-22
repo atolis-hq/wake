@@ -30,7 +30,7 @@ import {
   type TriggerConfig,
   type TriggerService,
 } from '../control-plane/index.js';
-import { createConversationService, recordOpeningEntry } from '../conversations/index.js';
+import { createConversationService, postControlPlaneEntry } from '../conversations/index.js';
 import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
@@ -71,6 +71,8 @@ import {
   createOrchestrationService,
 } from '../orchestration/index.js';
 import {
+  ResourceCorrelationProvenance,
+  ResourceCorrelationRole,
   createResourceLookup,
   createResourceService,
   resourceId,
@@ -300,8 +302,23 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           providers: () => providerInstances.promise,
         }),
       ),
-      briefs: {
-        open: (input, context) => recordOpeningEntry(conversations, input, context),
+      messages: {
+        post: (input, context) => postControlPlaneEntry(conversations, input, context),
+      },
+      resources: {
+        async relateChild({ childWorkItemId, parentWorkItemId }, context) {
+          const primary = (await resources.correlationsForWork(parentWorkItemId)).find(
+            (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+          );
+          if (primary === undefined) return;
+          await resources.correlate(
+            primary.resourceId,
+            childWorkItemId,
+            ResourceCorrelationRole.Secondary,
+            context,
+            ResourceCorrelationProvenance.Delegated,
+          );
+        },
       },
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);

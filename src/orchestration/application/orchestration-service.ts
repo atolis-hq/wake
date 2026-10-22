@@ -1,8 +1,9 @@
 import type {
   DelegationArtifacts,
   DelegationAuthority,
-  DelegationBriefs,
+  DelegationMessages,
   DelegationRepositories,
+  DelegationResources,
 } from '../contracts/delegation-ports.js';
 import type {
   DelegationAttentionReply,
@@ -81,6 +82,7 @@ import {
 } from './conversation-command.js';
 import { CoordinationClaims } from './coordination-claims.js';
 import { attentionVerdict } from './delegation-attention-state.js';
+import type { DelegationAttentionDependencies } from './delegation-attention.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
@@ -150,15 +152,7 @@ export class OrchestrationService {
       this.claims,
       this.definitions,
       this.startWorkflow,
-      {
-        authority: dependencies?.authority,
-        artifacts: dependencies?.artifacts ?? unavailableArtifacts,
-        repositories: dependencies?.repositories,
-        runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
-        supportsAttention: isAgentActivity,
-        resumeChild: this.resumeClarification,
-        briefs: dependencies?.briefs,
-      },
+      delegatedWorkDependencies(dependencies, isAgentActivity, this.resumeClarification),
     );
     this.delegationCommands = new DelegationCommands(
       repository,
@@ -412,14 +406,18 @@ export class OrchestrationService {
     return (await this.repository.loadRequired(command.workflowInstanceId)).view;
   }
 
-  /** Delegated children still blocked on a question this work item's parent escalated to a human. */
-  async escalatedReplyTargets(workItemId: WorkItemId) {
-    const targets: WorkItemId[] = [];
+  /**
+   * A human replied on this work item while delegated children wait on a clarification: wake
+   * the delegating stage once, so the parent decides how to pass the reply to each child.
+   */
+  async requestReplyAssessment(
+    workItemId: WorkItemId,
+    replyEntryId: string,
+    context: CommandContext,
+  ): Promise<void> {
     for (const parent of await this.advanceWorkflow.listAll())
       if (parent.workItemId === workItemId)
-        for (const target of await this.delegatedWork.attention.escalatedTargets(parent))
-          targets.push(target.childWorkItemId as WorkItemId);
-    return targets;
+        await this.delegatedWork.assessReply(parent, replyEntryId, context);
   }
 
   /** The open attention request when `activationId` is the attention activation, else null. */
@@ -982,10 +980,29 @@ type DelegationDependenciesFactory = (queries: {
   artifacts: DelegationArtifacts;
   authority?: DelegationAuthority;
   repositories?: DelegationRepositories;
-  briefs?: DelegationBriefs;
+  messages?: DelegationMessages;
+  resources?: DelegationResources;
   integration?: DeliveryIntegration;
   runHasEnded: (runId: string) => Promise<boolean>;
 };
+
+/** The delegation dependencies Orchestration hands to DelegatedWork, with safe unavailable stubs. */
+function delegatedWorkDependencies(
+  dependencies: ReturnType<DelegationDependenciesFactory> | undefined,
+  supportsAttention: AgentActivityClassifier | undefined,
+  resumeChild: DelegationAttentionDependencies['resumeChild'],
+) {
+  return {
+    authority: dependencies?.authority,
+    artifacts: dependencies?.artifacts ?? unavailableArtifacts,
+    repositories: dependencies?.repositories,
+    runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+    supportsAttention,
+    resumeChild,
+    messages: dependencies?.messages,
+    resources: dependencies?.resources,
+  };
+}
 
 async function unavailableRunCompletion(): Promise<never> {
   throw new Error('Delegation adapters unavailable');

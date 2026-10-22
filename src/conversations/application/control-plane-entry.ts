@@ -5,11 +5,11 @@ import { ConversationOriginKind } from '../contracts/vocabulary.js';
 import type { ConversationService } from './conversation-service.js';
 
 /**
- * Starts a work item's conversation with a message authored by Wake on someone's behalf,
- * such as a delegating parent's assignment. Both steps are idempotent, so a replayed
- * registration records the message once.
+ * Posts a message authored by Wake on someone's behalf (a delegating parent's assignment or
+ * reply) to a work item's conversation, creating the conversation if needed. Both steps are
+ * idempotent, so a replayed command records the message once.
  */
-export async function recordOpeningEntry(
+export async function postControlPlaneEntry(
   conversations: Pick<ConversationService, 'createForWorkItem' | 'record'>,
   input: {
     readonly workItemId: WorkItemId;

@@ -16,6 +16,47 @@ const context = (commandId: string) => ({
 });
 
 describe('Resource correlations', () => {
+  it('relates delegated children to a parent resource without changing who owns it', async () => {
+    const { resources } = createTestResourceServices(new InMemoryEventJournal(new FakeClock()));
+    await resources.discover(
+      {
+        resourceId: resId('parent-issue'),
+        kind: resourceKind('issue'),
+        externalKey: { adapter: 'fake', key: 'repo/issues/1' },
+        capabilities: [resourceCapability('commentable')],
+      },
+      context('discover'),
+    );
+    await resources.correlate(resId('parent-issue'), workId('parent'), 'primary', context('own'));
+
+    for (const child of ['child-a', 'child-b'])
+      await resources.correlate(
+        resId('parent-issue'),
+        workId(child),
+        'secondary',
+        context(`relate-${child}`),
+        'delegated',
+      );
+
+    // Inbound comments resolve through the single primary, so they still reach only the parent.
+    expect(await resources.primaryCorrelation(resId('parent-issue'))).toMatchObject({
+      workItemId: workId('parent'),
+      role: 'primary',
+    });
+    expect(await resources.correlationsForWork(workId('child-b'))).toMatchObject([
+      { resourceId: resId('parent-issue'), role: 'secondary', provenance: 'delegated' },
+    ]);
+    // Relating again (a replayed registration) changes nothing.
+    await resources.correlate(
+      resId('parent-issue'),
+      workId('child-a'),
+      'secondary',
+      context('relate-child-a'),
+      'delegated',
+    );
+    expect(await resources.correlations(resId('parent-issue'))).toHaveLength(3);
+  });
+
   it('discovers any provider resource behind an opaque adapter key', async () => {
     const service = createTestResourceServices(new InMemoryEventJournal(new FakeClock())).resources;
 

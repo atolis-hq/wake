@@ -707,15 +707,17 @@ running, Wake resumes the delegating stage once with an attention activation
 kind (`failed` or `assignment-context`). End the activity normally to leave
 the cohort waiting; attention never satisfies the join and does not reset the
 root or workflow limits. Use `wake_delegation_respond` with childWorkItemId,
-blockerId, expectedRevision and exact accepted artifact revisions to answer an
+blockerId and expectedRevision, plus a free-text `message` (posted to the child's
+conversation), exact accepted artifact `references`, or both, to answer an
 `assignment-context` blocker; only that child resumes. Terminal failures need
 replacement work in a new cohort, and review, consent or approval gates cannot
 be answered through this channel. To hand human questions over, batch them all
 into one structured `blocked` or needs-clarification result: Wake publishes it to a
 human through the ordinary route while the cohort stays tracked, so independent
 children keep running and nothing is cancelled or joined early. A human reply on the
-parent issue is delivered to each child still blocked on that question and resumes it
-through the ordinary reply path. A deliberate `FAILED` result is escalated the same way.
+parent issue is recorded on the parent only and wakes the delegating stage once, while any
+child still waits on a clarification, so the parent decides what each child hears and relays it
+with `wake_delegation_respond`. A deliberate `FAILED` result is escalated the same way.
 A failed run of the assessment itself (runner failure, authentication, ambiguous or
 invalid result, unverified completion) never touches the cohort and is re-raised up to
 three times; after the third an operator diagnostic asks for inspection. Wake refuses
@@ -838,7 +840,8 @@ Settings that matter:
 What each prompt should say:
 
 - **Parent.** Call `wake_delegation_inspect` first. If it returns `attention`, work was already
-  delegated: do not submit again (see below). Otherwise submit one cohort with a one-line
+  delegated: do not submit again. Answer a blocker you can with `wake_delegation_respond`, or end
+  normally to wait for a human; you are woken again when one replies (see below). Otherwise submit one cohort with a one-line
   `objective` per task (it titles the child work item), the specifics in `criteria`, the change
   output above, and for stacked tasks `prerequisites` of `{ condition: pushed-change, useAsBase:
   true }` on the previous task's `change` output.
@@ -856,21 +859,30 @@ number from its upstream PR (`gh api repos/<owner>/<repo>/pulls/<n> --jq .stack.
 the upstream PR is not in a stack yet. The agent needs `gh stack link`, `gh pr list` and a
 read-only `gh api` call in its allowed tools. Wake does not check that the link was made.
 
-**Questions from a child.** A child does not message its parent. It ends with a normal outcome,
+**Questions from a child.** A child does not address its parent. It ends with a normal outcome,
 and Wake routes the question:
 
 1. The child ends `NEEDS_CLARIFICATION`; its status becomes `blocked`.
-2. Wake wakes the delegating stage with an attention activation, and the parent's
+2. Every delegated child is related to its parent's primary resource (for example its GitHub issue)
+   as a `delegated` secondary correlation, so a child with no resource of its own publishes its run
+   reports there. A report is labelled `Child work: <objective>` because the issue is shared. The
+   issue's primary owner stays the parent, so comments on it reach only the parent. Once a child
+   reports its own PR, that PR is its primary resource and later reports go there.
+3. Wake wakes the delegating stage with an attention activation, and the parent's
    `wake_delegation_inspect` shows the blocker.
-3. The parent can answer only by `wake_delegation_respond`, which grants already accepted
-   artifact revisions; it cannot type a reply. Otherwise it ends `NEEDS_CLARIFICATION` itself,
-   listing every open question.
-4. That result is published to the parent's GitHub issue through the ordinary route. A human
-   reply on the issue is recorded on the parent's conversation and copied to the conversation of
-   exactly the children still blocked on that escalation, which then resume. A comment never
-   reaches any other child.
+4. The parent can answer at once with `wake_delegation_respond`: a free-text `message` (posted to
+   the child's conversation as an entry authored by `delegation:<parent work item>`), accepted
+   artifact `references`, or both. The child then resumes and reads the answer. If the parent cannot
+   answer, it ends its activity normally; the child's question is already on the issue, so the human
+   is asked there. It may instead end `NEEDS_CLARIFICATION` itself to ask one batched question.
+5. A human reply on the issue is recorded on the parent's conversation, never on a child's. While
+   any child is still blocked on a clarification, it also wakes the delegating stage once (replaying
+   the same reply does not wake it again), and the parent relays the answer to each child with
+   `wake_delegation_respond`. A reply while no child is waiting wakes nothing.
 
-Children without a provider issue publish nothing to GitHub: only the parent's runs appear there.
+Because every child's run reports publish to the shared parent resource, reply rules can narrow
+what appears there: a rule that matches `outcome` (for example `needs-clarification`) can send only
+those to the issue.
 
 ### Named child outputs
 

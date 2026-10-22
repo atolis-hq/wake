@@ -12,8 +12,9 @@ import { repositoryAssignmentSchema, WorkspaceMode } from '../../execution/index
 import { WorkStatus, type WorkService } from '../../work/index.js';
 import type {
   DelegationArtifacts,
-  DelegationBriefs,
+  DelegationMessages,
   DelegationRepositories,
+  DelegationResources,
 } from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
@@ -99,7 +100,8 @@ export class DelegatedWork {
       readonly authority?: DelegationAuthority | undefined;
       readonly supportsAttention?: ((activity: ActivityName) => boolean) | undefined;
       readonly resumeChild?: DelegationAttentionDependencies['resumeChild'] | undefined;
-      readonly briefs?: DelegationBriefs | undefined;
+      readonly messages?: DelegationMessages | undefined;
+      readonly resources?: DelegationResources | undefined;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
@@ -111,6 +113,7 @@ export class DelegatedWork {
         dependencies.resumeChild?.(id, context) ?? Promise.resolve(null),
       contextWorkItems: (parent) => this.contextWorkItems(parent),
       canContinue: (reservation) => this.canJoin(reservation),
+      messages: dependencies.messages,
     });
     this.prerequisites = new DelegationPrerequisites(
       repository,
@@ -560,6 +563,21 @@ export class DelegatedWork {
       await this.join(reservation, results, context);
   }
 
+  /** A human reply on a parent: wake it to pass the answer to the children still waiting. */
+  async assessReply(
+    parent: WorkflowInstanceView,
+    replyEntryId: string,
+    context: CommandContext,
+  ): Promise<void> {
+    const reservation = (await this.ledger.reservations()).find(
+      (entry) =>
+        entry.parentWorkflowInstanceId === parent.workflowInstanceId &&
+        entry.cohortId === parent.delegationWait?.cohortId,
+    );
+    if (reservation !== undefined)
+      await this.attention.raiseForReply(reservation, replyEntryId, context);
+  }
+
   /** Independent members keep advancing; a blocked member is skipped, never retried blindly. */
   private async advanceMembers(
     artifacts: DelegationArtifacts,
@@ -791,7 +809,11 @@ export class DelegatedWork {
         },
         childContext,
       );
-      await this.dependencies.briefs?.open(
+      await this.dependencies.resources?.relateChild(
+        { childWorkItemId: child.workItemId, parentWorkItemId: reservation.parentWorkItemId },
+        childContext,
+      );
+      await this.dependencies.messages?.post(
         {
           workItemId: child.workItemId,
           entryId: `delegation:${child.grantId}`,

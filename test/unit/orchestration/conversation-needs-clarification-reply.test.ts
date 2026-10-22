@@ -26,6 +26,7 @@ it('resumes a needs-clarification stage from an unprivileged plain reply', async
     async listAll() {
       return [{ workflowInstanceId: 'workflow-clarification', workItemId }];
     },
+    async requestReplyAssessment() {},
     async resumeNeedsClarificationStage(...input: unknown[]) {
       resumes.push(input);
     },

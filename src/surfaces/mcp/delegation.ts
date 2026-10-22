@@ -53,7 +53,7 @@ export function registerDelegationTools(
     'wake_delegation_respond',
     {
       description:
-        'Answer one assignment-context blocker from the attention request returned by wake_delegation_inspect. Name the child, blocker and expectedRevision, and list the exact accepted artifact revisions the child may read. Only a child blocked for assignment context can be resumed; failures need follow-up work in a new cohort and human review, consent or approval gates cannot be answered here. End the activity normally afterwards; unresolved reasons stay tracked and the cohort wait resumes.',
+        'Answer one assignment-context blocker from the attention request returned by wake_delegation_inspect. Name the child, blocker and expectedRevision, then answer with a free-text `message` (posted to the conversation of the child, which it reads when it resumes), with accepted artifact `references` it may read, or both; a reply needs at least one. Only a child blocked for assignment context can be resumed; failures need follow-up work in a new cohort and human review, consent or approval gates cannot be answered here. End the activity normally afterwards; unresolved reasons stay tracked and the cohort wait resumes.',
       inputSchema: delegationAttentionReplySchema,
     },
     async (reply) => {

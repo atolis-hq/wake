@@ -36,6 +36,8 @@ export const ResourceCorrelationProvenance = defineClosedVocabulary({
   ProviderObserved: 'provider-observed',
   AgentReported: 'agent-reported',
   OperatorDeclared: 'operator-declared',
+  /** Wake related a delegated child to its parent's resource; never an ownership claim. */
+  Delegated: 'delegated',
 } as const);
 
 export type ResourceCorrelationProvenance = ValueOf<typeof ResourceCorrelationProvenance>;

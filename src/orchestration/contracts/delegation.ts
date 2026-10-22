@@ -234,7 +234,10 @@ export const delegationAttentionReplySchema = z
     childWorkItemId: brandedStringSchema(workItemId),
     blockerId: z.string().min(1),
     expectedRevision: z.number().int().positive(),
-    references: z.array(delegationRevisionReferenceSchema),
+    /** Accepted artifact revisions the child may read from now on. */
+    references: z.array(delegationRevisionReferenceSchema).default([]),
+    /** Free-text answer, posted to the child's conversation. */
+    message: z.string().trim().min(1).max(20_000).optional(),
   })
   .strict();
 

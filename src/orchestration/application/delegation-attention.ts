@@ -1,6 +1,6 @@
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import { activationId, type ActivityName } from '../../activities/index.js';
-import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
+import type { DelegationArtifacts, DelegationMessages } from '../contracts/delegation-ports.js';
 import type {
   DelegationAttentionBlocker,
   DelegationAttentionReply,
@@ -10,14 +10,14 @@ import type {
 import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { DelegationAttentionRejection, WorkflowStatus } from '../contracts/vocabulary.js';
+import { DelegationAttentionRejection, DelegationBlockerKind } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
-import { escalatedTargets } from './delegation-attention-escalations.js';
 import {
   assertReplyAllowed,
   assessedBlockers,
   attentionKeyOf,
   blockerOf,
+  canRequestAssessment,
   contextBlockerId,
   digest,
   MaxAssessmentAttempts,
@@ -40,6 +40,8 @@ export interface DelegationAttentionDependencies {
   ) => Promise<WorkflowInstanceView | null>;
   /** Work items whose artifacts the parent may reference (its own hierarchy). */
   readonly contextWorkItems: (parent: WorkflowInstanceView) => Promise<ReadonlySet<string>>;
+  /** Where a parent's free-text answer is posted: the child's own conversation. */
+  readonly messages?: DelegationMessages | undefined;
   /** Run end and delivery availability gate every attention continuation, like the join. */
   readonly canContinue: (reservation: DelegationReservation) => Promise<boolean>;
 }
@@ -91,18 +93,42 @@ export class DelegationAttention {
     );
     for (;;) {
       const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);
-      if (!this.canRequest(loaded.view, reservation)) return;
+      if (!canRequestAssessment(loaded.view, reservation)) return;
       if (await this.request(reservation, loaded, { attentionKey, blockers }, context)) return;
     }
   }
 
-  /** Only the parked cohort wait may start an assessment; a running one coalesces new reasons. */
-  private canRequest(view: WorkflowInstanceView, reservation: DelegationReservation): boolean {
-    return (
-      view.status === WorkflowStatus.Waiting &&
-      view.delegationWait?.cohortId === reservation.cohortId &&
-      view.delegationAttention === undefined
+  /**
+   * A human replied on the parent while children wait on a clarification. The reply is new
+   * information on blockers already assessed, so wake the parent once per reply to decide how
+   * to pass it on; replaying the same reply never wakes it twice.
+   */
+  async raiseForReply(
+    reservation: DelegationReservation,
+    replyEntryId: string,
+    context: CommandContext,
+  ): Promise<void> {
+    const events = await this.ledger.events();
+    if (isSettled(events, reservation)) return;
+    const blockers = (await this.blockers(reservation, events)).filter(
+      (blocker) => blocker.kind === DelegationBlockerKind.Context,
     );
+    if (blockers.length === 0 || !(await this.dependencies.canContinue(reservation))) return;
+    const attentionKey = `${attentionKeyOf(
+      reservation,
+      blockers.map((blocker) => blocker.blockerId),
+    )}:reply:${digest(replyEntryId)}`;
+    const asked = events.some(
+      ({ event }) =>
+        event.eventType === OrchestrationEventType.DelegationAttentionRequested &&
+        event.payload.attentionKey === attentionKey,
+    );
+    if (asked) return;
+    for (;;) {
+      const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);
+      if (!canRequestAssessment(loaded.view, reservation)) return;
+      if (await this.request(reservation, loaded, { attentionKey, blockers }, context)) return;
+    }
   }
 
   /** Returns false when a concurrent append won and the caller must re-read. */
@@ -240,15 +266,27 @@ export class DelegationAttention {
       eventType: OrchestrationEventType.DelegationAttentionResponded,
       payload: { cohortId: attention!.cohortId, attentionKey: attention!.attentionKey, ...reply },
     });
-    await this.dependencies.artifacts.registerChild(
-      {
-        delegationId: `${child.grantId}:response:${key}`,
-        parentWorkItemId: reservation.parentWorkItemId,
-        childWorkItemId: child.workItemId,
-        childReferences: reply.references,
-      },
-      context,
-    );
+    if (reply.references.length > 0)
+      await this.dependencies.artifacts.registerChild(
+        {
+          delegationId: `${child.grantId}:response:${key}`,
+          parentWorkItemId: reservation.parentWorkItemId,
+          childWorkItemId: child.workItemId,
+          childReferences: reply.references,
+        },
+        context,
+      );
+    // Posted before the child resumes, so its next turn reads the answer.
+    if (reply.message !== undefined)
+      await this.dependencies.messages?.post(
+        {
+          workItemId: child.workItemId,
+          entryId: `delegation-reply:${key}`,
+          authorId: `delegation:${reservation.parentWorkItemId}`,
+          body: reply.message,
+        },
+        context,
+      );
     if (stillBlocked)
       await this.dependencies.resumeChild(child.workflowInstanceId, {
         ...context,
@@ -292,14 +330,5 @@ export class DelegationAttention {
         event.payload.attentionKey === attentionKey &&
         event.payload.assessmentFailure !== undefined,
     ).length;
-  }
-
-  /**
-   * Children whose assignment-context blocker the parent escalated to a human and which are still
-   * blocked on it. A human reply on the parent is routed to exactly these, so a published question
-   * always has an answer path that moves the delivery without settling or joining the cohort.
-   */
-  escalatedTargets(parent: WorkflowInstanceView) {
-    return escalatedTargets(this.repository, this.ledger, parent);
   }
 }

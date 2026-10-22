@@ -70,8 +70,9 @@ export type { WorkflowCompileDiagnostic } from './domain/compile-diagnostics.js'
 
 export type {
   DelegationArtifacts,
-  DelegationBriefs,
+  DelegationMessages,
   DelegationRepositories,
+  DelegationResources,
 } from './contracts/delegation-ports.js';
 
 export {

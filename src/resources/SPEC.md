@@ -178,4 +178,4 @@ construct envelope metadata or a processor host.
 
 ## Task 27B synchronization (2026-08-02)
 
-Work correlations carry durable provenance. `provider-observed`, `agent-reported`, and `operator-declared` distinguish how a relation was learned; Resource remains the sole owner of conflict recording and an agent-reported primary conflict is never silently downgraded to secondary.
+Work correlations carry durable provenance. `provider-observed`, `agent-reported`, `operator-declared`, and `delegated` (Wake relating a delegated child to its parent's resource as a secondary correlation, so the child's runs can publish there) distinguish how a relation was learned; Resource remains the sole owner of conflict recording and an agent-reported primary conflict is never silently downgraded to secondary.

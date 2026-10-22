@@ -2,7 +2,7 @@ export * from './application/conversation-projection.js';
 
 export * from './application/conversation-service.js';
 
-export * from './application/opening-entry.js';
+export * from './application/control-plane-entry.js';
 
 export * from './contracts/commands.js';
 

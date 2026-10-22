@@ -1,7 +1,10 @@
 import { correlationId } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
-import { createConversationService, recordOpeningEntry } from '../../../src/conversations/index.js';
+import {
+  createConversationService,
+  postControlPlaneEntry,
+} from '../../../src/conversations/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 
@@ -21,7 +24,7 @@ const input = {
 it('creates the conversation and opens it with an attributed control-plane entry', async () => {
   const conversations = createConversationService(new InMemoryEventJournal(new FakeClock()));
 
-  await recordOpeningEntry(conversations, input, context);
+  await postControlPlaneEntry(conversations, input, context);
 
   const view = await conversations.forWorkItem(input.workItemId);
   expect(view?.entries).toHaveLength(1);
@@ -35,8 +38,8 @@ it('creates the conversation and opens it with an attributed control-plane entry
 it('records the opening entry once when registration is replayed', async () => {
   const conversations = createConversationService(new InMemoryEventJournal(new FakeClock()));
 
-  await recordOpeningEntry(conversations, input, context);
-  await recordOpeningEntry(conversations, input, context);
+  await postControlPlaneEntry(conversations, input, context);
+  await postControlPlaneEntry(conversations, input, context);
 
   expect((await conversations.forWorkItem(input.workItemId))?.entries).toHaveLength(1);
 });
@@ -45,7 +48,7 @@ it('keeps an existing conversation and appends the opening entry after earlier e
   const conversations = createConversationService(new InMemoryEventJournal(new FakeClock()));
   await conversations.createForWorkItem(input.workItemId, { ...context, commandId: 'earlier' });
 
-  await recordOpeningEntry(conversations, input, context);
+  await postControlPlaneEntry(conversations, input, context);
 
   expect(
     (await conversations.forWorkItem(input.workItemId))?.entries.map((e) => e.entryId),
