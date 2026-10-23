@@ -22,12 +22,8 @@ import {
   type WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import type { ResourceService } from '../../resources/index.js';
-import {
-  BuiltInResourceKind,
-  ResourceCorrelationRole,
-  resourceStream,
-  type ResourceCorrelationView,
-} from '../../resources/index.js';
+import { resourceStream } from '../../resources/index.js';
+import type { WorkService } from '../../work/index.js';
 import { ReplyTarget, type ReplyPublicationConfig } from '../contracts/reply-routing.js';
 import { createDeliveryIntentEventData } from '../delivery/contracts/event-factory.js';
 import { DeliveryIntentEventType } from '../delivery/contracts/intents.js';
@@ -38,6 +34,7 @@ import {
 import { projectTerminalAgentRunReport } from './terminal-agent-run-report.js';
 
 import { agentRunReportInput, mergeWaitComment } from './agent-run-publication-report.js';
+import { labelledForSharedResource, resourceForTarget } from './agent-run-publication-target.js';
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
@@ -49,6 +46,7 @@ export class AgentRunPublicationReactor {
       readonly runs: RunRepository;
       readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
       readonly orchestration: Pick<OrchestrationService, 'listAll'>;
+      readonly work?: Pick<WorkService, 'get'> | undefined;
       readonly conversations?: Pick<ConversationService, 'createForWorkItem' | 'record'>;
       readonly replies?: ReplyPublicationConfig | undefined;
     },
@@ -147,8 +145,18 @@ export class AgentRunPublicationReactor {
       replies.default,
     );
     if (target === ReplyTarget.None) return;
-    const resource = await this.resourceForTarget(workflow.workItemId, target);
+    const resource = await resourceForTarget(
+      this.dependencies.resources,
+      workflow.workItemId,
+      target,
+    );
     if (resource === undefined) return;
+    const published = await labelledForSharedResource(
+      this.dependencies.work,
+      workflow.workItemId,
+      resource,
+      report,
+    );
     const stream = resourceStream(resource.resourceId);
     const sequence = (await this.dependencies.journal.readStream(stream)).length;
     try {
@@ -171,7 +179,7 @@ export class AgentRunPublicationReactor {
                   conversationId: conversationIdForWorkItem(workflow.workItemId),
                   conversationEntryId: `agent-run:${run.runId}`,
                 }),
-            report,
+            report: published,
           },
         }),
       ]);
@@ -201,7 +209,11 @@ export class AgentRunPublicationReactor {
       replies.default,
     );
     if (target === ReplyTarget.None) return;
-    const resource = await this.resourceForTarget(workflow.workItemId, target);
+    const resource = await resourceForTarget(
+      this.dependencies.resources,
+      workflow.workItemId,
+      target,
+    );
     if (resource === undefined) return;
     const stream = resourceStream(resource.resourceId);
     const facts = await this.dependencies.journal.readStream(stream);
@@ -258,23 +270,6 @@ export class AgentRunPublicationReactor {
       },
       { ...context, commandId: `agent-run:${runId}` },
     );
-  }
-
-  private async resourceForTarget(
-    workItemId: WorkflowInstanceView['workItemId'],
-    target: Exclude<ReplyPublicationConfig['default'], typeof ReplyTarget.None>,
-  ): Promise<ResourceCorrelationView | undefined> {
-    const correlations = await this.dependencies.resources.correlationsForWork(workItemId);
-    const primary = () =>
-      correlations.find((value) => value.role === ResourceCorrelationRole.Primary);
-    if (target === ReplyTarget.Primary) return primary();
-    const kind =
-      target === ReplyTarget.Issue ? BuiltInResourceKind.Issue : BuiltInResourceKind.PullRequest;
-    for (const correlation of correlations) {
-      const resource = await this.dependencies.resources.get(correlation.resourceId);
-      if (resource?.kind === kind) return correlation;
-    }
-    return primary();
   }
 
   private async stageForActivation(

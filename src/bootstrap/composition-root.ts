@@ -30,7 +30,7 @@ import {
   type TriggerConfig,
   type TriggerService,
 } from '../control-plane/index.js';
-import { createConversationService } from '../conversations/index.js';
+import { createConversationService, postControlPlaneEntry } from '../conversations/index.js';
 import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
@@ -71,6 +71,8 @@ import {
   createOrchestrationService,
 } from '../orchestration/index.js';
 import {
+  ResourceCorrelationProvenance,
+  ResourceCorrelationRole,
   createResourceLookup,
   createResourceService,
   resourceId,
@@ -82,11 +84,13 @@ import { createBuiltInActivityRegistry } from './activity-registry.js';
 import { createArtifactMcpProvisioner } from './artifact-mcp.js';
 import { createArtifactTriggerContext } from './artifact-trigger-context.js';
 import { loadConfig, type ResolvedWakeModulesConfig } from './config/load-config.js';
+import { delegatedGrantReferences, withDelegatedGrants } from './delegated-artifact-context.js';
 import { createDelegationAuthority } from './delegation-authority.js';
 import { createDeliveryIntegration } from './delivery-integration.js';
 import { EventProcessorRuntime } from './event-processor-runtime.js';
 import { loadFakeScenarios } from './fake-scenarios.js';
 import { composeIntegrationRuntime, composeProviders } from './integration-runtime.js';
+import { withObjectiveTitle } from './objective-title-context.js';
 import { resolveWakePaths, type WakePaths } from './paths.js';
 import { composePersistence } from './persistence-composition.js';
 import type { RuntimeProjectionSubscriptions } from './projection-runtime.js';
@@ -146,6 +150,7 @@ export interface CompositionRoot {
   readonly activities: ActivityRegistry;
   readonly work: ReturnType<typeof createWorkService>;
   readonly artifacts: ReturnType<typeof createArtifactService>;
+  readonly artifactContexts: ArtifactContextService;
   readonly operatorInstructions: OperatorInstructionsService;
   readonly conversations: ReturnType<typeof createConversationService>;
   readonly resources: ReturnType<typeof createResourceService>;
@@ -226,14 +231,17 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       pullRequests,
       resources,
       wakeRoot,
-      createGitHubAgentContextReader(
-        journal,
-        resources,
-        {
-          publicUiUrl: config.surfaces.web.publicUrl,
-          githubAdapters: githubAdapters(config),
-        },
-        conversations,
+      withObjectiveTitle(
+        createGitHubAgentContextReader(
+          journal,
+          resources,
+          {
+            publicUiUrl: config.surfaces.web.publicUrl,
+            githubAdapters: githubAdapters(config),
+          },
+          conversations,
+        ),
+        work,
       ),
       // Resolved lazily: Orchestration is composed after the registry it compiles against.
       { authorize: (request) => orchestration.authorizeParentAction(request) },
@@ -294,6 +302,24 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           providers: () => providerInstances.promise,
         }),
       ),
+      messages: {
+        post: (input, context) => postControlPlaneEntry(conversations, input, context),
+      },
+      resources: {
+        async relateChild({ childWorkItemId, parentWorkItemId }, context) {
+          const primary = (await resources.correlationsForWork(parentWorkItemId)).find(
+            (correlation) => correlation.role === ResourceCorrelationRole.Primary,
+          );
+          if (primary === undefined) return;
+          await resources.correlate(
+            primary.resourceId,
+            childWorkItemId,
+            ResourceCorrelationRole.Secondary,
+            context,
+            ResourceCorrelationProvenance.Delegated,
+          );
+        },
+      },
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
         return (
@@ -357,7 +383,10 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
       wakeRoot: paths.wakeRoot,
       now: () => clock.now().toISOString(),
       nextId: () => ids.next('artifact'),
-      sharedContext: artifactTriggerContext.provision,
+      sharedContext: withDelegatedGrants(
+        artifactTriggerContext.provision,
+        delegatedGrantReferences({ work, contexts: artifactContexts }),
+      ),
       operatorInstructions,
       journal,
     }),
@@ -409,6 +438,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
     subscriptionRunSerialiser,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,
@@ -459,6 +489,7 @@ export async function createCompositionRoot(
     subscriptionRunSerialiser,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,
@@ -565,6 +596,7 @@ export async function createCompositionRoot(
     activities,
     work,
     artifacts,
+    artifactContexts,
     operatorInstructions,
     conversations,
     resources,

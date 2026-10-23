@@ -37,6 +37,30 @@ export interface DelegationArtifacts {
   ): Promise<DelegationResult['outputs'] | null>;
 }
 
+/** Posts Wake-authored messages, on a parent's behalf, to a delegated child's conversation. */
+export interface DelegationMessages {
+  post(
+    input: {
+      readonly workItemId: DelegationReservation['parentWorkItemId'];
+      readonly entryId: string;
+      readonly authorId: string;
+      readonly body: string;
+    },
+    context: CommandContext,
+  ): Promise<void>;
+}
+
+/** Relates a delegated child to its parent's primary resource, e.g. so its runs publish there. */
+export interface DelegationResources {
+  relateChild(
+    input: {
+      readonly childWorkItemId: DelegationReservation['parentWorkItemId'];
+      readonly parentWorkItemId: DelegationReservation['parentWorkItemId'];
+    },
+    context: CommandContext,
+  ): Promise<void>;
+}
+
 export interface DelegationAuthority {
   assertQaCaller?(
     caller: DelegationCaller,

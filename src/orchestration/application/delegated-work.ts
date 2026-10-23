@@ -10,7 +10,12 @@ import type { ActivityName } from '../../activities/index.js';
 import { activationId } from '../../activities/index.js';
 import { repositoryAssignmentSchema, WorkspaceMode } from '../../execution/index.js';
 import { WorkStatus, type WorkService } from '../../work/index.js';
-import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
+import type {
+  DelegationArtifacts,
+  DelegationMessages,
+  DelegationRepositories,
+  DelegationResources,
+} from '../contracts/delegation-ports.js';
 import type {
   DelegatedAssignment,
   DelegationCaller,
@@ -32,6 +37,7 @@ import {
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
+import { renderDelegatedBrief } from '../domain/delegated-brief.js';
 import { assertCriteriaPreserving, originalOf } from '../domain/delivery-replacement.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import type { CoordinationClaims } from './coordination-claims.js';
@@ -66,6 +72,9 @@ import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.
 
 const defaultLimits: DelegationLimits = { maxDepth: 1, maxDescendants: 8 };
 
+/** How long completed-child outputs may stay invisible before the child is blocked. */
+const OUTPUT_VISIBILITY_GRACE_MS = 120_000;
+
 /**
  * Durable delegation of independent child WorkItems. Reservation is the single commit point;
  * every later boundary is reconciled idempotently from it, and the parent stays fenced until join.
@@ -91,6 +100,8 @@ export class DelegatedWork {
       readonly authority?: DelegationAuthority | undefined;
       readonly supportsAttention?: ((activity: ActivityName) => boolean) | undefined;
       readonly resumeChild?: DelegationAttentionDependencies['resumeChild'] | undefined;
+      readonly messages?: DelegationMessages | undefined;
+      readonly resources?: DelegationResources | undefined;
     },
   ) {
     this.ledger = new DelegationLedger(repository);
@@ -102,6 +113,7 @@ export class DelegatedWork {
         dependencies.resumeChild?.(id, context) ?? Promise.resolve(null),
       contextWorkItems: (parent) => this.contextWorkItems(parent),
       canContinue: (reservation) => this.canJoin(reservation),
+      messages: dependencies.messages,
     });
     this.prerequisites = new DelegationPrerequisites(
       repository,
@@ -114,7 +126,11 @@ export class DelegatedWork {
     this.runHasEnded = dependencies.runHasEnded;
   }
 
-  async inspect(id: WorkItemId) {
+  /**
+   * `verify` re-checks upstream outputs with the provider. Reads default to recorded facts
+   * because that check costs provider round trips on every call.
+   */
+  async inspect(id: WorkItemId, options: { readonly verify?: boolean } = {}) {
     const item = await this.work.get(id);
     const root = item?.delegation?.rootWorkItemId ?? id;
     const events = await this.ledger.events();
@@ -136,7 +152,9 @@ export class DelegatedWork {
             ...child,
             work: await this.work.get(child.workItemId),
             prerequisiteBlocker:
-              (await read.reason(child.workItemId)) ?? childBlocker(events, child.workItemId),
+              (options.verify === true
+                ? await read.reason(child.workItemId)
+                : read.recordedReason(child.workItemId)) ?? childBlocker(events, child.workItemId),
             consumedInputs: read.inputs(child.workItemId),
             workflow: read.workflow(child.workflowInstanceId) ?? null,
           })),
@@ -545,6 +563,21 @@ export class DelegatedWork {
       await this.join(reservation, results, context);
   }
 
+  /** A human reply on a parent: wake it to pass the answer to the children still waiting. */
+  async assessReply(
+    parent: WorkflowInstanceView,
+    replyEntryId: string,
+    context: CommandContext,
+  ): Promise<void> {
+    const reservation = (await this.ledger.reservations()).find(
+      (entry) =>
+        entry.parentWorkflowInstanceId === parent.workflowInstanceId &&
+        entry.cohortId === parent.delegationWait?.cohortId,
+    );
+    if (reservation !== undefined)
+      await this.attention.raiseForReply(reservation, replyEntryId, context);
+  }
+
   /** Independent members keep advancing; a blocked member is skipped, never retried blindly. */
   private async advanceMembers(
     artifacts: DelegationArtifacts,
@@ -776,6 +809,19 @@ export class DelegatedWork {
         },
         childContext,
       );
+      await this.dependencies.resources?.relateChild(
+        { childWorkItemId: child.workItemId, parentWorkItemId: reservation.parentWorkItemId },
+        childContext,
+      );
+      await this.dependencies.messages?.post(
+        {
+          workItemId: child.workItemId,
+          entryId: `delegation:${child.grantId}`,
+          authorId: `delegation:${reservation.parentWorkItemId}`,
+          body: renderDelegatedBrief(child),
+        },
+        childContext,
+      );
       await this.claims.claimPrimary(child.workItemId, child.workflowInstanceId, childContext);
       await artifacts.registerChild(
         {
@@ -904,7 +950,10 @@ export class DelegatedWork {
       });
       return;
     }
-    if (observed.event.causationId !== context.commandId)
+    // Provider evidence (e.g. a PR observation) lags the child's completion, so a later
+    // pass alone does not prove the output is missing; only a bounded wait does.
+    const waitedMs = Date.parse(context.occurredAt) - Date.parse(observed.event.occurredAt);
+    if (observed.event.causationId !== context.commandId && waitedMs >= OUTPUT_VISIBILITY_GRACE_MS)
       await this.failChild(
         reservation,
         child,

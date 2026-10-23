@@ -87,6 +87,10 @@ interface StoredCard {
   readonly blockReason?: string;
   readonly dwellSince: string;
   readonly runCount: number;
+  /** Set on delegated children; present only for work created after delegation existed. */
+  readonly parentWorkItemKey?: string;
+  /** Delegated children created under this card's work item. */
+  readonly childCount?: number;
   readonly activeRuns: Readonly<Record<string, StoredActiveRun>>;
   // Kept only to recover checkpoints written before active runs were keyed
   // by run ID. Newly projected cards never write this field.
@@ -150,6 +154,46 @@ export function boardConditionCounts(
   );
 }
 
+function projectItemCreated(
+  view: BoardProjectionView,
+  id: string,
+  payload: {
+    readonly objective: string;
+    readonly delegation?: { readonly parentWorkItemId: string } | undefined;
+  },
+  occurredAt: string,
+): BoardProjectionView {
+  const parentId = payload.delegation?.parentWorkItemId;
+  const parent = parentId === undefined ? undefined : view.cards[parentId];
+  const card: StoredCard = {
+    workItemKey: toWorkItemKey(id),
+    workItemId: id,
+    objective: payload.objective,
+    condition: BoardCondition.Ready,
+    dwellSince: occurredAt,
+    runCount: 0,
+    activeRuns: {},
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalCostUsd: 0,
+    totalDurationMs: 0,
+    ...(parentId === undefined ? {} : { parentWorkItemKey: toWorkItemKey(parentId) }),
+  };
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [id]: card,
+      ...(parent === undefined
+        ? {}
+        : { [parent.workItemId]: { ...parent, childCount: (parent.childCount ?? 0) + 1 } }),
+    },
+  };
+}
+
 function projectWork(
   view: BoardProjectionView,
   event: ReturnType<typeof selectWorkEvent> & {},
@@ -157,25 +201,8 @@ function projectWork(
 ): BoardProjectionView {
   const id = event.stream.id;
   const data = event.event;
-  if (data.eventType === WorkEventType.ItemCreated) {
-    const card: StoredCard = {
-      workItemKey: toWorkItemKey(id),
-      workItemId: id,
-      objective: data.payload.objective,
-      condition: BoardCondition.Ready,
-      dwellSince: occurredAt,
-      runCount: 0,
-      activeRuns: {},
-      totalTokens: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      totalCostUsd: 0,
-      totalDurationMs: 0,
-    };
-    return { ...view, cards: { ...view.cards, [id]: card } };
-  }
+  if (data.eventType === WorkEventType.ItemCreated)
+    return projectItemCreated(view, id, data.payload, occurredAt);
   const current = view.cards[id];
   if (current === undefined) return view;
   if (data.eventType === WorkEventType.ObjectiveRevised)

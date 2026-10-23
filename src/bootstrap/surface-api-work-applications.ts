@@ -42,6 +42,7 @@ import {
 } from '../surfaces/index.js';
 import { workItemId, WorkStatus, type WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
+import { delegatedGrantReferences } from './delegated-artifact-context.js';
 import { primaryExternalRef } from './external-ref.js';
 import { presentDelivery } from './surface-api-delivery.js';
 import { presentPrimaryWorkflow } from './surface-api-merge-policy.js';
@@ -370,16 +371,31 @@ async function workDetail(
 async function presentArtifacts(root: CompositionRoot, id: ReturnType<typeof workItemId>) {
   const partial = root as Partial<CompositionRoot>;
   if (partial.artifacts === undefined || partial.orchestration?.listAll === undefined) return [];
+  const workflows = await partial.orchestration.listAll();
   const accepted = new Set(
-    (await partial.orchestration.listAll())
-      .filter((workflow) => workflow.workItemId === id)
-      .flatMap((workflow) => workflow.acceptedOutcomes),
+    workflows.filter((workflow) => workflow.workItemId === id).flatMap((w) => w.acceptedOutcomes),
   );
-  return (
+  const own = (
     await partial.artifacts.latestPublished(id, async (activationId) =>
       accepted.has(activationId as never),
     )
-  ).map((artifact) => ({
+  ).map((artifact) => presentArtifact(id, artifact));
+  return [...own, ...(await contextArtifacts(root, id, workflows))];
+}
+
+function presentArtifact(
+  owner: ReturnType<typeof workItemId>,
+  artifact: {
+    readonly revisionId: string;
+    readonly producer: string;
+    readonly path: string;
+    readonly occurredAt: string;
+    readonly mediaType?: string | undefined;
+    readonly byteLength?: number | undefined;
+    readonly digest?: string | undefined;
+  },
+) {
+  return {
     revisionId: artifact.revisionId,
     producer: artifact.producer,
     path: artifact.path,
@@ -387,8 +403,44 @@ async function presentArtifacts(root: CompositionRoot, id: ReturnType<typeof wor
     ...(artifact.mediaType === undefined ? {} : { mediaType: artifact.mediaType }),
     ...(artifact.byteLength === undefined ? {} : { byteLength: artifact.byteLength }),
     ...(artifact.digest === undefined ? {} : { digest: artifact.digest }),
-    href: `/api/v1/work-items/${encodeURIComponent(toWorkItemKey(id))}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
-  }));
+    href: `/api/v1/work-items/${encodeURIComponent(toWorkItemKey(owner))}/artifacts/${encodeURIComponent(artifact.revisionId)}`,
+  };
+}
+
+/**
+ * Artifacts other work items published into this one's context. Resolution reuses the
+ * visibility rules an activation is held to, so the screen cannot list what an agent cannot read.
+ */
+async function contextArtifacts(
+  root: CompositionRoot,
+  id: ReturnType<typeof workItemId>,
+  workflows: readonly { readonly acceptedOutcomes: readonly string[] }[],
+): Promise<WorkDetailResponse['artifacts']> {
+  const partial = root as Partial<CompositionRoot>;
+  if (partial.artifactContexts === undefined || partial.work === undefined) return [];
+  const granted = await delegatedGrantReferences({
+    work: partial.work,
+    contexts: partial.artifactContexts,
+  })(id);
+  if (granted.length === 0) return [];
+  const acceptedAnywhere = new Set(workflows.flatMap((workflow) => workflow.acceptedOutcomes));
+  const visible = await partial.artifacts!.visibleTo(
+    {
+      workItemId: id,
+      producer: 'artifact-view',
+      runId: 'artifact-view',
+      activationId: 'artifact-view',
+      readableProducers: new Set(),
+      sharedReferences: granted,
+    },
+    async (activationId) => acceptedAnywhere.has(activationId),
+  );
+  return visible
+    .filter((artifact) => artifact.access === 'shared')
+    .map((artifact) => ({
+      ...presentArtifact(artifact.workItemId, artifact),
+      source: { workItemKey: toWorkItemKey(artifact.workItemId), relation: 'granted' as const },
+    }));
 }
 
 function safeMediaType(value: string | undefined): string {

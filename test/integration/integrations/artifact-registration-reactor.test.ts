@@ -103,6 +103,7 @@ describe('ArtifactRegistrationReactor', () => {
       ),
     ]);
 
+    const reobserved: string[] = [];
     const reactor = new ArtifactRegistrationReactor({
       journal,
       resources,
@@ -126,6 +127,15 @@ describe('ArtifactRegistrationReactor', () => {
             expect(context.workspaceBranch).toBe('wake/fake-work');
             return { kind, externalKey, capabilities: [], revision: 'head-a' };
           },
+          async reobserve(externalKey) {
+            // Correlation must already exist, or the observation would have no WorkItem to attach to.
+            expect(
+              await resources.correlations(
+                (await resources.findByExternalKey(externalKey))!.resourceId,
+              ),
+            ).toHaveLength(1);
+            reobserved.push(externalKey.key);
+          },
         },
       ],
     });
@@ -137,6 +147,7 @@ describe('ArtifactRegistrationReactor', () => {
     await expect(resources.correlations(resource!.resourceId)).resolves.toMatchObject([
       { workItemId: workId('artifact-work'), role: 'primary', provenance: 'agent-reported' },
     ]);
+    expect(reobserved).toEqual(['repo#42']);
   });
 
   it('verifies a direct workflow by branch only, ignoring the local workspace revision', async () => {

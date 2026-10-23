@@ -11,7 +11,7 @@ import { App } from '../src/app/app.js';
 
 const asOf = '2026-07-31T10:00:00.000Z';
 
-function boardClient(fetchSpy?: (url: string) => void) {
+function boardClient(fetchSpy?: (url: string) => void, extra: readonly object[] = []) {
   const items = [
     {
       workItemKey: 'wk_a',
@@ -72,6 +72,7 @@ function boardClient(fetchSpy?: (url: string) => void) {
       totalCostUsd: 0,
       totalDurationMs: 0,
     },
+    ...extra,
   ];
   return new WakeApiClient(async (input) => {
     const url = String(input);
@@ -136,6 +137,46 @@ describe('board', () => {
     ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Finished (1)' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Error (0)' })).toBeTruthy();
+  });
+
+  it('marks delegated children with their parent and counts children on the parent', async () => {
+    const card = (workItemKey: string, objective: string, extra: object) => ({
+      workItemKey,
+      workItemId: workItemKey,
+      objective,
+      condition: 'ready',
+      dwellSince: asOf,
+      runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      ...extra,
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App
+          client={boardClient(undefined, [
+            card('wk_parent', 'Ship the stack', { childCount: 2 }),
+            card('wk_child', 'Add a.txt', { parentWorkItemKey: 'wk_parent' }),
+            card('wk_orphan', 'Add b.txt', { parentWorkItemKey: 'wk_elsewhere' }),
+          ])}
+        />
+      </MemoryRouter>,
+    );
+
+    const parent = await screen.findByRole('listitem', { name: 'Ship the stack' });
+    expect(within(parent).getByText('2 children')).toBeTruthy();
+    expect(within(parent).queryByText(/Child of/)).toBeNull();
+    const child = screen.getByRole('listitem', { name: 'Add a.txt' });
+    expect(within(child).getByText('Child of Ship the stack')).toBeTruthy();
+    expect(child.className).toContain('cardChild');
+    // A parent outside the loaded page still marks the card as delegated work.
+    expect(
+      within(screen.getByRole('listitem', { name: 'Add b.txt' })).getByText('Delegated child'),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('listitem', { name: 'Alpha' })).queryByText(/children?$/),
+    ).toBeNull();
   });
 
   it('renders each card as a link to its work item key route', async () => {

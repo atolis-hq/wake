@@ -10,6 +10,7 @@ import {
   createArtifactMcpProvisioner,
   createArtifactMcpServerForSession,
 } from '../../../src/bootstrap/artifact-mcp.js';
+import { withDelegatedGrants } from '../../../src/bootstrap/delegated-artifact-context.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../../../src/execution/index.js';
 import type { OrchestrationService } from '../../../src/orchestration/index.js';
 import { orchestrationGroupId, workflowInstanceId } from '../../../src/orchestration/index.js';
@@ -69,6 +70,40 @@ describe('artifact MCP provisioning', () => {
     });
     await capability.release();
     await expect(sessions.read(sessionPath, token)).rejects.toThrow();
+  });
+
+  it('lets a delegated child read the artifacts its parent granted to it', async () => {
+    const sessions = new FileArtifactMcpSessionStore(
+      await directory(),
+      () => '2026-09-19T12:00:00.000Z',
+    );
+    const grant = { workItemId: workId('parent'), revisionId: 'brief-1' };
+    const scopes: { readonly sharedReferences?: readonly unknown[] }[] = [];
+    const provision = createArtifactMcpProvisioner({
+      artifacts: {
+        get: async () => ({ revisions: [] }),
+        visibleTo: async (scope: { readonly sharedReferences?: readonly unknown[] }) => {
+          scopes.push(scope);
+          return [];
+        },
+      } as never,
+      orchestration: orchestration() as never,
+      sessions,
+      wakeRoot: '/wake',
+      now: () => '2026-09-19T12:00:00.000Z',
+      nextId: () => 'artifact-1',
+      sharedContext: withDelegatedGrants(
+        async () => ({}),
+        async () => [grant],
+      ),
+    });
+    const capability = await provision({ runId: 'run-1', activation, context });
+
+    expect(scopes[0]?.sharedReferences).toEqual([grant]);
+    const server = capability.servers[0]!;
+    await expect(
+      sessions.read(server.args![3]!, server.env!.WAKE_MCP_TOKEN!),
+    ).resolves.toMatchObject({ sharedReferences: [grant] });
   });
 });
 

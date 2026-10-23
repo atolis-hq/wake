@@ -28,10 +28,14 @@ export function createWorkflowDiagramApplications(
         workItemKey === undefined
           ? undefined
           : await loadOverlay(root, fromWorkItemKey(workItemKey));
+      // Work that has no primary instance yet (e.g. a delegated child still waiting on its
+      // prerequisites) has nothing to overlay; that is not an error.
       const definitions =
-        overlay === undefined
-          ? root.orchestration.listCurrentDefinitions().map((entry) => entry.definition)
-          : [await root.orchestration.definitionFor(overlay.primary)];
+        workItemKey !== undefined && overlay === undefined
+          ? []
+          : overlay === undefined
+            ? root.orchestration.listCurrentDefinitions().map((entry) => entry.definition)
+            : [await root.orchestration.definitionFor(overlay.primary)];
       return {
         data: {
           diagrams: definitions.map((definition) => presentWorkflowDiagram(definition, overlay)),
@@ -120,10 +124,10 @@ export interface WorkflowDiagramOverlay {
 async function loadOverlay(
   root: CompositionRoot,
   workItemId: string,
-): Promise<WorkflowDiagramOverlay> {
+): Promise<WorkflowDiagramOverlay | undefined> {
   const workflows = await root.orchestration.listForWorkItem(workItemId as never);
   const primary = workflows.find((workflow) => workflow.parentWorkflowInstanceId === undefined);
-  if (primary === undefined) throw new Error('Workflow instance not found');
+  if (primary === undefined) return undefined;
   const runs = (await root.execution.list()).filter((run) =>
     workflows.some((workflow) => workflow.workflowInstanceId === run.workflowInstanceId),
   );

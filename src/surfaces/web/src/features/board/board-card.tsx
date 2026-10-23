@@ -4,8 +4,10 @@ import {
   type BoardCardResponse,
 } from '../../../../api/contracts/index.js';
 import { isAmbiguityResolutionBlockReasonValue } from '../../../../api/contracts/transport-values.js';
+import { StageIcon, WorkflowIcon } from '../../components/card-icons.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
+import { LinkIcon } from '../../components/link-icon.js';
 import { OutcomeChip } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
@@ -55,63 +57,50 @@ function FrozenIcon() {
   );
 }
 
-function WorkflowIcon() {
-  return (
-    <svg
-      className={styles.metaIcon}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="4" cy="3.5" r="1.6" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="4" cy="12.5" r="1.6" stroke="currentColor" strokeWidth="1.3" />
-      <circle cx="12" cy="8" r="1.6" stroke="currentColor" strokeWidth="1.3" />
-      <path
-        d="M4 5.1v5.8M5.4 4.2 10.6 6.9M5.4 11.8 10.6 9.1"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function StageIcon() {
-  return (
-    <svg
-      className={styles.metaIcon}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M3.5 2v12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path
-        d="M3.5 2.8h7l-1.8 2.6 1.8 2.6h-7"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function activeRunLabel(
   phase: NonNullable<BoardCardResponse['activeRuns']>[string]['phase'],
 ): string {
   return phase === BoardActiveRunPhaseValue.Starting ? 'Starting' : 'Running';
 }
 
-export function BoardCard({ item }: { readonly item: BoardCardResponse }) {
+export function BoardCard({
+  item,
+  parentObjective,
+}: {
+  readonly item: BoardCardResponse;
+  /** Objective of the delegating parent, when it is on the board. */
+  readonly parentObjective?: string | undefined;
+}) {
+  const isChild = item.parentWorkItemKey !== undefined;
   return (
-    <li className={styles.card} aria-label={item.objective}>
+    <li className={`${styles.card} ${isChild ? styles.cardChild : ''}`} aria-label={item.objective}>
       <Link className={styles.cardLink!} to={`/work/${encodeURIComponent(item.workItemKey)}`}>
+        {isChild && (
+          <span
+            className={styles.cardParentHeader}
+            title={`Delegated child work${parentObjective === undefined ? '' : ` of: ${parentObjective}`}`}
+          >
+            <LinkIcon className={styles.metaIcon} />
+            <span>
+              {parentObjective === undefined ? 'Delegated child' : `Child of ${parentObjective}`}
+            </span>
+          </span>
+        )}
         {item.externalRef !== undefined && (
           <span className={styles.cardRef}>{item.externalRef}</span>
         )}
         <span className={styles.cardTitle}>{item.objective}</span>
         <span className={styles.cardMeta}>
+          {item.childCount !== undefined && item.childCount > 0 && (
+            <Chip
+              variant="outline"
+              tone="info"
+              title="Delegated child work items created by this work item"
+            >
+              <LinkIcon className={styles.metaIcon} />
+              {item.childCount} {item.childCount === 1 ? 'child' : 'children'}
+            </Chip>
+          )}
           {item.frozen === true && (
             <Chip
               variant="outline"

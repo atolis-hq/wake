@@ -336,6 +336,7 @@ export async function composeIntegrationRuntime(
     runs,
     resources: input.resources,
     orchestration: input.orchestration,
+    work: input.work,
     conversations: input.conversations,
     ...(replies === undefined ? {} : { replies }),
   });

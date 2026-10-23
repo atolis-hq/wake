@@ -117,6 +117,7 @@ export function Board() {
     return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   const items = query.data?.items ?? [];
   const swimlanes = groupItems(items, groupBy);
+  const objectiveByKey = new Map(items.map((entry) => [entry.workItemKey, entry.objective]));
   return (
     <>
       <div className={styles.boardControls}>
@@ -198,7 +199,15 @@ export function Board() {
                           {!isCollapsed && (
                             <ul className={styles.cards}>
                               {columnItems.map((item) => (
-                                <BoardCard key={item.workItemKey} item={item} />
+                                <BoardCard
+                                  key={item.workItemKey}
+                                  item={item}
+                                  parentObjective={
+                                    item.parentWorkItemKey === undefined
+                                      ? undefined
+                                      : objectiveByKey.get(item.parentWorkItemKey)
+                                  }
+                                />
                               ))}
                             </ul>
                           )}

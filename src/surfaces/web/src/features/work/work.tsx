@@ -36,7 +36,8 @@ import { EventRow } from '../events/events.js';
 import styles from '../features.module.css';
 import { runColumns } from '../runs/runs.js';
 import { WorkflowDiagramView } from '../workflow-diagram/workflow-diagram.js';
-import { DeliveryIntegration } from './delivery-integration.js';
+import { ArtifactTable, type WorkArtifact } from './artifact-table.js';
+import { RelatedWork } from './delegation-sections.js';
 import { MarkdownArtifactViewer } from './markdown-artifact-viewer.js';
 
 const resourceIcons: Record<string, typeof GitHubIcon> = {
@@ -206,11 +207,7 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
   const [tab, setTab] = useState<
     'overview' | 'runs' | 'conversation' | 'events' | 'transcripts' | 'artifacts'
   >('overview');
-  const [viewedArtifact, setViewedArtifact] = useState<{
-    revisionId: string;
-    path: string;
-    href: string;
-  } | null>(null);
+  const [viewedArtifact, setViewedArtifact] = useState<WorkArtifact | null>(null);
   const conversationViewport = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const [readingHistory, setReadingHistory] = useState(false);
@@ -337,150 +334,6 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
             {query.data.data.work.externalRef && <span>{query.data.data.work.externalRef}</span>}
             {query.data.data.work.objective}
           </h1>
-          {query.data.data.delegation && (
-            <Panel>
-              <h2>Delivery tree</h2>
-              {query.data.data.delegation.attention && (
-                <div>
-                  <h3>Waiting on parent assessment</h3>
-                  <ul>
-                    {query.data.data.delegation.attention.blockers.map((blocker) => (
-                      <li key={blocker.blockerId}>
-                        <Link to={'/work/' + encodeURIComponent(blocker.workItemKey)}>
-                          {blocker.kind}
-                        </Link>
-                        : {blocker.reason}
-                        {blocker.answered && ' (reply accepted)'}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {query.data.data.delegation.cohorts?.map((cohort) => (
-                <p key={cohort.cohortId}>
-                  Cohort {cohort.cohortId}: {cohort.settled ? 'settled' : 'waiting'}
-                  {cohort.failureReason && ` (${cohort.failureReason})`}
-                </p>
-              ))}
-              {query.data.data.delegation.qa && (
-                <div>
-                  <h3>Candidate QA</h3>
-                  <p>
-                    {query.data.data.delegation.qa.candidateId ?? 'No candidate'} ·{' '}
-                    {query.data.data.delegation.qa.verdict ?? 'No verdict'} ·{' '}
-                    {query.data.data.delegation.qa.effective ? 'Current' : 'Needs verification'}
-                  </p>
-                  <p>{query.data.data.delegation.qa.reason}</p>
-                  {query.data.data.delegation.qa.exhausted && <p>Repair budget exhausted</p>}
-                  <ul>
-                    {query.data.data.delegation.qa.repositories.map((entry) => (
-                      <li key={entry.resourceId}>
-                        {entry.resourceId}@{entry.revision}
-                      </li>
-                    ))}
-                  </ul>
-                  <ul>
-                    {(query.data.data.delegation.qa.staleOutputs ?? []).length > 0
-                      ? query.data.data.delegation.qa.staleOutputs!.map((entry) => (
-                          <li key={entry.workItemKey + '/' + entry.outputName}>
-                            Stale: {entry.outputName} ({entry.reason})
-                          </li>
-                        ))
-                      : query.data.data.delegation.qa.stale.map((entry) => (
-                          <li key={entry}>Stale: {entry}</li>
-                        ))}
-                  </ul>
-                  <ul>
-                    {query.data.data.delegation.qa.findings.map((entry) => (
-                      <li key={entry}>{entry}</li>
-                    ))}
-                  </ul>
-                  {query.data.data.delegation.qa.integration && (
-                    <DeliveryIntegration integration={query.data.data.delegation.qa.integration} />
-                  )}
-                </div>
-              )}
-              <p>
-                Root:{' '}
-                <Link
-                  to={'/work/' + encodeURIComponent(query.data.data.delegation.rootWorkItemKey)}
-                >
-                  View delivery root
-                </Link>
-                {query.data.data.delegation.parentWorkItemKey && (
-                  <>
-                    {' '}
-                    ·{' '}
-                    <Link
-                      to={
-                        '/work/' + encodeURIComponent(query.data.data.delegation.parentWorkItemKey)
-                      }
-                    >
-                      View parent
-                    </Link>
-                  </>
-                )}
-              </p>
-              <ul>
-                {query.data.data.delegation.children.map((child) => (
-                  <li key={child.workItemKey}>
-                    <Link to={'/work/' + encodeURIComponent(child.workItemKey)}>
-                      {child.objective}
-                    </Link>
-                    {' · '}
-                    {child.workflowName}
-                    {' · '}
-                    {child.status}
-                    {child.currentStage && <> · stage {child.currentStage}</>}
-                    {child.replaces && <> · corrects {child.replaces.assignmentId}</>}
-                    {child.repository && (
-                      <>
-                        {' · '}
-                        {child.repository.resourceId} → {child.repository.pullRequestBase}
-                      </>
-                    )}
-                    {child.prerequisites && child.prerequisites.length > 0 && (
-                      <>
-                        {' · prerequisites: '}
-                        {child.prerequisites.map((key, index) => (
-                          <span key={key}>
-                            {index > 0 && ', '}
-                            <Link to={'/work/' + encodeURIComponent(key)}>{key}</Link>
-                          </span>
-                        ))}
-                        {child.prerequisiteBlocker && <> (waiting: {child.prerequisiteBlocker})</>}
-                      </>
-                    )}
-                    {child.outputs && (
-                      <ul>
-                        {child.outputs.map((output) => (
-                          <li key={output.name}>
-                            {output.name} ({output.kind},{' '}
-                            {output.required ? 'required' : 'optional'})
-                            {output.repository &&
-                              ` · ${output.repository.resourceId} → ${output.repository.pullRequestBase}`}
-                            {output.selected && ' · selected'}
-                            {output.stale && ' · stale'}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {child.blockReason && <p>{child.blockReason}</p>}
-                    {child.resources.map((resource) => (
-                      <span key={resource.resourceId}>
-                        {' · '}
-                        {resource.externalUrl ? (
-                          <a href={resource.externalUrl}>{resource.title ?? resource.resourceId}</a>
-                        ) : (
-                          resource.resourceId
-                        )}
-                      </span>
-                    ))}
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          )}
           {query.data.data.triggerOrigin && (
             <p>
               Trigger origin:{' '}
@@ -677,42 +530,16 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
               {viewedArtifact ? (
                 <MarkdownArtifactViewer
                   key={`${workItemKey}:${viewedArtifact.revisionId}`}
-                  workItemKey={workItemKey}
+                  workItemKey={viewedArtifact.source?.workItemKey ?? workItemKey}
                   artifact={viewedArtifact}
                   onClose={() => setViewedArtifact(null)}
                 />
               ) : query.data.data.artifacts.length === 0 ? (
                 <EmptyState>No published artifacts</EmptyState>
               ) : (
-                <DataTable
-                  caption="Published artifacts"
-                  rows={query.data.data.artifacts}
-                  rowKey={(artifact) => artifact.revisionId}
-                  columns={[
-                    { label: 'Producer', render: (artifact) => artifact.producer },
-                    {
-                      label: 'Path',
-                      render: (artifact) => <a href={artifact.href}>{artifact.path}</a>,
-                    },
-                    {
-                      label: 'View',
-                      render: (artifact) =>
-                        /\.md$/i.test(artifact.path) ? (
-                          <Button
-                            variant="secondary"
-                            onClick={() => setViewedArtifact(artifact)}
-                            aria-label={`View ${artifact.path}`}
-                          >
-                            View
-                          </Button>
-                        ) : null,
-                    },
-                    { label: 'Type', render: (artifact) => artifact.mediaType ?? 'binary' },
-                    {
-                      label: 'Bytes',
-                      render: (artifact) => artifact.byteLength?.toLocaleString() ?? '?',
-                    },
-                  ]}
+                <ArtifactSections
+                  artifacts={query.data.data.artifacts}
+                  onView={setViewedArtifact}
                 />
               )}
             </section>
@@ -1224,6 +1051,12 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     </ul>
                   )}
                 </section>
+                {query.data.data.delegation && (
+                  <RelatedWork
+                    delegation={query.data.data.delegation}
+                    workItemKey={query.data.data.work.workItemKey}
+                  />
+                )}
               </aside>
 
               <section className={styles.overviewMain} aria-labelledby="work-activity">
@@ -1373,4 +1206,29 @@ function parseActivityOutcome(value: string): { readonly kind: string } | undefi
   } catch {
     return undefined;
   }
+}
+
+/** Own artifacts first, then those other work items made available to this one. */
+function ArtifactSections({
+  artifacts,
+  onView,
+}: {
+  readonly artifacts: readonly WorkArtifact[];
+  readonly onView: (artifact: WorkArtifact) => void;
+}) {
+  const own = artifacts.filter((artifact) => artifact.source === undefined);
+  const inherited = artifacts.filter((artifact) => artifact.source !== undefined);
+  return (
+    <>
+      {own.length > 0 && <ArtifactTable caption="Published artifacts" rows={own} onView={onView} />}
+      {inherited.length > 0 && (
+        <ArtifactTable
+          caption="Available from related work"
+          rows={inherited}
+          showSource
+          onView={onView}
+        />
+      )}
+    </>
+  );
 }

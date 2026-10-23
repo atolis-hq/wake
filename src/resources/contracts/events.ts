@@ -164,6 +164,7 @@ const eventSchema: z.ZodType<ResourceEvent> = eventEnvelopeSchema.extend({
             ResourceCorrelationProvenance.ProviderObserved,
             ResourceCorrelationProvenance.AgentReported,
             ResourceCorrelationProvenance.OperatorDeclared,
+            ResourceCorrelationProvenance.Delegated,
           ]),
         })
         .strict(),

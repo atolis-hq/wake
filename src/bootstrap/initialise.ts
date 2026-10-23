@@ -418,6 +418,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
   && apt-get update \\
   && apt-get install -y --no-install-recommends gh
 
+# gh extensions resolve from the data dir under the container home, which is bind-mounted at
+# runtime and would hide anything installed there. Install the latest release system-wide here; the
+# entrypoint links it into the home at startup. Agents link PRs with: gh stack link.
+# Bump this date to force a fresh install instead of an indefinitely cached layer.
+ARG GH_STACK_CACHE_BUST=2026-10-23
+RUN echo "gh-stack cache bust: \${GH_STACK_CACHE_BUST}" \\
+  && XDG_DATA_HOME=/usr/local/lib/wake-gh gh extension install github/gh-stack \\
+  && chmod -R a+rX /usr/local/lib/wake-gh
+
 RUN --mount=type=cache,target=/root/.npm \\
   npm install -g @anthropic-ai/claude-code @openai/codex
 
@@ -483,7 +492,7 @@ ENV WAKE_MAIN_JS=/app/dist/src/main.js
 # Startup ownership repair is best effort because bind-mounted paths or host
 # permissions may prevent chown. The bounded direct-child pass avoids traversing
 # accumulated runtime data.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; { mkdir -p /home/wake/.local/share/gh/extensions && ln -sfn /usr/local/lib/wake-gh/gh/extensions/gh-stack /home/wake/.local/share/gh/extensions/gh-stack && chown wake:wake /home/wake/.local /home/wake/.local/share /home/wake/.local/share/gh /home/wake/.local/share/gh/extensions; } || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec node \\"$WAKE_MAIN_JS\\" sandbox-entrypoint --wake-root /wake'"]
 `;
 
 const packagedDockerfile = `# syntax=docker/dockerfile:1
@@ -501,6 +510,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\
     > /etc/apt/sources.list.d/github-cli.list \\
   && apt-get update \\
   && apt-get install -y --no-install-recommends gh
+
+# gh extensions resolve from the data dir under the container home, which is bind-mounted at
+# runtime and would hide anything installed there. Install the latest release system-wide here; the
+# entrypoint links it into the home at startup. Agents link PRs with: gh stack link.
+# Bump this date to force a fresh install instead of an indefinitely cached layer.
+ARG GH_STACK_CACHE_BUST=2026-10-23
+RUN echo "gh-stack cache bust: \${GH_STACK_CACHE_BUST}" \\
+  && XDG_DATA_HOME=/usr/local/lib/wake-gh gh extension install github/gh-stack \\
+  && chmod -R a+rX /usr/local/lib/wake-gh
 
 ARG WAKE_VERSION=0.1.0
 RUN --mount=type=cache,target=/root/.npm \\
@@ -551,7 +569,7 @@ EXPOSE 4317
 # Startup ownership repair is best effort because bind-mounted paths or host
 # permissions may prevent chown. The bounded direct-child pass avoids traversing
 # accumulated runtime data.
-ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
+ENTRYPOINT ["sh", "-c", "set -eu; mkdir -p /wake/.wake /wake/workspaces /wake/.wake/auth; chown wake:wake /wake/.wake /wake/workspaces /wake/.wake/auth || true; find /wake/.wake -mindepth 1 -maxdepth 1 -type d -exec chown wake:wake {} + || true; find /wake/.wake/auth -mindepth 1 -maxdepth 1 -type f -exec chown wake:wake {} + || true; { mkdir -p /home/wake/.local/share/gh/extensions && ln -sfn /usr/local/lib/wake-gh/gh/extensions/gh-stack /home/wake/.local/share/gh/extensions/gh-stack && chown wake:wake /home/wake/.local /home/wake/.local/share /home/wake/.local/share/gh /home/wake/.local/share/gh/extensions; } || true; if [ -n \\"\${WAKE_HOME_INIT_DIRS:-}\\" ]; then printf '%s\\n' \\"$WAKE_HOME_INIT_DIRS\\" | while IFS= read -r directory; do case \\"$directory\\" in \\"\${WAKE_HOME_INIT_ROOT:-}\\"/*) mkdir -p \\"$directory\\"; chown wake:wake \\"$directory\\" ;; *) exit 1 ;; esac; done; fi; exec su wake -s /bin/sh -c 'HOME=/home/wake exec wake sandbox-entrypoint'"]
 `;
 
 const triagePrompt = `---

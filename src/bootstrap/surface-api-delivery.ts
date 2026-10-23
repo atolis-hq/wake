@@ -7,6 +7,7 @@ import {
 } from '../surfaces/index.js';
 import type { WorkItemView } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
+import { primaryExternalRef } from './external-ref.js';
 
 export async function presentDelivery(
   root: CompositionRoot,
@@ -40,13 +41,20 @@ export async function presentDelivery(
         cohorts.flatMap((cohort) =>
           cohort.children.map(async (child) => {
             const availability = delivery.availability(child.workItemId);
+            const correlations = await root.resources.correlationsForWork(child.workItemId);
             const resources = await Promise.all(
-              (await root.resources.correlationsForWork(child.workItemId)).map((entry) =>
-                root.resources.get(entry.resourceId),
-              ),
+              correlations.map((entry) => root.resources.get(entry.resourceId)),
+            );
+            const externalRef = await primaryExternalRef(
+              root,
+              child.workItemId,
+              correlations,
+              resources.filter((entry) => entry !== null),
             );
             return {
               workItemKey: toWorkItemKey(child.workItemId),
+              workItemId: child.workItemId,
+              ...(externalRef === undefined ? {} : { externalRef }),
               parentWorkItemKey: toWorkItemKey(cohort.parentWorkItemId),
               objective: child.objective,
               workflowName: child.workflowName,

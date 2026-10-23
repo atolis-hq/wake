@@ -38,7 +38,9 @@ import {
   TransitionTargetKind,
   workflowInstanceStream,
   type DelegationArtifacts,
+  type DelegationMessages,
   type DelegationRepositories,
+  type DelegationResources,
   type WorkflowInstanceView,
   type WorkflowOrchestrationEventData,
 } from '../../../src/orchestration/index.js';
@@ -49,10 +51,10 @@ import { workId } from '../../support/identities.js';
 
 afterEach(() => vi.restoreAllMocks());
 
-const context = (commandId: string): CommandContext => ({
+const context = (commandId: string, occurredAt = '2026-07-30T12:00:00.000Z'): CommandContext => ({
   commandId,
   correlationId: correlationId('delegation-1'),
-  occurredAt: '2026-07-30T12:00:00.000Z',
+  occurredAt,
   actor: { kind: 'system', id: 'test' },
 });
 
@@ -191,6 +193,8 @@ function build(
       names,
     ),
   };
+  const opened: Parameters<DelegationMessages['post']>[0][] = [];
+  const related: Parameters<DelegationResources['relateChild']>[0][] = [];
   const service = createOrchestrationService(
     journal,
     work,
@@ -201,10 +205,22 @@ function build(
       artifacts,
       authority: { assertCaller: async () => undefined, repositories: async () => [] },
       ...(repositories === undefined ? {} : { repositories }),
+      messages: { post: async (input) => void opened.push(input) },
+      resources: { relateChild: async (input) => void related.push(input) },
       runHasEnded: async (id) => !activeRuns.has(id),
     }),
   );
-  return { journal, work, service, artifacts, definitions, activeRuns, activities };
+  return {
+    journal,
+    work,
+    service,
+    artifacts,
+    definitions,
+    activeRuns,
+    activities,
+    opened,
+    related,
+  };
 }
 
 type Fixture = ReturnType<typeof build>;
@@ -647,6 +663,79 @@ it('isolates a broken cohort while unrelated outcomes, later cohorts and watch c
   ).toBeGreaterThan(0);
 });
 
+it('opens each child with its assignment and keeps the work item title a short summary', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'brief',
+    [
+      {
+        ...assignment(fingerprint, 'a'),
+        objective: 'Add a.txt',
+        criteria: ['a.txt contains alpha', 'No other file changes'],
+        context: [{ workItemId: workId('1'), revisionId: 'brief-1' }],
+      },
+    ],
+    context('brief'),
+  );
+  const child = reservation.children[0]!;
+
+  // The work item carries only the summary; the substance is delivered as the opening message.
+  expect((await fixture.work.get(child.workItemId))?.objective).toBe('Add a.txt');
+  expect(fixture.opened).toHaveLength(1);
+  expect(fixture.opened[0]).toMatchObject({
+    workItemId: child.workItemId,
+    entryId: `delegation:${child.grantId}`,
+    authorId: `delegation:${reservation.parentWorkItemId}`,
+  });
+  expect(fixture.opened[0]!.body).toContain('Add a.txt');
+  expect(fixture.opened[0]!.body).toContain('- a.txt contains alpha');
+  expect(fixture.opened[0]!.body).toContain('brief-1');
+  // Each child is also related to its parent's resource, so its runs can publish there.
+  expect(fixture.related).toEqual([
+    { childWorkItemId: child.workItemId, parentWorkItemId: reservation.parentWorkItemId },
+  ]);
+});
+
+it('keeps a completed child pending while its output may still become visible, then blocks it', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a')],
+    context('reserve'),
+  );
+  const child = reservation.children[0]!;
+  await complete(fixture, child.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('first'));
+  expect(await count(fixture, OrchestrationEventType.DelegationReconciliationFailed)).toBe(1);
+  // Back-to-back passes (provider evidence typically lands within seconds) must not block it.
+  await fixture.service.reconcileChildCompletions(context('second', '2026-07-30T12:00:02.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(0);
+  // The output becoming visible inside the window selects the result.
+  fixture.artifacts.published.add(child.workItemId);
+  await fixture.service.reconcileChildCompletions(context('visible', '2026-07-30T12:00:03.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationResultSelected)).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(0);
+});
+
+it('blocks a completed child whose output stays invisible past the grace window', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'a')],
+    context('reserve'),
+  );
+  await complete(fixture, reservation.children[0]!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('first'));
+  await fixture.service.reconcileChildCompletions(context('late', '2026-07-30T12:05:00.000Z'));
+  expect(await count(fixture, OrchestrationEventType.DelegationChildBlocked)).toBe(1);
+});
+
 it.each(['failed', 'missing-output'])(
   'settles and blocks on a %s child across restart without stranding siblings',
   async (failure) => {
@@ -662,7 +751,10 @@ it.each(['failed', 'missing-output'])(
     await complete(fixture, child.workflowInstanceId, failure === 'failed' ? 'failed' : 'done');
     const restarted = build(fixture.journal, fixture.artifacts);
     await restarted.service.reconcileChildCompletions(context('restart'));
-    await restarted.service.reconcileChildCompletions(context('duplicate'));
+    // A missing output is only blocked once the visibility grace has elapsed.
+    await restarted.service.reconcileChildCompletions(
+      context('duplicate', failure === 'missing-output' ? '2026-07-30T12:05:00.000Z' : undefined),
+    );
     // Raised once for the failed member; the running sibling keeps its pending work.
     expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(1);
     expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
@@ -1944,6 +2036,38 @@ it('deduplicates shared prerequisite verification within a gate pass and skips s
   expect(verification).not.toHaveBeenCalled();
 });
 
+it('inspects blockers from recorded facts without verifying outputs with the provider', async () => {
+  const fixture = build();
+  const { caller, fingerprint } = await startParent(fixture);
+  const batch = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'inspect',
+    [
+      assignment(fingerprint, 'source'),
+      {
+        ...assignment(fingerprint, 'consumer'),
+        prerequisites: [
+          { assignmentId: 'source', output: 'findings', condition: 'accepted-output' as const },
+        ],
+      },
+    ],
+    context('inspect'),
+  );
+  const consumer = batch.children[1]!.workItemId;
+  const verification = vi.spyOn(fixture.artifacts, 'prerequisiteOutput');
+  const waiting = (tree: Awaited<ReturnType<typeof fixture.service.deliveryTree>>) =>
+    tree[0]!.children.find((child) => child.workItemId === consumer)!.prerequisiteBlocker;
+
+  expect(waiting(await fixture.service.deliveryTree(batch.parentWorkItemId))).toBe(
+    'Waiting for accepted-output output source/findings',
+  );
+  expect(verification).not.toHaveBeenCalled();
+
+  // Explicit verification still evaluates against the provider.
+  await fixture.service.deliveryTree(batch.parentWorkItemId, { verify: true });
+  expect(verification).toHaveBeenCalled();
+});
+
 it('bounds prerequisite diagnostics when provider error messages keep changing', async () => {
   const fixture = build();
   const { caller, fingerprint } = await startParent(fixture);
@@ -2294,6 +2418,118 @@ it('answers only an assignment-context blocker with exact references and resumes
   ).toHaveLength(2);
 });
 
+it('answers a clarification with a free-text message posted to the child, and refuses an empty reply', async () => {
+  const fixture = attentionBuild();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'x')],
+    context('reserve'),
+  );
+  const child = reservation.children[0]!;
+  await clarify(fixture, child.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('r1'));
+  const attending = await attentionCaller(fixture, caller);
+  const request = (await fixture.service.inspectDelegation(attending, context('inspect'))) as {
+    attention: { revision: number; blockers: { blockerId: string }[] };
+  };
+  const base = {
+    childWorkItemId: child.workItemId,
+    blockerId: request.attention.blockers[0]!.blockerId,
+    expectedRevision: request.attention.revision,
+  };
+  const respond = (reply: object, commandId: string) =>
+    fixture.service.respondToDelegationAttention(
+      attending,
+      { references: [], ...base, ...reply } as never,
+      context(commandId),
+    );
+  fixture.opened.length = 0;
+
+  await expect(respond({}, 'empty')).rejects.toMatchObject({ code: 'empty-reply' });
+  expect(fixture.opened).toEqual([]);
+
+  await respond({ message: 'The codeword is FALCON.' }, 'reply');
+  await respond({ message: 'The codeword is FALCON.' }, 'replay');
+
+  // The answer is posted to the child's conversation under a stable id (replays dedupe there),
+  // names the parent as its author, and creates no artifact grant of its own.
+  expect(new Set(fixture.opened.map((entry) => entry.entryId)).size).toBe(1);
+  expect(fixture.opened[0]).toMatchObject({
+    workItemId: child.workItemId,
+    authorId: `delegation:${reservation.parentWorkItemId}`,
+    body: 'The codeword is FALCON.',
+  });
+  expect(fixture.artifacts.grants.size).toBe(1);
+  expect(await count(fixture, OrchestrationEventType.OperatorRetryRequested)).toBe(1);
+  expect((await fixture.service.get(child.workflowInstanceId))!.status).toBe('active');
+  await expect(respond({ message: 'Something else.' }, 'other')).rejects.toMatchObject({
+    code: 'duplicate',
+  });
+});
+
+it('wakes the parent once per human reply while a child waits on a clarification, and passes it on', async () => {
+  const fixture = attentionBuild();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [assignment(fingerprint, 'x'), assignment(fingerprint, 'y')],
+    context('reserve'),
+  );
+  const [x] = reservation.children;
+  const reply = (entryId: string, commandId = entryId) =>
+    fixture.service.requestReplyAssessment(
+      reservation.parentWorkItemId,
+      entryId,
+      context(commandId),
+    );
+
+  // Nothing is waiting on a human yet: a comment is only recorded, it wakes nothing.
+  await reply('comment-0');
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(0);
+
+  await clarify(fixture, x!.workflowInstanceId);
+  await fixture.service.reconcileChildCompletions(context('r1'));
+  await finishAttention(fixture, 'assess-question');
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(1);
+  // The assessed question is not raised again by reconciliation.
+  await fixture.service.reconcileChildCompletions(context('r2'));
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(1);
+
+  // A human reply is new information: the parent is woken, once, however often it is replayed.
+  await reply('comment-1');
+  await reply('comment-1', 'replay');
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(2);
+  const attending = await attentionCaller(fixture, caller);
+  const request = (await fixture.service.inspectDelegation(attending, context('inspect'))) as {
+    attention: { revision: number; blockers: { blockerId: string; kind: string }[] };
+  };
+  expect(request.attention.blockers).toMatchObject([{ kind: 'assignment-context' }]);
+
+  // The parent decides what the child hears, and the child resumes.
+  fixture.opened.length = 0;
+  await fixture.service.respondToDelegationAttention(
+    attending,
+    {
+      childWorkItemId: x!.workItemId,
+      blockerId: request.attention.blockers[0]!.blockerId,
+      expectedRevision: request.attention.revision,
+      references: [],
+      message: 'Use FALCON.',
+    } as never,
+    context('relay'),
+  );
+  expect(fixture.opened.map((entry) => entry.body)).toEqual(['Use FALCON.']);
+  expect((await fixture.service.get(x!.workflowInstanceId))!.status).toBe('active');
+
+  // The child is no longer waiting, so a later comment wakes nothing further.
+  await finishAttention(fixture, 'assess-reply');
+  await reply('comment-2');
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(2);
+});
+
 it('does not accept a reply for a terminal failure or a human-only gate (DC-32)', async () => {
   const fixture = attentionBuild();
   const { caller, fingerprint } = await startParent(fixture);
@@ -2396,7 +2632,7 @@ it('escalates once when the delegating activity cannot assess attention', async 
   expect((await parentOf(fixture)).status).toBe('waiting');
 });
 
-it('keeps the cohort tracked when the parent escalates a human question, and its results stay joinable', async () => {
+it('keeps the cohort tracked when the parent escalates a human question, then relays the human answer to the child', async () => {
   const fixture = attentionBuild();
   const { caller, fingerprint } = await startParent(fixture);
   const reservation = await fixture.service['delegatedWork'].reserve(
@@ -2445,17 +2681,37 @@ it('keeps the cohort tracked when the parent escalates a human question, and its
   fixture.artifacts.published.add(y!.workItemId);
   await complete(fixture, y!.workflowInstanceId);
   expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
-  // The human answers on the parent issue (the route the question was published on): the reply
-  // reaches the asking child through the real conversation reactor, with no operator command.
+  // The human answers on the parent issue (the route the question was published on). The reply is
+  // recorded on the parent, which is woken to decide how to pass it on; the child is not resumed
+  // behind its back.
   await humanReply(fixture, workId('1'), 'Use API version 2.');
+  expect((await fixture.service.get(x!.workflowInstanceId))!.status).toBe('blocked');
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(2);
+  const attending = await attentionCaller(fixture, caller);
+  const request = (await fixture.service.inspectDelegation(attending, context('inspect'))) as {
+    attention: { revision: number; blockers: { blockerId: string }[] };
+  };
+  await fixture.service.respondToDelegationAttention(
+    attending,
+    {
+      childWorkItemId: x!.workItemId,
+      blockerId: request.attention.blockers[0]!.blockerId,
+      expectedRevision: request.attention.revision,
+      references: [],
+      message: 'Use API version 2.',
+    } as never,
+    context('relay'),
+  );
   expect((await fixture.service.get(x!.workflowInstanceId))!.status).toBe('active');
   expect((await fixture.service.get(y!.workflowInstanceId))!.status).toBe('completed');
   expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(0);
   expect(await count(fixture, OrchestrationEventType.DelegationFailed)).toBe(0);
-  // A second comment is not routed again: the child is no longer blocked on the question.
+  await finishAttention(fixture, 'assess-reply');
+  // A second comment wakes nothing: the child is no longer blocked on the question.
   const resumes = await count(fixture, OrchestrationEventType.OperatorRetryRequested);
   await humanReply(fixture, workId('1'), 'Thanks!', 'second');
   expect(await count(fixture, OrchestrationEventType.OperatorRetryRequested)).toBe(resumes);
+  expect(await count(fixture, OrchestrationEventType.DelegationAttentionRequested)).toBe(2);
   fixture.artifacts.published.add(x!.workItemId);
   await complete(fixture, x!.workflowInstanceId);
   expect(await count(fixture, OrchestrationEventType.DelegationJoined)).toBe(1);

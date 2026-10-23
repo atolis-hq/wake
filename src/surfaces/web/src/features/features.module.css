@@ -1230,3 +1230,29 @@ a.resourceCard:hover {
     margin-inline: 0;
   }
 }
+.relatedLinks {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+.cardChild {
+  margin-left: 0.6rem;
+}
+.cardParentHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: -0.5rem -0.5rem 0.4rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+}
+.cardParentHeader span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

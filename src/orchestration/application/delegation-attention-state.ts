@@ -300,10 +300,31 @@ export function assertReplyAllowed(
       'The assignment revision changed; inspect before replying',
     );
   const prior = attention.responses.find((entry) => entry.blockerId === reply.blockerId);
-  if (prior !== undefined && JSON.stringify(prior.references) !== JSON.stringify(reply.references))
+  if (
+    prior !== undefined &&
+    (JSON.stringify(prior.references) !== JSON.stringify(reply.references) ||
+      prior.message !== reply.message)
+  )
     throw reject(
       DelegationAttentionRejection.Duplicate,
       'This blocker already has a different accepted reply',
     );
+  if (reply.references.length === 0 && reply.message === undefined)
+    throw reject(
+      DelegationAttentionRejection.EmptyReply,
+      'A reply needs a message, accepted artifact references, or both',
+    );
   return prior;
+}
+
+/** Only the parked cohort wait may start an assessment; a running one coalesces new reasons. */
+export function canRequestAssessment(
+  view: WorkflowInstanceView,
+  reservation: DelegationReservation,
+): boolean {
+  return (
+    view.status === WorkflowStatus.Waiting &&
+    view.delegationWait?.cohortId === reservation.cohortId &&
+    view.delegationAttention === undefined
+  );
 }

@@ -93,6 +93,7 @@ export const DelegationAttentionRejection = defineClosedVocabulary({
   StaleRevision: 'stale-revision',
   NotBlocked: 'not-blocked',
   Duplicate: 'duplicate',
+  EmptyReply: 'empty-reply',
 } as const);
 
 export type DelegationAttentionRejection = ValueOf<typeof DelegationAttentionRejection>;

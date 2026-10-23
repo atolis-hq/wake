@@ -22,6 +22,7 @@ import {
   type AgentRunnerResult,
   type RunnerRequest,
 } from '../../../src/execution/index.js';
+import { createGitHubAgentContextReader } from '../../../src/integrations/github/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -446,6 +447,39 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         childOf('b3').workItemId,
       ),
     ).toContainEqual({ workItemId: childOf('a1').workItemId, revisionId: 'api-contract-v1' });
+    // A child opens with its assignment as the first conversation message, and the agent's
+    // context carries it, so the work item itself only needs a short objective.
+    const opening = (await root.conversations.forWorkItem(childOf('b3').workItemId))!.entries[0]!;
+    expect(opening).toMatchObject({
+      entryId: `delegation:${childOf('b3').grantId}`,
+      origin: { kind: 'control-plane', actorId: `delegation:${parentWork}` },
+    });
+    expect(opening.body).toContain('Acceptance criteria:');
+    const agentContext = await createGitHubAgentContextReader(
+      root.journal,
+      root.resources,
+      {},
+      root.conversations,
+    ).forWorkItem(childOf('b3').workItemId);
+    expect(agentContext.comments.map((comment) => comment.body)).toContain(opening.body);
+    // The artifact screen lists what a parent or sibling granted, labelled with its source.
+    const consumerView = await (
+      await createSurfaceApplications(root)
+    ).api.work.detail(toWorkItemKey(childOf('b3').workItemId));
+    expect(consumerView!.data.artifacts).toContainEqual(
+      expect.objectContaining({
+        path: expect.stringContaining('contract.md'),
+        source: { workItemKey: toWorkItemKey(childOf('a1').workItemId), relation: 'granted' },
+        href: expect.stringContaining(encodeURIComponent(toWorkItemKey(childOf('a1').workItemId))),
+      }),
+    );
+    // The publisher lists it as its own artifact, never as inherited context.
+    const publisherView = await (
+      await createSurfaceApplications(root)
+    ).api.work.detail(toWorkItemKey(childOf('a1').workItemId));
+    expect(
+      publisherView!.data.artifacts.filter((artifact) => artifact.source !== undefined),
+    ).toEqual([]);
     expect(receipt.repository).toMatchObject({
       resourceId: repositories.b,
       sourceRevision: heads.get('b2'),
@@ -461,24 +495,23 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       0,
     );
     expect(
-      (await root.orchestration.deliveryTree(parentWork))[0]!.children.find(
+      (await root.orchestration.deliveryTree(parentWork, { verify: true }))[0]!.children.find(
         (child) => child.assignmentId === 'b2',
       )!.prerequisiteBlocker,
     ).toBeUndefined();
     const detail = await (
       await createSurfaceApplications(root)
     ).api.work.detail(toWorkItemKey(parentWork));
-    expect(
-      detail!.data.delegation!.children.find(
-        (child) => child.workItemKey === toWorkItemKey(childOf('a2').workItemId),
-      )!.blockReason,
-    ).toContain('branch moved');
     // DC-23: the blocked stacked child names its prerequisite for navigation and why it waits,
     // while an unaffected sibling with satisfied prerequisites reports no blocker.
     const rows = new Map(detail!.data.delegation!.children.map((row) => [row.workItemKey, row]));
     const blockedRow = rows.get(toWorkItemKey(childOf('a2').workItemId))!;
     expect(blockedRow.prerequisites).toContain(toWorkItemKey(childOf('a1').workItemId));
-    expect(blockedRow.prerequisiteBlocker).toContain('branch moved');
+    // Rows carry the id and the provider reference of their PR so the UI can label them.
+    expect(blockedRow.workItemId).toBe(childOf('a2').workItemId);
+    expect(blockedRow.externalRef).toBe('org/a#2');
+    // Live drift is not computed on read; the UI shows blockers that reconciliation recorded.
+    expect(blockedRow.prerequisiteBlocker).toBeUndefined();
     expect(rows.get(toWorkItemKey(childOf('b2').workItemId))!.prerequisiteBlocker).toBeUndefined();
     // Preserve historical receipts; returning to the exact source is an explicit agent operation.
     await git(paths.a, 'update-ref', 'refs/heads/' + childOf('a1').workItemId, heads.get('a1')!);
@@ -492,7 +525,8 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       context('base-moved'),
     );
     root = await open();
-    const movedBase = (await root.orchestration.deliveryTree(parentWork))[0]!.children;
+    const movedBase = (await root.orchestration.deliveryTree(parentWork, { verify: true }))[0]!
+      .children;
     expect(
       movedBase.find((child) => child.assignmentId === 'a2')!.prerequisiteBlocker,
     ).toBeUndefined();

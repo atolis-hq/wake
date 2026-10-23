@@ -27,7 +27,7 @@ export function registerDelegationTools(
     'wake_delegation_submit',
     {
       description:
-        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results or terminal failure facts. Inspect failureReason and blockers before submitting replacement assignments in a new cohort; existing receipts remain immutable.',
+        'Submit child work with optional queued named-output prerequisites under this workflow delegation policy. An assignment objective is a one-line summary that titles the child work item; the child reads its objective and criteria as the opening message of its conversation, so put detail in criteria or a granted artifact. Use expectedPlanRevision from inspection; useAsBase selects only a same-repository upstream change. End the current activity normally after submission; Wake waits and resumes it with joined results or terminal failure facts. Inspect failureReason and blockers before submitting replacement assignments in a new cohort; existing receipts remain immutable.',
       inputSchema: delegationSubmissionSchema,
     },
     async (command) => {
@@ -53,7 +53,7 @@ export function registerDelegationTools(
     'wake_delegation_respond',
     {
       description:
-        'Answer one assignment-context blocker from the attention request returned by wake_delegation_inspect. Name the child, blocker and expectedRevision, and list the exact accepted artifact revisions the child may read. Only a child blocked for assignment context can be resumed; failures need follow-up work in a new cohort and human review, consent or approval gates cannot be answered here. End the activity normally afterwards; unresolved reasons stay tracked and the cohort wait resumes.',
+        'Answer one assignment-context blocker from the attention request returned by wake_delegation_inspect. Name the child, blocker and expectedRevision, then answer with a free-text `message` (posted to the conversation of the child, which it reads when it resumes), with accepted artifact `references` it may read, or both; a reply needs at least one. Only a child blocked for assignment context can be resumed; failures need follow-up work in a new cohort and human review, consent or approval gates cannot be answered here. End the activity normally afterwards; unresolved reasons stay tracked and the cohort wait resumes.',
       inputSchema: delegationAttentionReplySchema,
     },
     async (reply) => {

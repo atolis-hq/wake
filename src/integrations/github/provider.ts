@@ -243,6 +243,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       },
       inbound,
       reconciler: inbound.reconciler,
+      reobserve: (externalKey) => inbound.reapplyObservation(externalKey.key),
       checkConnectivity: async () => {
         await client.authenticatedLogin();
       },

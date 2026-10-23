@@ -185,8 +185,21 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     totalDurationMs: number(record.totalDurationMs, child(path, 'totalDurationMs')),
     activeRuns: decodeBoardCardActiveRuns(record.activeRuns, child(path, 'activeRuns')),
     ...optionalStringProperty(record, 'externalRef', path),
+    ...optionalStringProperty(record, 'parentWorkItemKey', path),
+    ...optionalNumberProperty(record, 'childCount', path),
   };
 };
+
+function decodeArtifactSource(
+  value: unknown,
+  path: string,
+): { readonly workItemKey: string; readonly relation: 'granted' | 'shared' } {
+  const source = object(value, path);
+  const relation = string(source.relation, child(path, 'relation'));
+  const workItemKey = string(source.workItemKey, child(path, 'workItemKey'));
+  if (relation === 'granted' || relation === 'shared') return { workItemKey, relation };
+  throw new Error(`${child(path, 'relation')} must be granted or shared`);
+}
 
 function decodeBoardCardActiveRuns(
   value: unknown,
@@ -426,6 +439,9 @@ export const decodeWorkDetail: Decoder<WorkDetailResponse> = (value, path = '') 
             ...optionalNumberProperty(artifact, 'byteLength', itemPath),
             ...optionalStringProperty(artifact, 'digest', itemPath),
             href: string(artifact.href, child(itemPath, 'href')),
+            ...(artifact.source === undefined
+              ? {}
+              : { source: decodeArtifactSource(artifact.source, child(itemPath, 'source')) }),
           };
         });
   const conversation =
