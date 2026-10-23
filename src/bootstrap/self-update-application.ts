@@ -15,6 +15,19 @@ export interface SourceUpdatePort {
 }
 
 /**
+ * The candidate cannot be installed yet, for example because the registry has
+ * not finished propagating a just-published version. Nothing about the release
+ * is known to be bad, so it is reported but never recorded as a bad tag and a
+ * later attempt may succeed.
+ */
+export class CandidateNotYetAvailableError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = 'CandidateNotYetAvailableError';
+  }
+}
+
+/**
  * Optional Docker rollout alongside the source checkout — build+swap the
  * sandbox container onto the new tag, roll it back on a failed deploy, and
  * best-effort record the failure for the operator health screen. Absent for
@@ -387,7 +400,8 @@ async function prepareCandidate(
   } catch (error) {
     if (priorTag !== null) await input.source.checkout(priorTag);
     await recordRolloutFailure(input.rollout, tag, error);
-    await input.ledger.recordBad(tag);
+    // A candidate that is merely not installable yet must stay retryable.
+    if (!(error instanceof CandidateNotYetAvailableError)) await input.ledger.recordBad(tag);
     throw new UpdateCandidateFailure(error);
   }
 }

@@ -89,6 +89,7 @@ import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
 } from './self-update-application.js';
+import { classifyCandidateBuildFailure } from './self-update-build-failure.js';
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
 import { createUpdateLedger } from './update-ledger.js';
@@ -898,10 +899,18 @@ function createOperationalApplications(root: CompositionRoot) {
         source: updatePort,
         rollout: {
           async prepare(prepareTag) {
-            await buildSandboxTag(root, dockerCli, `${imageRepository}:${prepareTag}`, {
-              development: updateDevelopment,
-              buildVersion: prepareTag,
-            });
+            try {
+              await buildSandboxTag(root, dockerCli, `${imageRepository}:${prepareTag}`, {
+                development: updateDevelopment,
+                buildVersion: prepareTag,
+              });
+            } catch (error) {
+              throw classifyCandidateBuildFailure(
+                error,
+                root.config.host.selfUpdate.npm.package,
+                prepareTag,
+              );
+            }
           },
           async deploy(deployTag) {
             await deploySandboxTag(
