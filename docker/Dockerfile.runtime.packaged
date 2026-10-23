@@ -15,10 +15,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && apt-get install -y --no-install-recommends gh
 
 # gh extensions resolve from the data dir under the container home, which is bind-mounted at
-# runtime and would hide anything installed there. Install pinned and system-wide here; the
+# runtime and would hide anything installed there. Install the latest release system-wide here; the
 # entrypoint links it into the home at startup. Agents link PRs with: gh stack link.
-ARG GH_STACK_VERSION=v0.2.1
-RUN XDG_DATA_HOME=/usr/local/lib/wake-gh gh extension install github/gh-stack --pin "${GH_STACK_VERSION}" \
+# Bump this date to force a fresh install instead of an indefinitely cached layer.
+ARG GH_STACK_CACHE_BUST=2026-10-23
+RUN echo "gh-stack cache bust: ${GH_STACK_CACHE_BUST}" \
+  && XDG_DATA_HOME=/usr/local/lib/wake-gh gh extension install github/gh-stack \
   && chmod -R a+rX /usr/local/lib/wake-gh
 
 ARG WAKE_VERSION
