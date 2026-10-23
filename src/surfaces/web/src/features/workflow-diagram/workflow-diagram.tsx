@@ -285,8 +285,19 @@ function transitionPoints(
   nodes: ReadonlyMap<string, WorkflowDiagramLayout['nodes'][number]>,
   anchors: ReadonlyMap<string, DiagramAnchor>,
   direction: WorkflowDiagramLayoutDirection,
+  lanes: Map<string, number>,
 ) {
   if (edge.points.length === 0) return edge.points;
+  // Edges routed below the cards each take their own lane so they never overlap.
+  // Edges returning to the same stage share one lane, reading as a single line back into it.
+  const laneSlot = (side: 'above' | 'below', share = edge.id) => {
+    const key = `${side}:${share}`;
+    if (!lanes.has(key)) {
+      lanes.set(key, [...lanes.keys()].filter((existing) => existing.startsWith(side)).length);
+    }
+    return lanes.get(key)!;
+  };
+  const laneOffset = () => laneSlot('below') * 14;
   const source = nodes.get(edge.from);
   const stage = diagram.stages.find((candidate) => candidate.id === edge.from);
   const sourceChildId = sourceChildIdFor(edge, diagram);
@@ -305,17 +316,78 @@ function transitionPoints(
         ? { x: targetAnchor.left, y: targetAnchor.top + 16 }
         : { x: (targetAnchor.left + targetAnchor.right) / 2, y: targetAnchor.top };
     if (direction === 'RIGHT') {
+      if (Math.abs(targetAnchor.left - sourceAnchor.left) < 24) {
+        if (targetAnchor.top < sourceAnchor.top) {
+          // Back up the column: results leave by the right, climb the gutter and run over the top
+          // row so the arrow still lands on the target's usual left-hand entry point.
+          const gutterX = sourcePoint.x + 30 + laneSlot('above', edge.to) * 8;
+          const entryX = targetPoint.x - 18;
+          const laneY =
+            (anchors.get(edge.to) ?? targetAnchor).top - 14 - laneSlot('above', edge.to) * 8;
+          return [
+            sourcePoint,
+            { x: gutterX, y: sourcePoint.y },
+            { x: gutterX, y: laneY },
+            { x: entryX, y: laneY },
+            { x: entryX, y: targetPoint.y },
+            targetPoint,
+          ];
+        }
+        // Down the column: leave by the right, cross the gap between the cards and enter the target
+        // from its left like every other arrow.
+        const sourceStage = anchors.get(edge.from) ?? sourceAnchor;
+        const gutterX = sourcePoint.x + 18;
+        const entryX = targetPoint.x - 18;
+        const laneY = (sourceStage.bottom + targetAnchor.top) / 2;
+        return [
+          sourcePoint,
+          { x: gutterX, y: sourcePoint.y },
+          { x: gutterX, y: laneY },
+          { x: entryX, y: laneY },
+          { x: entryX, y: targetPoint.y },
+          targetPoint,
+        ];
+      }
+      if (targetPoint.x <= sourcePoint.x + 36) {
+        // Loop back: leave the source, run below every card, and approach the target from its left gutter.
+        const laneY =
+          Math.max(...[...anchors.values()].map((anchor) => anchor.bottom), sourceAnchor.bottom) +
+          24 +
+          laneOffset();
+        const exitX = sourcePoint.x + 18;
+        const entryX = targetPoint.x - 18;
+        return [
+          sourcePoint,
+          { x: exitX, y: sourcePoint.y },
+          { x: exitX, y: laneY },
+          { x: entryX, y: laneY },
+          { x: entryX, y: targetPoint.y },
+          targetPoint,
+        ];
+      }
       const obstacles = diagram.stages
         .filter((stage) => stage.id !== edge.from && stage.id !== edge.to)
         .map((stage) => anchors.get(stage.id))
         .filter(
           (anchor): anchor is DiagramAnchor =>
-            anchor !== undefined && anchor.left >= sourcePoint.x && anchor.right <= targetPoint.x,
+            anchor !== undefined &&
+            anchor.left >= sourcePoint.x &&
+            anchor.right <= targetPoint.x &&
+            // Only cards in the corridor between the two stages block the direct route.
+            anchor.top < Math.max(sourceAnchor.bottom, targetAnchor.bottom) &&
+            anchor.bottom > Math.min(sourceAnchor.top, targetAnchor.top),
         );
       if (obstacles.length > 0) {
-        const laneY =
-          Math.max(sourceAnchor.bottom, targetAnchor.bottom, ...obstacles.map((x) => x.bottom)) +
-          24;
+        // Skipping along a shared top row goes over the cards, keeping the lower flow clear.
+        const sourceStage = anchors.get(edge.from) ?? sourceAnchor;
+        const overTheTop = Math.abs(sourceStage.top - targetAnchor.top) < 4;
+        const laneY = overTheTop
+          ? Math.min(sourceAnchor.top, targetAnchor.top, ...obstacles.map((x) => x.top)) -
+            14 -
+            laneSlot('above') * 8
+          : Math.max(sourceAnchor.bottom, targetAnchor.bottom, ...obstacles.map((x) => x.bottom)) +
+            24 +
+            laneOffset();
         const exitX = sourcePoint.x + 18;
         const entryX = targetPoint.x - 18;
         return [
@@ -427,10 +499,11 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
       ),
   );
   const nodeById = new Map(layout.nodes.map((node) => [node.id, node]));
+  const lanes = new Map<string, number>();
   const expandedAny = expanded.size > 0;
   const width = layout.width || (direction === 'RIGHT' ? diagram.stages.length * 352 : 300);
   const routePoints = layout.edges.flatMap((edge) =>
-    transitionPoints(edge, diagram, nodeById, anchors, direction),
+    transitionPoints(edge, diagram, nodeById, anchors, direction, lanes),
   );
   const measuredHeight = Math.max(
     0,
@@ -503,7 +576,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
             </marker>
           </defs>
           {layout.edges.map((edge) => {
-            const points = transitionPoints(edge, diagram, nodeById, anchors, direction);
+            const points = transitionPoints(edge, diagram, nodeById, anchors, direction, lanes);
             const isHighlighted = sourceChildIdFor(edge, diagram) === hoveredChildId;
             return (
               <g className={isHighlighted ? styles.edgeActive : styles.edge} key={edge.id}>
@@ -514,7 +587,7 @@ export function WorkflowDiagramView({ diagram }: { readonly diagram: WorkflowDia
         </svg>
         {layout.edges.map((edge) => {
           const point = edgeLabelPoint(
-            transitionPoints(edge, diagram, nodeById, anchors, direction),
+            transitionPoints(edge, diagram, nodeById, anchors, direction, lanes),
           );
           const isHighlighted = sourceChildIdFor(edge, diagram) === hoveredChildId;
           return point === undefined || edge.label.length === 0 ? null : (

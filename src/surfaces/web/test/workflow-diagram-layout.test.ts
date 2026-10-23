@@ -92,4 +92,57 @@ describe('layoutWorkflowDiagram', () => {
     ]);
     for (const edge of layout.edges) expect(edge.points.length).toBeGreaterThan(1);
   });
+
+  it('keeps the happy path on one top row and draws an optional revision flow below it', async () => {
+    const stage = (id: string) => ({ id, label: id, children: [] });
+    const layout = await layoutWorkflowDiagram(
+      {
+        id: 'factory',
+        label: 'Factory',
+        direction: 'left-to-right',
+        stages: ['intake', 'build', 'ship', 'rework', 'close'].map(stage),
+        transitions: [
+          { from: 'intake', to: 'build', label: 'next' },
+          { from: 'build', to: 'ship', label: 'next' },
+          { from: 'build', to: 'close', label: 'skipped' },
+          { from: 'ship', to: 'close', label: 'next' },
+          { from: 'ship', to: 'rework', label: 'clash' },
+          { from: 'rework', to: 'ship', label: 'next' },
+        ],
+      },
+      'RIGHT',
+    );
+
+    const byId = new Map(layout.nodes.map((node) => [node.id, node]));
+    const mainRow = ['intake', 'build', 'ship', 'close'].map((id) => byId.get(id)!);
+    expect(new Set(mainRow.map((node) => node.y)).size).toBe(1);
+    // The optional loop hangs directly under the stage it returns to.
+    const rework = byId.get('rework')!;
+    const ship = byId.get('ship')!;
+    expect(rework.x).toBe(ship.x);
+    expect(rework.y).toBeGreaterThanOrEqual(ship.y + ship.height);
+  });
+
+  it('keeps a loop back to an earlier stage in flow order without stacking stages', async () => {
+    const stage = (id: string) => ({ id, label: id, children: [] });
+    const layout = await layoutWorkflowDiagram(
+      {
+        id: 'loop',
+        label: 'Loop',
+        direction: 'left-to-right',
+        stages: ['first', 'second', 'third', 'fourth'].map(stage),
+        transitions: [
+          { from: 'first', to: 'second', label: 'next' },
+          { from: 'second', to: 'third', label: 'next' },
+          { from: 'third', to: 'fourth', label: 'next' },
+          { from: 'third', to: 'second', label: 'again' },
+        ],
+      },
+      'RIGHT',
+    );
+
+    const xs = layout.nodes.map((node) => node.x);
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+    expect(new Set(xs).size).toBe(4);
+  });
 });
