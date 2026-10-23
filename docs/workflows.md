@@ -828,8 +828,11 @@ Settings that matter:
   on each change output, or its children never qualify. A workflow's own `outputs` map (name,
   `kind`, `required`) only prevents an assignment from omitting or weakening an output; review,
   check and repository settings stay on the assignment.
-- **Each change output needs a repository** (`resourceId`, `sourceRef`, `pullRequestBase`); the
-  Repository Resource ID is returned by `wake_delegation_inspect`.
+- **Each assignment with a change output needs its own `repository`** (`resourceId`, `sourceRef`,
+  `pullRequestBase`); the Repository Resource ID is returned by `wake_delegation_inspect`. Do not
+  also set a `repository` on the output of a stacked task: an output-level repository takes
+  precedence, so it silently replaces the base that `useAsBase` resolves and the child's PR targets
+  the wrong branch.
 - **A child's PR is reported by name.** The child's final message must carry the PR in a
   `wake-artifacts` fence with the output's name, or its change output is never registered:
 
