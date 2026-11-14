@@ -17,7 +17,7 @@ The Board is the default view. It groups work items by their current condition,
 with columns for Ready, Active, Needs input, Error, and Finished. Cards
 summarize work and provide a route into its details.
 
-![Board with work items grouped by status](web-ui-screenshots/01-board.png)
+![Board with ready, active, needs-input, and finished work, including runs in progress](web-ui-screenshots/01-board.png)
 
 ## Work items
 
@@ -38,7 +38,7 @@ The detail page brings related information together in tabs:
 
 Available actions depend on the work item's state and configured workflow.
 
-![Work item overview showing its tabs, activity timeline, and linked resources](web-ui-screenshots/02-work-item-detail.png)
+![Work item overview showing its tabs, the workflow diagram with the current stage, activity timeline, and linked resources](web-ui-screenshots/02-work-item-detail.png)
 
 ## Runs
 
