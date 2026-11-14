@@ -6,7 +6,7 @@
 > `state/<repo>/<issue>.json`. The event-first model it argues for is unchanged
 > and was adopted. See
 > [ADR 0001](../adrs/0001-correlating-external-resources-to-work-items.md) and the
-> [work identity and correlation design](../superpowers/specs/2026-07-16-work-identity-correlation-design.md).
+> [work identity and correlation design](../../project/superpowers/specs/2026-07-16-work-identity-correlation-design.md).
 
 ## Purpose
 
