@@ -1,188 +1,87 @@
 # Web UI
 
-The default page is Board. A single header contains the Wake brand, version,
-and dispatch controls. Paused models appear in the dispatch dropdown.
+Wake's web UI gives operators a view of work, runs, workflows, and system health.
+Start it with `wake ui`, then open the address it prints. To sign in, run
+`wake ui token` and use the temporary pairing link or code. See
+[getting started](getting-started.md) for setup and [public UI access](public-ui-access.md)
+if you need to reach it from another device.
 
-The sidebar contains Board, Work items, Runs, and Triggers, followed by work items grouped
-by status. Finished starts collapsed; the other groups start expanded. Search
-matches resource IDs and titles, and sorting supports recent activity or title.
-The selected work item is highlighted. Events, Analytics, Config, and Health
-remain available at the bottom.
+The sidebar links to the main screens and groups work items by status. Search
+for a work item by title or resource ID, sort the list, and select an item to
+open its details. The header also provides dispatch controls.
 
-Drag the sidebar divider to resize it, or focus the divider and use the arrow
-keys. Width and the desktop collapsed preference are remembered in the browser.
-On mobile, the header toggle opens a navigation drawer. Escape or the backdrop
-closes it, and selecting a page dismisses it automatically.
+## Board
 
-Board cards and sidebar items open the work item in the main panel. Its tabs
-are Overview, Runs, Artifacts, Events, Transcripts, and Conversation. The
-Artifacts tab lists the latest accepted revision from each producing stage;
-each path is an authorized Wake download rather than a provider-hosted file.
-The overview places
-work details and actions above the full-width workflow, followed by an activity
-timeline and resource links. Narrow screens place resources immediately after the work details, then the
-workflow and activity timeline. The workflow retains its mobile card presentation.
+The Board is the default view. It groups work items by their current condition,
+with columns for Ready, Active, Needs input, Error, and Finished. Cards
+summarize work and provide a route into its details.
 
-Eligible blocked agent work exposes **Continue with instructions**. The authenticated API supplies
-`conversation.canContinue` from orchestration policy and WorkItem availability. The action opens
-the Conversation composer, requires instructions, and sends `/changes` with those instructions
-through `POST /api/v1/work-items/:workItemKey/commands/message` with `continuation: true`. Messaging must be enabled.
-The ordinary authenticated operator composer retains `/approved` and `/accepted` for human workflow
-waits; ordinary `/changes` follows the wait's rejection route. Explicit Continue reenters the eligible
-agent stage without accepting a review signal. Plain comments leave successful review waits intact.
-Failed-stage **Retry** remains a separate action. A rejected command returns a conflict with its
-reason; the composer keeps the instructions for correction. Continuation grants no independent
-review, approval, or merge authority. Frozen, deleted, and closed work cannot continue.
+## Work items
+
+The Work items page lists work across the system. Open an item to inspect its
+status, workflow, activity, and linked resources such as issues and pull requests.
+The detail page brings related information together in tabs:
+
+- **Overview** shows the current workflow, activity timeline, resources, and
+  available actions. It also explains when a merge is waiting for human action.
+- **Runs** lists activity attempts for the item and links to run details.
+- **Artifacts** lists accepted outputs from workflow stages. Markdown files can
+  be viewed in the browser; files can also be downloaded.
+- **Events** shows the item's recorded events.
+- **Transcripts** shows captured agent conversations.
+- **Conversation** shows the work item's discussion across its sources. When
+  messaging is enabled, an operator can send a message or, for eligible blocked
+  agent work, continue with instructions.
+
+Available actions depend on the work item's state and configured workflow.
+
+## Runs
+
+Runs lists activity attempts across work items. Open a run to inspect its status,
+runner, timing, outcome, transcript, and any operator instructions captured for
+that run. This is useful when investigating what an agent did or why an attempt
+stopped.
 
 ## Triggers
 
-Triggers lists configured definitions and retained operational/history identities,
-with effective status, workflow, next cron occurrence in UTC, latest invocation,
-and pause/failure and skip reasons. Events-only triggers have no next scheduled
-time. Detail shows the current definition, pending sources, latest actual skipped
-source/time/reason, and invocation history linked to independent WorkItems.
-WorkItem detail links back to its trigger origin. Removed definitions retain
-recorded history; they do not start future invocations.
+Triggers shows configured automatic entry points, their workflows, status, next
+scheduled time where applicable, and recent invocations. Open a trigger to see
+pending requests, skipped occurrences and reasons, invocation history, and links
+to the work it started.
 
-Pause and resume are available on both views. They use the owning Control Plane
-commands and never rewrite configuration. Pause clears unstarted pending work;
-active invocations continue. Freezing remains on WorkItem pages. Resume
-allows future explicit sources without starting work or resetting retries.
-Unavailable definitions and permission/command errors are shown explicitly.
-Shared context links are not exposed until the owning context capability exists.
+You can pause or resume automatic triggering and request **Run now**. Pausing a
+trigger does not stop an invocation already in progress; a manual run can also
+be requested while it is paused. A trigger with a configured shared context
+scope also offers an editor for operator standing instructions, which apply to
+triggers sharing that scope. Triggers themselves are configured in Wake's
+configuration files; see [configuration](configuration.md) and
+[workflows](workflows.md).
 
-Authenticated API routes are `GET /api/v1/triggers`,
-`GET /api/v1/triggers/:triggerId`, and
-`POST /api/v1/triggers/:triggerId/commands/pause`, `resume`, or `run`.
-Commands accept only `{ "idempotencyKey": "..." }` and use the same durable
-start/pause lock as the engine. Unknown identities return missing/conflict
-responses; removed identities with retained history remain inspectable.
+## Events
 
-## Styling
-
-`src/surfaces/web/src/styles/palette.css` defines raw colors. `tokens.css` maps
-those colors to semantic roles and defines shared spacing, typography, radii,
-and shell dimensions. Components consume semantic tokens; future themes can
-override those tokens without changing component markup. Theme selection is
-not currently exposed in the UI.
-
-## Development preview with a remote API
-
-Run the local UI against an existing Wake server in PowerShell:
-
-```powershell
-$env:WAKE_UI_API_TARGET = 'https://wake.example.com'
-npm --workspace @atolis-hq/wake-web run dev
-```
-
-Open `http://localhost:5173` and sign in using a temporary login code generated
-by that remote server. The development server proxies `/api` to the selected
-server, including authentication. Your existing login on the remote hostname
-is separate from the localhost session. This uses real remote data and actions.
-
-Without `WAKE_UI_API_TARGET`, the development proxy uses `http://127.0.0.1:4317`.
-The proxy is development-only and does not change packaged production assets.
-
-The Conversation tab uses a dedicated message history and bottom composer. It
-opens at the latest message and follows new messages while you are at the
-bottom. Scrolling up preserves your reading position; Jump to latest returns
-to the newest message. Messages are presented oldest to newest.
-
-Configuration and Health keep their refresh controls inside the selected tab.
-Health has Overview, Adapter health, Runner availability, and Maintenance
-recovery sections. On mobile, tables display as labelled rows; long IDs and
-transcript content wrap within the available width.
-
-Conversation shows each participant's identity and source in a thread layout.
-The history scrollbar stays at the panel edge while messages and the composer
-remain centred. Work details are hidden on Conversation and Transcripts.
+Events provides a system-wide view of the durable event history. Use it to
+inspect what Wake recorded as work, runs, and other activity progressed. For the
+events belonging to one item, use the Events tab on that work item.
 
 ## Analytics
 
-Analytics has **Reports** and **System activity** tabs. System activity retains
-today's event, work-item and run counters from the existing analytics projection.
-Reports offers 1d, 3d, 5d and 7d windows, a report selector, and summary tiles.
-The initial report is run outcomes over time, with stacked outcome buckets,
-overall status totals, and an expandable bucket table.
+Analytics helps you understand activity over time. **Reports** offers selectable
+time windows and reports for run outcomes, token and cost usage, and run
+duration. Summary tiles and bucket tables provide detail behind the charts.
+**System activity** shows today's activity counters. See the
+[Analytics API reference](analytics-api.md) for metric and window definitions.
 
-Tiles and the selected report load independently, each with loading, error and
-retry states. Changing the window or report cancels obsolete requests. Empty
-counts and usage totals are zero; medians without qualifying data show
-**No data**. Costs are in USD and durations are shown in seconds.
+## Configuration
 
-The 1d and 3d windows are rolling periods with hourly and 6-hour UTC buckets,
-including partial boundary buckets. The 5d and 7d windows use preceding complete
-UTC days. Runs belong to their start-time cohort and show their latest known
-outcome. Work items done count first primary workflow completion in the window;
-end-to-end duration starts at work creation. See [Analytics API](analytics-api.md)
-for metric definitions, usage handling, response shapes, and report registration.
+Configuration lets you inspect the loaded configuration, available commands,
+webhooks, and workflow diagrams. Use the workflow diagrams to see configured
+stages and routes. To change configuration, edit the Wake home files as described
+in the [configuration reference](configuration.md).
 
-Policy-blocked merge waits show **Waiting for human merge** in work details,
-with the applicable protected paths and matching changed paths, or the configured
-file-count limit and observed count. The correlated PR link and next action
-explain that manual merge resolves the wait; approval or comments do not override
-merge policy. Older outcomes use the pinned workflow restriction when available.
-After the PR merges, the status becomes **PR merged; recovery pending**, with
-advancement guidance. The usual workflow/work state shows completion afterward.
-The work-detail API exposes this explanation as `orchestration.primary.mergePolicyBlock`;
-only applicable merge restrictions are included.
+## Health
 
-The trigger detail page includes **Operator standing instructions** for its explicit contextScope. All triggers with that scope share the document. Edit Markdown, preview it with the same HTML-disabled rendering as the artifact viewer, and save it for later runs. Conflicting saves preserve the draft and offer an explicit reload of current instructions. Triggers without a scope show a configuration message and no editor. Run details show the scope and immutable instructions revision (or absence) received at run start.
+Health brings together system checks, adapter health, runner availability, and
+maintenance recovery. Use it to investigate provider or runner problems and
+inspect maintenance status. Available recovery actions depend on the condition.
 
-The empty instructions editor explains its purpose and that it applies to every trigger sharing the scope. The first operator save creates `instructions.md`; it does not depend on scope membership. The Triggers list also shows retained orphaned documents after scope removal or renaming, even when no configured triggers remain. Configure a trigger with that same explicit scope to reconnect and edit the document.
-
-Orphan inspection uses the rebuildable operator-instructions projection. The host catches up new facts incrementally; repeated polling does not scan journal history. An unreadable orphan body shows an unavailable-content message while retaining its scope, author and revision.
-
-Each configured trigger offers **Run now**. Pausing stops automatic runs; **Run now** remains available and keeps the
-trigger paused. During an active invocation, a manual request coalesces into the pending
-request for reconsideration after that invocation. The result appears immediately:
-`started` with the new work item, `queued` behind the named active invocation, or `skipped` with an eligibility reason. Request retries
-reuse the command identifier. Invocation history and skip diagnostics include
-manual provenance and the requesting operator (`web` for current web commands).
-
-`POST /api/v1/triggers/:triggerId/commands/run` accepts the same
-`{ "idempotencyKey": "unique-command-key" }` body and authorization as pause/resume.
-It returns HTTP 200 with the ordinary command response and a `triggerOutcome`:
-`{ "disposition": "started", "workItemId": "..." }`,
-`{ "disposition": "coalesced", "activeWorkItemId": "..." }` (shown as queued), or
-`{ "disposition": "skipped", "reason": "paused" }` (also `dispatch-paused`,
-`capacity-unavailable`, or `pending-source-limit`). Retries return the original
-outcome, including skips, even if eligibility has changed. If a pause clears an
-unclaimed queued request, its durable result becomes `skipped` with reason `paused`. Removed definitions
-return a command conflict. There are no per-run parameters or gate overrides.
-
-The list and detail show the active single-flight slot holder, linked WorkItem,
-workflow status, and block reason. Shared-scope triggers show the same holder;
-pending requests name the WorkItem they are waiting on, including sibling requests.
-**Retry invocation** appears only when the existing Work retry policy allows it.
-It calls `POST /api/v1/work-items/:workItemKey/commands/retry` with an
-`idempotencyKey`, retaining operator attribution and durable command identity.
-Repeating that identity does not retry the workflow again, including after restart.
-Retry resumes the same invocation and keeps its slot until completion or supersession.
-Queued work is then reconsidered under the existing pause, quota and capacity rules.
-Retry does not resume a paused trigger. Operator cancellation/supersession remains
-follow-up work until a public Work cancellation command is available.
-
-Trigger API responses include nullable `activeInvocation` with
-`activeWorkItemId`, `workItemKey`, `triggerId`, `workflowInstanceId`,
-nullable `workflowStatus` and `blockReason`, and `retryEligible`.
-Each `pending` entry includes nullable `activeWorkItemId`. Status is null
-when a claimed workflow awaits recovery; no holder is represented by null.
-
-The Reports selector includes **Token and cost usage**. The shared Window
-dropdown controls separate total-token and USD-cost charts, with bucket tables.
-Values reconcile with the summary tiles for the same window; missing usage
-and empty buckets show zero. Loading and retry states use the report framework.
-
-The `run-duration` report shows run duration by Action and Stage and over the
-selected window's buckets, using run start time for cohort and bucket membership.
-Median is primary and arithmetic average is secondary, both in milliseconds in
-the API and seconds in the UI, alongside qualifying-run counts. Unfinished runs
-and runs without valid, nonnegative start/finish durations are excluded; zero
-durations qualify. Missing dimensions use `unknown`. Empty statistics are null
-("No data" in the UI), and empty buckets remain present. The overall median
-matches the summary tile. Reports load asynchronously with loading, retry and
-empty states, using live facts without an additional projection. The duration
-response has `statistics`, `groups` (descriptors with value/statistics rows),
-and `buckets` (from/to plus statistics); statistics contain `count`,
-`medianMs`, and `averageMs`.
+For development preview instructions, see [Developing Wake](development.md#development-preview-with-a-remote-api).
