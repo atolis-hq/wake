@@ -1,4 +1,4 @@
-?# Getting Started
+# Getting Started
 
 Wake runs from a **Wake home** directory: a plain-file directory holding
 `config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/`, and a hidden `.wake/` for durable

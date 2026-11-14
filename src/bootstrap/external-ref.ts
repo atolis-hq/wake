@@ -6,7 +6,7 @@ import {
 import { workItemId } from '../work/index.js';
 import type { CompositionRoot } from './composition-root.js';
 
-// Work items never embed a provider/repo/issue number (see docs/adrs/0001); this joins
+// Work items never embed a provider/repo/issue number (see project/adrs/0001); this joins
 // the primary correlated resource's adapter-formatted key at the presentation layer only.
 export async function primaryExternalRef(
   root: CompositionRoot,

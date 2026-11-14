@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cataloguePath =
   process.env.SCENARIO_CATALOGUE ??
-  resolve(root, 'docs/architecture/functional-decision-catalogue.md');
+  resolve(root, 'project/architecture/functional-decision-catalogue.md');
 const scenariosRoot = process.env.SCENARIO_TEST_ROOT ?? resolve(root, 'test/e2e');
 const scenarioId = /E2E-[A-Z0-9-]+/g;
 const definedScenario = /\bid\s*:\s*['"](E2E-[A-Z0-9-]+)['"]/g;

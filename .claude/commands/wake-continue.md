@@ -6,7 +6,7 @@ You are continuing the Wake autonomy mission. This interactive session is a **di
 
 ## 1. Orient (cheap, do this first)
 
-- Read `docs/plans/2026-07-11-autonomy-roadmap.md` — §1 is the operator brief and constraints, §3 the phased backlog, §4 the execution rules. Persistent memory has supporting notes (assignment-is-dispatch, deployment-model, autonomy-mission).
+- Read `project/plans/2026-07-11-autonomy-roadmap.md` — §1 is the operator brief and constraints, §3 the phased backlog, §4 the execution rules. Persistent memory has supporting notes (assignment-is-dispatch, deployment-model, autonomy-mission).
 - Check in-flight delegated work: `gh issue list --assignee <wake-identity> --state open` and `gh pr list --state open`. Anything assigned is already being processed by the hosted runner — do not duplicate it in this session.
 - Check for stalls: blocked/awaiting-approval items with unanswered questions, PRs awaiting review, failed runs.
 
@@ -14,7 +14,7 @@ You are continuing the Wake autonomy mission. This interactive session is a **di
 
 1. **Unstick delegated work:** if a Wake-run item is blocked on a question the durable record can answer, or a PR needs a trivial rebase/CI nudge, do that minimal unblocking action.
 2. **Land finished work:** flag approved/mergeable PRs to the operator; after any merge affecting the running instance, remind them to run the update script (`sandbox build` + `sandbox update`) — merges do NOT deploy automatically.
-3. **Feed the runner:** if nothing is assigned and in-flight, prepare the next roadmap item in phase order — file its issue if missing (use the matching section of `docs/reports/2026-07-10-simplify-solidify-refactor.md` as the body; refine-quality specs minimize the runner's token spend) — and **assign exactly one issue** to the Wake identity to start it. Assignment is dispatch: never bulk-assign, keep WIP at 1.
+3. **Feed the runner:** if nothing is assigned and in-flight, prepare the next roadmap item in phase order — file its issue if missing (use the matching section of `project/reports/2026-07-10-simplify-solidify-refactor.md` as the body; refine-quality specs minimize the runner's token spend) — and **assign exactly one issue** to the Wake identity to start it. Assignment is dispatch: never bulk-assign, keep WIP at 1.
 4. Update the roadmap/memory if this session made them stale.
 
 ## 3. Only execute directly in-session when delegation can't work

@@ -135,3 +135,20 @@ another module's internals or make a surface reconstruct an event. Reference
 documents describe current behaviour only; ADRs, reports, plans, and designs
 are historical records and should not be revised during ordinary implementation
 work.
+
+## Development preview with a remote API
+
+Run the local UI against an existing Wake server in PowerShell:
+
+```powershell
+$env:WAKE_UI_API_TARGET = 'https://wake.example.com'
+npm --workspace @atolis-hq/wake-web run dev
+```
+
+Open `http://localhost:5173` and sign in using a temporary login code generated
+by that remote server. The development server proxies `/api` to the selected
+server, including authentication. Your existing login on the remote hostname
+is separate from the localhost session. This uses real remote data and actions.
+
+Without `WAKE_UI_API_TARGET`, the development proxy uses `http://127.0.0.1:4317`.
+The proxy is development-only and does not change packaged production assets.

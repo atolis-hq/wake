@@ -5,7 +5,7 @@ Specifications are normative behavioural documents: they state what the target
 system MUST, MUST NOT, SHOULD, or MAY do. They are not evidence records — they
 do not name test files, scenario IDs, implementation class names, or walk
 through source code, and they do not link to proofs. Proof that behaviour
-matches a specification lives in `docs/architecture/rewrite-completion-audit.md`
+matches a specification lives in `project/architecture/rewrite-completion-audit.md`
 and the test suites it cites, never in the specification itself.
 
 ## Staying current: the `asOf` checkpoint
