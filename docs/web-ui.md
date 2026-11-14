@@ -1,6 +1,7 @@
 # Web UI
 
 Wake's web UI gives operators a view of work, runs, workflows, and system health.
+The screenshots below use example data.
 Start it with `wake ui`, then open the address it prints. To sign in, run
 `wake ui token` and use the temporary pairing link or code. See
 [getting started](getting-started.md) for setup and [public UI access](public-ui-access.md)
@@ -15,6 +16,8 @@ open its details. The header also provides dispatch controls.
 The Board is the default view. It groups work items by their current condition,
 with columns for Ready, Active, Needs input, Error, and Finished. Cards
 summarize work and provide a route into its details.
+
+![Board with work items grouped by status](web-ui-screenshots/01-board.png)
 
 ## Work items
 
@@ -34,6 +37,8 @@ The detail page brings related information together in tabs:
   agent work, continue with instructions.
 
 Available actions depend on the work item's state and configured workflow.
+
+![Work item overview showing its tabs, activity timeline, and linked resources](web-ui-screenshots/02-work-item-detail.png)
 
 ## Runs
 
