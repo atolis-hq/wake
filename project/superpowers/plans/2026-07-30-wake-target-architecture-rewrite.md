@@ -231,9 +231,9 @@ test-next/
 
 **Files:**
 
-- Create: `docs/architecture/legacy-test-evidence.txt`
-- Create: `docs/architecture/legacy-surface-evidence.txt`
-- Create: `docs/architecture/functional-decision-catalogue.md`
+- Create: `project/architecture/legacy-test-evidence.txt`
+- Create: `project/architecture/legacy-surface-evidence.txt`
+- Create: `project/architecture/functional-decision-catalogue.md`
 - Create: `scripts/check-functional-catalogue.mjs`
 - Modify: `package.json`
 
@@ -256,7 +256,7 @@ Run:
 rg --files test -g '*.test.ts' |
   ForEach-Object { $_ -replace '\\', '/' } |
   Sort-Object |
-  Set-Content -Encoding utf8 docs/architecture/legacy-test-evidence.txt
+  Set-Content -Encoding utf8 project/architecture/legacy-test-evidence.txt
 $wakeSurfaceEvidence = @(
   'package.json'
   'README.md'
@@ -272,7 +272,7 @@ $wakeSurfaceEvidence |
   Where-Object { Test-Path $_ } |
   ForEach-Object { $_ -replace '\\', '/' } |
   Sort-Object -Unique |
-  Set-Content -Encoding utf8 docs/architecture/legacy-surface-evidence.txt
+  Set-Content -Encoding utf8 project/architecture/legacy-surface-evidence.txt
 ```
 
 Expected: the first file contains every current `*.test.ts` path exactly once;
@@ -329,10 +329,10 @@ Create `scripts/check-functional-catalogue.mjs`:
 ```js
 import { readFile } from 'node:fs/promises';
 
-const cataloguePath = 'docs/architecture/functional-decision-catalogue.md';
+const cataloguePath = 'project/architecture/functional-decision-catalogue.md';
 const evidencePaths = [
-  'docs/architecture/legacy-test-evidence.txt',
-  'docs/architecture/legacy-surface-evidence.txt',
+  'project/architecture/legacy-test-evidence.txt',
+  'project/architecture/legacy-surface-evidence.txt',
 ];
 const allowed = new Set(['preserve', 'correct', 'consolidate', 'remove', 'defer']);
 const catalogue = await readFile(cataloguePath, 'utf8');
@@ -1370,7 +1370,7 @@ npm test -- test/domain/work-item-status.test.ts test/lib/work-id.test.ts
 Expected: target Work tests and selected legacy evidence tests PASS.
 
 ```powershell
-git add src-next/work test-next/work docs/architecture/functional-decision-catalogue.md
+git add src-next/work test-next/work project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add target WorkItem domain"
 ```
 
@@ -1522,7 +1522,7 @@ npm test -- test/core/event-resolver.test.ts test/adapters/resource-index.test.t
 Expected: target and selected legacy evidence tests PASS.
 
 ```powershell
-git add src-next/resources test-next/resources test-next/e2e/scenarios docs/architecture/functional-decision-catalogue.md
+git add src-next/resources test-next/resources test-next/e2e/scenarios project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add target Resource correlation domain"
 ```
 
@@ -1655,7 +1655,7 @@ npm test -- test/domain/schema.test.ts
 Expected: Activity tests and legacy result-envelope evidence PASS.
 
 ```powershell
-git add src-next/activities test-next/activities docs/architecture/functional-decision-catalogue.md
+git add src-next/activities test-next/activities project/architecture/functional-decision-catalogue.md
 git commit -m "feat: define target Activity contracts"
 ```
 
@@ -1761,7 +1761,7 @@ npm test -- test/domain/workflows.test.ts test/domain/schema.test.ts
 Expected: target compiler and legacy workflow/config evidence PASS.
 
 ```powershell
-git add src-next/orchestration test-next/orchestration docs/architecture/functional-decision-catalogue.md
+git add src-next/orchestration test-next/orchestration project/architecture/functional-decision-catalogue.md
 git commit -m "feat: compile target workflow definitions"
 ```
 
@@ -1896,7 +1896,7 @@ npm test -- test/domain/workflows.test.ts test/core/policy-engine.test.ts
 Expected: interpreter tests and selected legacy decision evidence PASS.
 
 ```powershell
-git add src-next/orchestration test-next/orchestration docs/architecture/functional-decision-catalogue.md
+git add src-next/orchestration test-next/orchestration project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add target workflow instances"
 ```
 
@@ -2043,7 +2043,7 @@ npm test -- test/core/tick-runner.run-recording.test.ts test/core/run-lease.test
 Expected: target Execution tests and selected legacy Run evidence PASS.
 
 ```powershell
-git add src-next/execution test-next/execution docs/architecture/functional-decision-catalogue.md
+git add src-next/execution test-next/execution project/architecture/functional-decision-catalogue.md
 git commit -m "feat: execute target Activities as Runs"
 ```
 
@@ -2167,7 +2167,7 @@ command PASSes.
 - [x] **Step 7: Commit the golden path**
 
 ```powershell
-git add src-next/control-plane test-next/control-plane test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/control-plane test-next/control-plane test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: complete target orchestration golden path"
 ```
 
@@ -2396,7 +2396,7 @@ Expected: filesystem journal, persisted projections, recovery/rebuild, and
 selected legacy persistence evidence PASS.
 
 ```powershell
-git add src-next/kernel src-next/persistence src-next/work src-next/resources src-next/orchestration src-next/execution test-next/persistence test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/kernel src-next/persistence src-next/work src-next/resources src-next/orchestration src-next/execution test-next/persistence test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: persist target state beneath Wake home"
 ```
 
@@ -2518,7 +2518,7 @@ npm test -- test/core/tick-runner.intake.test.ts test/core/event-resolver.test.t
 Expected: directional ingress and legacy intake evidence PASS.
 
 ```powershell
-git add src-next/integrations test-next/integrations test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/integrations test-next/integrations test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add directional target ingress"
 ```
 
@@ -2658,7 +2658,7 @@ npm test -- test/adapters/github-client.test.ts test/adapters/github-issues-work
 Expected: target provider boundary and accepted legacy provider evidence PASS.
 
 ```powershell
-git add src-next/integrations src-next/activities test-next/integrations test-next/activities test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/integrations src-next/activities test-next/integrations test-next/activities test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: translate GitHub evidence and human signals"
 ```
 
@@ -2804,7 +2804,7 @@ npm test -- test/adapters/claude-runner.test.ts test/adapters/codex-runner.test.
 Expected: target runner/workspace suite and selected legacy evidence PASS.
 
 ```powershell
-git add src-next/execution src-next/activities test-next/execution test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/execution src-next/activities test-next/execution test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: port target agent execution capabilities"
 ```
 
@@ -2914,7 +2914,7 @@ npm test -- test/core/policy-engine.test.ts test/core/tick-runner.quota.test.ts
 Expected: target policy scenarios and selected legacy policy evidence PASS.
 
 ```powershell
-git add src-next/orchestration test-next/orchestration test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/orchestration test-next/orchestration test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add target workflow wait and retry policy"
 ```
 
@@ -3035,7 +3035,7 @@ commands PASS.
 - [x] **Step 8: Commit child safety**
 
 ```powershell
-git add src-next/orchestration test-next/orchestration test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/orchestration test-next/orchestration test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: bound target child workflow activation"
 ```
 
@@ -3176,7 +3176,7 @@ Expected: target PR authority and selected legacy correlation/approval evidence
 PASS.
 
 ```powershell
-git add src-next/activities src-next/integrations test-next/activities test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/activities src-next/integrations test-next/activities test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: bind target PR authority to revisions"
 ```
 
@@ -3287,7 +3287,7 @@ npm test -- test/adapters/github-pull-request-merge-actor.test.ts test/core/tick
 Expected: target PR Activity matrix and selected legacy merge evidence PASS.
 
 ```powershell
-git add src-next/activities test-next/activities test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/activities test-next/activities test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add safe target PR Activities"
 ```
 
@@ -4179,7 +4179,7 @@ Expected: delivery crash/reconciliation and complete PR safety suite PASS.
 - [x] **Step 8: Commit reliable delivery**
 
 ```powershell
-git add src-next/integrations test-next/integrations test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/integrations test-next/integrations test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: deliver target effects from the event journal"
 ```
 
@@ -4314,7 +4314,7 @@ Expected: cancellation/recovery scenarios and selected legacy reliability
 evidence PASS.
 
 ```powershell
-git add src-next/execution test-next/execution test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/execution test-next/execution test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: recover and cancel target Runs"
 ```
 
@@ -4460,7 +4460,7 @@ npm test -- test/core/scheduled-workflow-source.test.ts test/cli/control-plane.t
 Expected: all host/policy scenarios and selected legacy evidence PASS.
 
 ```powershell
-git add src-next/control-plane test-next/control-plane test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/control-plane test-next/control-plane test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: compose target control-plane hosts"
 ```
 
@@ -4619,7 +4619,7 @@ Expected: target config/bootstrap and selected legacy configuration evidence
 PASS.
 
 ```powershell
-git add src-next/bootstrap src-next/main.ts src-next/*/contracts/config.ts test-next/bootstrap test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/bootstrap src-next/main.ts src-next/*/contracts/config.ts test-next/bootstrap test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "feat: compose target runtime from domain config"
 ```
 
@@ -4935,7 +4935,7 @@ product, hash routing, or with any web verification omitted.
 ```powershell
 git add package.json package-lock.json tsconfig.next.json vitest.next.config.ts dependency-cruiser.config.mjs knip.next.json
 git add src-next/surfaces src-next/bootstrap docker test-next/surfaces test-next/e2e
-git add docs/architecture/functional-decision-catalogue.md
+git add project/architecture/functional-decision-catalogue.md
 git commit -m "feat: expose target domain surfaces"
 ```
 
@@ -4956,7 +4956,7 @@ blocks and whitespace across most of `src-next/`, which conflicts with every
 open 25A edit. The failing-test-first plan is
 [`2026-08-01-wake-task-25c-lint-and-style-baseline.md`](2026-08-01-wake-task-25c-lint-and-style-baseline.md);
 its authority is
-[`2026-08-01-src-next-structural-review.md`](../../../docs/reports/2026-08-01-src-next-structural-review.md).
+[`2026-08-01-src-next-structural-review.md`](../../reports/2026-08-01-src-next-structural-review.md).
 The task takes deterministic line endings, import deduplication and ordering,
 blank-line separation, enforced type-only imports, a size budget that
 distinguishes declarative contracts from behavioural code, and type-aware
@@ -4996,7 +4996,7 @@ and its execution sequence is in
 - Modify: `src-next/surfaces/web/src/{api/decoders.ts,api/query-keys.ts,features/board/board.tsx,features/work/work.tsx,features/observability/observability.tsx,components/app-shell.tsx}`
 - Modify: `src-next/surfaces/web/test/{board.test.tsx,collections.test.tsx,status.test.tsx}`
 - Modify: `src-next/surfaces/web/e2e/{surface-fixture.ts,operator-journey.spec.ts}`
-- Modify: `docs/architecture/functional-decision-catalogue.md`
+- Modify: `project/architecture/functional-decision-catalogue.md`
 
 **Dependencies and coordination:**
 
@@ -5083,7 +5083,7 @@ npm run verify:next
 Expected: all commands pass. The packet fails if an operator endpoint derives state with a per-request full-journal scan, if domain-shaped contracts acquire display-only fields, or if the web client reconstructs board conditions.
 
 ```powershell
-git add src-next/bootstrap src-next/surfaces test-next/bootstrap test-next/surfaces docs/architecture/functional-decision-catalogue.md
+git add src-next/bootstrap src-next/surfaces test-next/bootstrap test-next/surfaces project/architecture/functional-decision-catalogue.md
 git commit -m "feat: add target operator read models"
 ```
 
@@ -5186,7 +5186,7 @@ PASS.
 - [x] **Step 8: Commit operational surfaces**
 
 ```powershell
-git add src-next/surfaces src-next/bootstrap test-next/surfaces test-next/e2e scripts/e2e-github-fake.ts docs/architecture/functional-decision-catalogue.md
+git add src-next/surfaces src-next/bootstrap test-next/surfaces test-next/e2e scripts/e2e-github-fake.ts project/architecture/functional-decision-catalogue.md
 git commit -m "feat: port target operational commands"
 ```
 
@@ -5203,10 +5203,10 @@ only has to happen once, against real behaviour.
 **Files:**
 
 - Create: `scripts/check-scenario-coverage.mjs`
-- Create: `docs/architecture/rewrite-completion-audit.md`
+- Create: `project/architecture/rewrite-completion-audit.md`
 - Create: `test-next/e2e/scenarios/{duplicates,fault-matrix,security-boundaries}.test.ts`
 - Modify: `package.json`
-- Modify: `docs/architecture/functional-decision-catalogue.md`
+- Modify: `project/architecture/functional-decision-catalogue.md`
 
 - [x] **Step 1: Add the scenario-coverage checker**
 
@@ -5288,7 +5288,7 @@ instead.
 
 - [x] **Step 5: Write the completion audit**
 
-`docs/architecture/rewrite-completion-audit.md` contains one section per
+`project/architecture/rewrite-completion-audit.md` contains one section per
 design section 1-20 and records:
 
 ```text
@@ -5340,7 +5340,7 @@ coupling the specification to source-file structure or test evidence.
 - Create: `src-next/<module>/**/<behavioural-component>.spec.md` where a
   component owns aggregate, projection, policy/process, adapter, or public
   surface-application behaviour
-- Modify: `docs/architecture/rewrite-completion-audit.md`
+- Modify: `project/architecture/rewrite-completion-audit.md`
 
 **Specification rules:**
 
@@ -5458,7 +5458,7 @@ Review every module page and linked component page against this checklist:
 - No document is primarily a source-code explanation or a test index.
 ```
 
-Update `docs/architecture/rewrite-completion-audit.md` to name the completed
+Update `project/architecture/rewrite-completion-audit.md` to name the completed
 specification set as a cutover requirement, without adding proof links to the
 specifications themselves.
 
@@ -5481,7 +5481,7 @@ missing behavioural owner or stale module link before Task 28.
 - [x] **Step 8: Commit the behavioural specifications**
 
 ```powershell
-git add src-next docs/architecture/rewrite-completion-audit.md
+git add src-next project/architecture/rewrite-completion-audit.md
 git commit -m "docs: specify target module behaviour"
 ```
 
@@ -5489,7 +5489,7 @@ git commit -m "docs: specify target module behaviour"
 
 Writing Task 27A's specs surfaced real gaps between `src-next` and
 catalogue rows already dispositioned `preserve`/`correct`/`consolidate` —
-recorded in `docs/reports/2026-08-02-target-architecture-spec-findings.md`
+recorded in `project/reports/2026-08-02-target-architecture-spec-findings.md`
 (58 items across all modules; the `Cutover` column marks which ones cite a
 catalogue row). This task closes the ones that block Task 27, no more.
 
@@ -5551,7 +5551,7 @@ don't chase them here.
 - [x] **Step 7: Commit**
 
 ```powershell
-git add src-next test-next docs/reports/2026-08-02-target-architecture-spec-findings.md
+git add src-next test-next project/reports/2026-08-02-target-architecture-spec-findings.md
 git commit -m "fix: close legacy-preservation gaps found while specifying"
 ```
 
@@ -5735,7 +5735,7 @@ git commit -m "refactor: replace Wake with target architecture"
 - Modify: `docs/cli.md`
 - Modify: `docs/development.md`
 - Modify: `README.md`
-- Modify: `docs/architecture/rewrite-completion-audit.md`
+- Modify: `project/architecture/rewrite-completion-audit.md`
 
 - [ ] **Step 1: Rewrite operator and contributor docs from target contracts**
 

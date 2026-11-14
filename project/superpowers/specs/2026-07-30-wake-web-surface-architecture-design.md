@@ -66,7 +66,7 @@ views, transcripts, health information, and bounded operator commands. It
 corrects issue-shaped identity, direct filesystem access, UI-shaped endpoints,
 flattened cross-domain responses, and monolithic embedded assets.
 
-The older `docs/specs/control-plane-ui.md` remains evidence of legacy
+The older `project/specs/control-plane-ui.md` remains evidence of legacy
 capabilities and operational learning. This document is authoritative for the
 target web surface.
 
@@ -925,7 +925,7 @@ docker/Dockerfile.packaged
 test-next/architecture/**
 test-next/surfaces/**
 test-next/e2e/scenarios/api-domain-shape.test.ts
-docs/architecture/functional-decision-catalogue.md
+project/architecture/functional-decision-catalogue.md
 ```
 
 Task 25 must not create `src-next/surfaces/ui/data.ts`; domain presenters and

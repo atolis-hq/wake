@@ -4,13 +4,13 @@
 
 **Goal:** Replace Wake's four-sentinel vocabulary (`DONE`/`BLOCKED`/`FAILED`/`AWAITING_APPROVAL`) with a generic four-sentinel vocabulary (`DONE`/`REJECTED`/`BLOCKED`/`FAILED`) that separates "did the agent conclude" from "does this need a human gate," fixing `pr-review`'s overload of `FAILED` to mean "needs changes" (issue #476) and relocating the approval gate to pure policy.
 
-**Architecture:** `REJECTED` becomes the generic sentinel for any evaluative stage's negative-with-known-next-step verdict, replacing `pr-review`'s (and `plan-review`'s) misuse of `FAILED` for that purpose. `AWAITING_APPROVAL` is deleted from the agent-facing vocabulary; the approval gate becomes a boolean (`approvalGated`) computed from the stage's existing `skipApproval` config and carried on the `RUN_COMPLETED_EVENT` payload, replacing the `DONE`→`AWAITING_APPROVAL` sentinel coercion `tick-runner.ts` already performed. The two independently-drifting `isAwaitingApproval` predicates in `tick-runner.ts` and `policy-engine.ts` are unified on the canonical `context.status === 'awaiting-approval'` field. See `docs/adrs/0002-agent-sentinel-outcome-model.md` for full rationale.
+**Architecture:** `REJECTED` becomes the generic sentinel for any evaluative stage's negative-with-known-next-step verdict, replacing `pr-review`'s (and `plan-review`'s) misuse of `FAILED` for that purpose. `AWAITING_APPROVAL` is deleted from the agent-facing vocabulary; the approval gate becomes a boolean (`approvalGated`) computed from the stage's existing `skipApproval` config and carried on the `RUN_COMPLETED_EVENT` payload, replacing the `DONE`→`AWAITING_APPROVAL` sentinel coercion `tick-runner.ts` already performed. The two independently-drifting `isAwaitingApproval` predicates in `tick-runner.ts` and `policy-engine.ts` are unified on the canonical `context.status === 'awaiting-approval'` field. See `project/adrs/0002-agent-sentinel-outcome-model.md` for full rationale.
 
 **Tech Stack:** TypeScript, zod, vitest.
 
 ## Global Constraints
 
-- Full vocabulary reference: see `docs/adrs/0002-agent-sentinel-outcome-model.md`'s table. `DONE` = completed, no gate (or gated by policy). `REJECTED` = completed evaluation, negative verdict, known corrective next step. `BLOCKED` = could not decide, needs a human's judgment on substance. `FAILED` = could not execute, technical/environmental.
+- Full vocabulary reference: see `project/adrs/0002-agent-sentinel-outcome-model.md`'s table. `DONE` = completed, no gate (or gated by policy). `REJECTED` = completed evaluation, negative verdict, known corrective next step. `BLOCKED` = could not decide, needs a human's judgment on substance. `FAILED` = could not execute, technical/environmental.
 - `AWAITING_APPROVAL` must never again be emitted or expected as a literal agent sentinel value after this plan. It may still appear as an internal `workItemStatusValues`/`workflowOutcomeValues`/run-record `status` value (those already exist and are unaffected).
 - The event-replay guarantee is load-bearing: `rm -rf .wake/state/` + replay must reproduce projections identically (`CLAUDE.md`). Any historical event payload with `sentinel: "AWAITING_APPROVAL"` must still fold to the same practical state after this change.
 - Run `npm run verify` (not a manual build+test) before considering any task done, per `CLAUDE.md`. Files you touch must be prettier-clean (`npx prettier --check <file>`); write new/edited files with `npx prettier --write --end-of-line lf <file>` if `format:check` flags CRLF noise on files you didn't touch — ignore those, don't "fix" them.
@@ -1171,7 +1171,7 @@ Replace the passage at L47-59:
 
 - [ ] **Step 4: Verify no other doc references the retired term**
 
-Run: `Grep -rn "AWAITING_APPROVAL" docs/ README.md` (excluding `docs/adrs/`, `docs/handoffs/`, `docs/plans/`, `docs/reports/`, `docs/vision-inputs/`, `project/superpowers/` per `CLAUDE.md`'s historical-record carve-out)
+Run: `Grep -rn "AWAITING_APPROVAL" docs/ README.md` (excluding `project/adrs/`, `project/handoffs/`, `project/plans/`, `project/reports/`, `project/vision-inputs/`, `project/superpowers/` per `CLAUDE.md`'s historical-record carve-out)
 Expected: no matches outside those excluded directories.
 
 - [ ] **Step 5: Commit**
@@ -1194,7 +1194,7 @@ Expected: lint, format:check, build, and test all pass. Per `CLAUDE.md`, ignore 
 
 - [ ] **Step 2: Grep for any remaining stray literal references**
 
-Run: `Grep -rn "AWAITING_APPROVAL" src/ test/ prompts/` (this should now only match `docs/adrs/0002-agent-sentinel-outcome-model.md` if any docs grep is included, and legitimate legacy-tolerance code — `work-item-labels.ts`'s `legacyStatusFallback` and `projection-updater.ts`'s normalization step from Task 4)
+Run: `Grep -rn "AWAITING_APPROVAL" src/ test/ prompts/` (this should now only match `project/adrs/0002-agent-sentinel-outcome-model.md` if any docs grep is included, and legitimate legacy-tolerance code — `work-item-labels.ts`'s `legacyStatusFallback` and `projection-updater.ts`'s normalization step from Task 4)
 Expected: every remaining match is one of those two intentional legacy-compatibility sites; anything else is a missed call site from an earlier task — fix it and re-run `npm run verify`.
 
 - [ ] **Step 3: Confirm no task left a TODO/placeholder**

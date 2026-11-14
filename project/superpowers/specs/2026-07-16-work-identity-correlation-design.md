@@ -2,9 +2,9 @@
 
 - Date: 2026-07-16
 - Status: approved
-- Implements: [work graph implementation plan](../../../docs/plans/2026-07-12-work-graph-implementation-plan.md) §1, §2, §4 (the "do now" set)
-- Governed by: [ADR 0001](../../../docs/adrs/0001-correlating-external-resources-to-work-items.md), [resource-correlation implementation handoff](../../../docs/handoffs/2026-07-12-resource-correlation-implementation.md)
-- Conceptual model: [work-graph handoff](../../../docs/handoffs/wake-work-graph-handoff.md)
+- Implements: [work graph implementation plan](../../plans/2026-07-12-work-graph-implementation-plan.md) §1, §2, §4 (the "do now" set)
+- Governed by: [ADR 0001](../../adrs/0001-correlating-external-resources-to-work-items.md), [resource-correlation implementation handoff](../../handoffs/2026-07-12-resource-correlation-implementation.md)
+- Conceptual model: [work-graph handoff](../../handoffs/wake-work-graph-handoff.md)
 
 ## Purpose
 
@@ -207,7 +207,7 @@ Required by CLAUDE.md when the CLI or config surface changes:
 
 - `README.md` / `docs/configuration.md` — the `wake correlate` command.
 - `docs/architecture.md` (lines ~31, ~120) — still documents `state/<repo>/<issue>.json` as current.
-- `docs/handoffs/2026-07-05-event-first-persistence.md` (line ~23) — same stale path.
+- `project/handoffs/2026-07-05-event-first-persistence.md` (line ~23) — same stale path.
 
 ## Acceptance
 

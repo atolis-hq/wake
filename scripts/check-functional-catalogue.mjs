@@ -3,10 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const cataloguePath = resolve(root, 'docs/architecture/functional-decision-catalogue.md');
+const cataloguePath = resolve(root, 'project/architecture/functional-decision-catalogue.md');
 const evidencePaths = [
-  resolve(root, 'docs/architecture/legacy-test-evidence.txt'),
-  resolve(root, 'docs/architecture/legacy-surface-evidence.txt'),
+  resolve(root, 'project/architecture/legacy-test-evidence.txt'),
+  resolve(root, 'project/architecture/legacy-surface-evidence.txt'),
 ];
 const headers = [
   'ID',

@@ -1169,7 +1169,7 @@ cross-module scenarios.
 ## 16. Functional decision catalogue
 
 The rewrite begins with a
-`docs/architecture/functional-decision-catalogue.md`. It is a rewrite-control
+`project/architecture/functional-decision-catalogue.md`. It is a rewrite-control
 artifact, not the target architecture and not a `MODULE.md`.
 
 Each entry has a stable identifier and records:

@@ -3,7 +3,7 @@
 - Date: 2026-08-19
 - Status: proposed
 - Builds on: PR #713 (`fix/journal-projection-write-cache-invalidation`) — journal/projection reads are now individually cheap when nothing changed; this spec removes the need to *ask* in the first place.
-- Context: [`docs/reports/2026-08-19-resident-loop-full-history-rescan.md`](../reports/2026-08-19-resident-loop-full-history-rescan.md) — read it first. It documents the measured evidence (sustained ~140 journal reads/sec on an idle system) and the confirmed root cause (`DeliveryOutcomeReactor.runOnce()`'s unconditional full-history rescan, called every ~3-5s). This doc is the target architecture, not a restatement of the investigation.
+- Context: [`project/reports/2026-08-19-resident-loop-full-history-rescan.md`](../reports/2026-08-19-resident-loop-full-history-rescan.md) — read it first. It documents the measured evidence (sustained ~140 journal reads/sec on an idle system) and the confirmed root cause (`DeliveryOutcomeReactor.runOnce()`'s unconditional full-history rescan, called every ~3-5s). This doc is the target architecture, not a restatement of the investigation.
 
 ## Problem
 

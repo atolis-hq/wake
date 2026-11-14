@@ -349,7 +349,7 @@ Expect imports of `ExternalEventSource` and `GitHubAdapterEventDraft` from
 **C4 — Disposition vocabulary mismatch (RC-1).**
 ```
 grep -oE '\| (preserve|correct|consolidate|remove|defer|replicate now|adjust|ignore) \|' \
-  docs/architecture/functional-decision-catalogue.md | sort | uniq -c
+  project/architecture/functional-decision-catalogue.md | sort | uniq -c
 ```
 Expect only `preserve/correct/consolidate/remove/defer` in the catalogue;
 compare against the design's §3.1 list (`replicate now/adjust/defer/ignore`).

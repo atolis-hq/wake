@@ -191,6 +191,7 @@ any time for the full command list, or see
 
 ## Documentation
 
+- [Documentation index](docs/README.md) - current guides and references.
 - [docs/getting-started.md](docs/getting-started.md) - packaged-install setup, sandbox lifecycle, `wake doctor`.
 - [docs/cli.md](docs/cli.md) - full CLI command reference.
 - [docs/vision.md](docs/vision.md) - the rationale and long-term direction for Wake.

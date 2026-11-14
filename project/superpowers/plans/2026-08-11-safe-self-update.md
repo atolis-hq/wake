@@ -48,7 +48,7 @@
 
 ## Task 5: Document and verify
 
-**Files:** Modify `src-next/bootstrap/SPEC.md`, `src-next/bootstrap/self-update.spec.md`, `docs/architecture/functional-decision-catalogue.md`, and `docs/reports/2026-08-10-granular-legacy-target-review.md`.
+**Files:** Modify `src-next/bootstrap/SPEC.md`, `src-next/bootstrap/self-update.spec.md`, `project/architecture/functional-decision-catalogue.md`, and `project/reports/2026-08-10-granular-legacy-target-review.md`.
 
 - [ ] Document maintenance phases, cancellation, dispatch blocking, recovery, and loop semantics; mark G-M6 directly proven.
 - [ ] Run `npm run check:catalogue`, `npm run check:scenarios`, `npm run lint:architecture`, `npm run knip:next`, `npm run verify:next`, `npm run verify`, and `npm run check:specs`; all must pass.

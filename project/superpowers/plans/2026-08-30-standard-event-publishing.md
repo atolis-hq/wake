@@ -662,7 +662,7 @@ git commit -m "test: enforce event publishing ownership"
 Run:
 
 ```bash
-rg -n "EventDraft|EventDraftUnion|EventDraftInput|createEventDraft|journal\.append\(|\.journal\.append\(|EventProcessorHost|EventJournal" src test docs --glob '!project/superpowers/**' --glob '!docs/adrs/**' --glob '!docs/reports/**' --glob '!docs/handoffs/**'
+rg -n "EventDraft|EventDraftUnion|EventDraftInput|createEventDraft|journal\.append\(|\.journal\.append\(|EventProcessorHost|EventJournal" src test docs --glob '!project/superpowers/**' --glob '!project/adrs/**' --glob '!project/reports/**' --glob '!project/handoffs/**'
 ```
 
 Classify every remaining `EventProcessorHost` and `EventJournal` result. Legitimate ports, composition, journal reads, Eventing hosting, and Persistence adapters remain. Legacy draft names, old append calls, foreign construction, and stale current-state documentation do not.

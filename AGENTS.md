@@ -143,7 +143,7 @@ When changing the CLI surface or configuration schema, update the relevant
 current-state reference documentation. `README.md` and reference docs under
 `docs/` must describe the system as it exists now. Do not rewrite ADRs,
 historical designs, handoffs, plans, reports, `project/superpowers/`,
-`docs/vision-inputs/`, or specifications merely to reflect a later design.
+`project/vision-inputs/`, or specifications merely to reflect a later design.
 
 Store new Superpowers design specifications in `project/superpowers/specs/`
 and implementation plans in `project/superpowers/plans/`. These locations

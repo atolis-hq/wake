@@ -75,8 +75,8 @@ Execution Run views, composition root, Vitest.
 
 **Files:** Update `src-next/execution/SPEC.md`,
 `src-next/execution/infrastructure/workspace/workspace.spec.md`,
-`docs/architecture/functional-decision-catalogue.md`, and
-`docs/reports/2026-08-10-granular-legacy-target-review.md`.
+`project/architecture/functional-decision-catalogue.md`, and
+`project/reports/2026-08-10-granular-legacy-target-review.md`.
 
 - [ ] Document marker ownership, safe deletion conditions, retained unknown
   paths, and no-config policy. Mark G-M5 directly proven only when composed

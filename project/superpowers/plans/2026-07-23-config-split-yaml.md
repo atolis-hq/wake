@@ -14,7 +14,7 @@
 - On Windows, `format:check` false-positives on untouched files (CRLF vs LF) — ignore those, but every file you touch must pass `npx prettier --check <file>` and be written with `npx prettier --write --end-of-line lf <file>`.
 - Do not skip lint — unused imports are easy to introduce when splitting/moving code, and Task 10 deliberately deletes a method — make sure its now-unused imports go with it.
 - No comments beyond what's already in the code unless the WHY is genuinely non-obvious (see CLAUDE.md style rules).
-- Reference docs (`README.md`, everything under `docs/` except `docs/handoffs/`, `docs/plans/`, `docs/reports/`, `docs/vision-inputs/`, `docs/adrs/`, `project/superpowers/`) must describe only the current state — no "this used to be config.json" prose except the one intentional legacy-fallback paragraph in Task 12.
+- Reference docs (`README.md`, everything under `docs/` except `project/handoffs/`, `project/plans/`, `project/reports/`, `project/vision-inputs/`, `project/adrs/`, `project/superpowers/`) must describe only the current state — no "this used to be config.json" prose except the one intentional legacy-fallback paragraph in Task 12.
 - Commit after each task.
 
 ---
@@ -1456,9 +1456,9 @@ git commit -m "Rewrite docs/configuration.md for the config*.yaml glob-merge spl
 ### Task 13: Update remaining `config.json` mentions across the docs
 
 **Files:**
-- Modify: `README.md`, `docs/workflows.md`, `docs/getting-started.md`, `docs/development.md`, `docs/architecture.md`, `docs/design/implementation.md`, `docs/specs/control-plane-ui.md`, `docs/runner-comparison.md`
+- Modify: `README.md`, `docs/workflows.md`, `docs/getting-started.md`, `docs/development.md`, `docs/architecture.md`, `project/design/implementation.md`, `project/specs/control-plane-ui.md`, `docs/runner-comparison.md`
 
-Re-run `grep -rn "config\.json" README.md docs/workflows.md docs/getting-started.md docs/development.md docs/design/implementation.md docs/architecture.md docs/specs/control-plane-ui.md docs/runner-comparison.md` first — line numbers may have drifted since this plan was written — then apply the following edits by content match.
+Re-run `grep -rn "config\.json" README.md docs/workflows.md docs/getting-started.md docs/development.md project/design/implementation.md docs/architecture.md project/specs/control-plane-ui.md docs/runner-comparison.md` first — line numbers may have drifted since this plan was written — then apply the following edits by content match.
 
 - [ ] **Step 1: `README.md`**
 
@@ -1507,7 +1507,7 @@ Two mentions:
 - `` Wake owns a Wake home directory (`config.json`, `prompts/`, `workspaces/` at `` → `` Wake owns a Wake home directory (`config.yaml`, `config.workflows.yaml`, `prompts/`, `workspaces/` at ``
 - `` - `config.json` for versioned config `` → `` - `config.yaml`/`config.workflows.yaml` for versioned config ``
 
-- [ ] **Step 6: `docs/design/implementation.md`**
+- [ ] **Step 6: `project/design/implementation.md`**
 
 One mention (around line 317), inside a directory-tree sketch: `` config.json           # timing, quiet hours, models, repo allowlist, caps ``. Check whether "quiet hours" is a real current config field per the rewritten `docs/configuration.md` — if not, that's a pre-existing inaccuracy; drop the phrase rather than propagate it. Replace with two lines matching the tree's comment style:
 
@@ -1516,7 +1516,7 @@ config.yaml             # timing, sandbox, repo allowlist, caps
 config.workflows.yaml   # models, runners, tiers, stage routing
 ```
 
-- [ ] **Step 7: `docs/specs/control-plane-ui.md`**
+- [ ] **Step 7: `project/specs/control-plane-ui.md`**
 
 Three mentions: a table row `` | Config | `config.json` | Config view, routing table, policy display | `` → change the cell to `` `config.yaml` / `config.workflows.yaml` ``; a redaction note ("no secrets currently live in `config.json`") → `` `config.yaml`/`config.workflows.yaml` ``; a non-mutation note ("operators edit `config.json`") → `` operators edit `config.yaml`/`config.workflows.yaml` (or any `config.*.yaml` split they've made) ``.
 
@@ -1526,14 +1526,14 @@ One mention: `` Example `config.json` extraMounts for all three: `` → `` Examp
 
 - [ ] **Step 9: Re-run the grep to confirm nothing was missed**
 
-Run: `grep -rn "config\.json" README.md docs/ --include=*.md | grep -v "project/superpowers/\|docs/plans/\|docs/reports/\|docs/vision-inputs/\|docs/handoffs/\|docs/adrs/"`
+Run: `grep -rn "config\.json" README.md docs/ --include=*.md | grep -v "project/superpowers/\|project/plans/\|project/reports/\|project/vision-inputs/\|project/handoffs/\|project/adrs/"`
 
 Expected: only `docs/configuration.md`'s one intentional legacy-fallback paragraph from Task 12 Step 8.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add README.md docs/workflows.md docs/getting-started.md docs/development.md docs/architecture.md docs/design/implementation.md docs/specs/control-plane-ui.md docs/runner-comparison.md
+git add README.md docs/workflows.md docs/getting-started.md docs/development.md docs/architecture.md project/design/implementation.md project/specs/control-plane-ui.md docs/runner-comparison.md
 git commit -m "Update remaining docs for the config*.yaml glob-merge split"
 ```
 

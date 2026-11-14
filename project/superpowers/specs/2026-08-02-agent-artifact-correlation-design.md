@@ -1,7 +1,7 @@
 # Agent-reported artifact correlation — design
 
 Status: approved, ready for implementation planning.
-Supersedes: none. Implements `docs/adrs/0001-correlating-external-resources-to-work-items.md`
+Supersedes: none. Implements `project/adrs/0001-correlating-external-resources-to-work-items.md`
 flow 2 (`§3.2`) for `src-next`, amended 2026-08-02 (see that ADR's amendment
 section) to narrow its conflict-handling for this flow specifically.
 
@@ -22,7 +22,7 @@ either gets silently dropped by intake rules or spawns a second, disconnected
 WorkItem. Every downstream PR-review/approve/merge behavior assumes a PR is
 already correctly correlated; none of it matters for an agent-created PR
 until this exists. Filed as finding X1 in
-`docs/reports/2026-08-02-target-architecture-spec-findings.md`.
+`project/reports/2026-08-02-target-architecture-spec-findings.md`.
 
 ## Decisions
 

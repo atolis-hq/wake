@@ -16,7 +16,7 @@
   1. **Token budget:** $20 Claude Pro plan, $20 ChatGPT Codex plan, free Cursor plan. Wake can delegate to any of these CLIs. Usage limits _will_ be hit.
   2. **Human approval:** every change must be approved by a human, at minimum at the pull request.
   3. **No limit resilience today:** when a usage limit is hit there is no fallback to another CLI and no resume when the limit resets. Work just fails.
-- **Known state:** there is an existing backlog of GitHub issues, a recent improvement report (`docs/reports/2026-07-10-simplify-solidify-refactor.md`) with production-log evidence, and likely latent bugs that interrupt work.
+- **Known state:** there is an existing backlog of GitHub issues, a recent improvement report (`project/reports/2026-07-10-simplify-solidify-refactor.md`) with production-log evidence, and likely latent bugs that interrupt work.
 
 ## 2. Strategy
 
@@ -29,7 +29,7 @@ The scarce resources are (a) tokens and (b) human attention. Autonomy is maximiz
 
 ## 3. Phased plan
 
-Report item IDs (E/S/R/I) refer to `docs/reports/2026-07-10-simplify-solidify-refactor.md`. Existing issue numbers are noted; items without an issue need one filed (see §4).
+Report item IDs (E/S/R/I) refer to `project/reports/2026-07-10-simplify-solidify-refactor.md`. Existing issue numbers are noted; items without an issue need one filed (see §4).
 
 ### Phase 0 — Stop the loop from dying (highest priority)
 

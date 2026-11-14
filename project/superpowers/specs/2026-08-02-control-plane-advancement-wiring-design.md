@@ -2,7 +2,7 @@
 
 Status: approved, ready for implementation planning.
 Covers findings C1, C2, C5, C8 from
-`docs/reports/2026-08-02-target-architecture-spec-findings.md`.
+`project/reports/2026-08-02-target-architecture-spec-findings.md`.
 
 ## Problem
 

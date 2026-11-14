@@ -252,7 +252,7 @@
 **Files:**
 - Modify: `README.md`
 - Modify: `docs/configuration.md`
-- Modify: `docs/specs/control-plane-ui.md`
+- Modify: `project/specs/control-plane-ui.md`
 
 - [ ] **Step 1: Update user-facing documentation**
 
@@ -283,6 +283,6 @@
 - [ ] **Step 5: Commit documentation and verification-ready state**
 
   ```powershell
-  git add README.md docs/configuration.md docs/specs/control-plane-ui.md
+  git add README.md docs/configuration.md project/specs/control-plane-ui.md
   git commit -m "docs: document control-plane UI login"
   ```

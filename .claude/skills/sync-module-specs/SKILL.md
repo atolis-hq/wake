@@ -105,9 +105,9 @@ precisely rather than skimmed.
 - It does not author specs for a module that has never had one — that's the
   standard's own authoring process, not a sync.
 - It does not resolve the findings already logged in
-  `docs/reports/2026-08-02-target-architecture-spec-findings.md` — a stale
+  `project/reports/2026-08-02-target-architecture-spec-findings.md` — a stale
   spec and an open behavioural finding are different things. Syncing a spec
   to match current code doesn't mean a finding's underlying gap got fixed;
   don't close a finding just because the spec around it got updated.
-- It does not touch `docs/architecture/rewrite-completion-audit.md` or the
+- It does not touch `project/architecture/rewrite-completion-audit.md` or the
   functional-decision catalogue — out of scope for a sync pass.

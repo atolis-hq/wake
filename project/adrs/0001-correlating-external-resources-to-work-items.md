@@ -242,8 +242,8 @@ not for a creation report from the run that produced them.
 ## More Information
 
 - `docs/architecture.md` — event-first flow this builds on.
-- [`docs/handoffs/wake-work-graph-handoff.md`](../handoffs/wake-work-graph-handoff.md) — the work-graph concept this registry is the first layer of.
-- [`docs/handoffs/2026-07-12-resource-correlation-implementation.md`](../handoffs/2026-07-12-resource-correlation-implementation.md) — condensed implementation invariants for this ADR.
-- [`docs/plans/2026-07-12-work-graph-implementation-plan.md`](../plans/2026-07-12-work-graph-implementation-plan.md) — now-vs-later sequencing, identity cutover, and scope guard.
+- [`project/handoffs/wake-work-graph-handoff.md`](../handoffs/wake-work-graph-handoff.md) — the work-graph concept this registry is the first layer of.
+- [`project/handoffs/2026-07-12-resource-correlation-implementation.md`](../handoffs/2026-07-12-resource-correlation-implementation.md) — condensed implementation invariants for this ADR.
+- [`project/plans/2026-07-12-work-graph-implementation-plan.md`](../plans/2026-07-12-work-graph-implementation-plan.md) — now-vs-later sequencing, identity cutover, and scope guard.
 - Related issues: [#54](https://github.com/atolis-hq/wake/issues/54) echo suppression (prerequisite), [#76](https://github.com/atolis-hq/wake/issues/76) PR exclusion → policy engine (prerequisite), [#70](https://github.com/atolis-hq/wake/issues/70) sink router (routing substrate), [#82](https://github.com/atolis-hq/wake/issues/82) first consumer of this decision.
 - MADR template: https://adr.github.io/madr/

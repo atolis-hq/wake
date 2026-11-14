@@ -308,7 +308,7 @@ Step 0 precedes everything because it adds mandated catalogue IDs that
 **Files:**
 
 - Modify: `scripts/check-functional-catalogue.mjs` (add six mandated IDs)
-- Modify: `docs/architecture/functional-decision-catalogue.md`
+- Modify: `project/architecture/functional-decision-catalogue.md`
 - Modify: `project/superpowers/specs/2026-07-31-wake-live-runtime-parity-correction-design.md`
 - Modify: `CLAUDE.md`
 - Modify: `project/superpowers/plans/2026-07-30-wake-target-architecture-rewrite.md`
@@ -347,13 +347,13 @@ failures.
 - [ ] **Step 3: Add the six catalogue rows**
 
 Append to the decision table in
-`docs/architecture/functional-decision-catalogue.md`, before the `FUTURE-*`
+`project/architecture/functional-decision-catalogue.md`, before the `FUTURE-*`
 block. Each row has exactly seven cells. `remove` rows must contain the literal
 phrase `Remove because`; `defer` rows must contain `Defer because`; `preserve` /
 `correct` / `consolidate` rows must list comma-separated `E2E-*` IDs.
 
 ```text
-| WORK-IDENTITY-MINTED | A WorkItem and a Resource identity are minted by Wake and never derived from an external key, a provider name, or a schedule slot. External references are carried only as `ExternalResourceKey` on the Resource, and reverse lookup is a journal-folded projection rather than a reconstructable id or a hand-maintained mapping store. | Identity brands accept only a minted ULID shape; intake looks up the external key, correlates to the existing WorkItem on a hit, and mints both plus a correlation on a miss. | correct | `work` and `resources` with `integrations` and `control-plane` | E2E-WORK-002, E2E-SCHEDULE-001, E2E-LIVE-009 | `src-next/integrations/github/application/inbound-translator.ts`<br>`src-next/control-plane/application/schedule-service.ts`<br>`docs/adrs/0001-correlating-external-resources-to-work-items.md` |
+| WORK-IDENTITY-MINTED | A WorkItem and a Resource identity are minted by Wake and never derived from an external key, a provider name, or a schedule slot. External references are carried only as `ExternalResourceKey` on the Resource, and reverse lookup is a journal-folded projection rather than a reconstructable id or a hand-maintained mapping store. | Identity brands accept only a minted ULID shape; intake looks up the external key, correlates to the existing WorkItem on a hit, and mints both plus a correlation on a miss. | correct | `work` and `resources` with `integrations` and `control-plane` | E2E-WORK-002, E2E-SCHEDULE-001, E2E-LIVE-009 | `src-next/integrations/github/application/inbound-translator.ts`<br>`src-next/control-plane/application/schedule-service.ts`<br>`project/adrs/0001-correlating-external-resources-to-work-items.md` |
 | ORCH-SELECTOR | Adapter configuration assigns operator-authored tags at intake; Orchestration selectors match those tags, the adapter id, and resource kind to choose a workflow, falling through to a configured default. Adapters never propose a workflow name, and an intake rule may not tag from a Wake-owned marker family. | Tags are first-class WorkItem data carried on the intake command; a pure selector evaluates configured `match` clauses in order and Orchestration starts the chosen workflow for a new WorkItem. | correct | `orchestration` with `work` and `integrations` | E2E-LIVE-001, E2E-LIVE-003, E2E-LIVE-005 | `src/domain/workflows.ts`<br>`docs/workflows.md` |
 | ORCH-APPROVAL-AUTHORITY | What may satisfy a wait is first-class and closed: a human, Wake resolving deterministically, or a named watch's verdict. Auto-resolution requires both a workflow-declared capability and durable per-item operator consent, so an agent prompt can no longer widen approval authority. Provenance is recorded separately from authority. | A workflow route declares `await.from` as a discriminated authority union; Work owns an idempotent consent flag; the provider translates its own affordance to a neutral signal. | correct | `orchestration` with `work` and `integrations` | E2E-ORCH-WAIT-001, E2E-LIVE-003 | `src/core/policy-engine.ts`<br>`prompts/implement.md`<br>`docs/workflows.md` |
 | ORCH-CONFIG-DISCOVERY | Remove because alphabetical multi-file `config*.yaml` merge and the `config.json` fallback make the effective configuration unpredictable to read and to support, and no operator capability depends on them. The target reads exactly `config.yaml` then `config.workflows.yaml`, deep-merged in that order. | Bootstrap loads two fixed files from the Wake root and validates each module subtree through its owning schema. | remove | `bootstrap` | — | `src/config/discover-config-files.ts`<br>`docs/configuration.md` |
@@ -443,7 +443,7 @@ Run:
 ```powershell
 npm run check:catalogue
 rg -n 'replicate now' project/superpowers/specs/2026-07-31-wake-live-runtime-parity-correction-design.md
-npx prettier --check CLAUDE.md docs/architecture/functional-decision-catalogue.md
+npx prettier --check CLAUDE.md project/architecture/functional-decision-catalogue.md
 ```
 
 Expected: catalogue valid; the `rg` returns no matches; prettier clean.
@@ -2457,7 +2457,7 @@ npm run verify
 Expected: all PASS.
 
 ```powershell
-git add src-next/integrations/fake test-next/e2e docs/architecture/functional-decision-catalogue.md
+git add src-next/integrations/fake test-next/e2e project/architecture/functional-decision-catalogue.md
 git commit -m "test: prove the live loop end to end from an on-disk Wake root"
 ```
 

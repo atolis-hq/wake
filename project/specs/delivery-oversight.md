@@ -7,7 +7,7 @@
 
 ## Implementation reconciliation, 2026-10-18
 
-Reviewed `origin/main` at `25ef4657d2f1eda6e66b0282d09672cc053d6d89`. The O1-O5 sections below retain their original design/slicing context; do not treat them as unimplemented prerequisites for child work. Current contracts and [configuration reference](../configuration.md) govern existing behavior.
+Reviewed `origin/main` at `25ef4657d2f1eda6e66b0282d09672cc053d6d89`. The O1-O5 sections below retain their original design/slicing context; do not treat them as unimplemented prerequisites for child work. Current contracts and [configuration reference](../../docs/configuration.md) govern existing behavior.
 
 - Explicit event/cron triggers, durable claims/coalescing/recovery, pause/resume, diagnostics/Triggers UI, named artifact contexts and the configured `triage-assign` oversight flow are implemented. Later additions include durable manual Run now, operator standing instructions and open-work capacity limits. Oversight selection/assignment is agent activity through scoped `gh` commands; it is not a deterministic backlog planner.
 - `when.capacityAvailable` now checks both Run and open-work headroom, pause and entry-pool eligibility. `maxOpenWorkItems` is implemented and defaults to unlimited. The original references below to WIP as future work describe the baseline, not current main.

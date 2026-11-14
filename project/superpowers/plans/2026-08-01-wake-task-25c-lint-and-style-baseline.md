@@ -41,7 +41,7 @@ and steps. Renumbering this task to 25B would break those references.
 ## Authority
 
 - Findings and measurements:
-  [`docs/reports/2026-08-01-src-next-structural-review.md`](../../../docs/reports/2026-08-01-src-next-structural-review.md)
+  [`project/reports/2026-08-01-src-next-structural-review.md`](../../reports/2026-08-01-src-next-structural-review.md)
   (§3 on `max-lines`, F10 on the missing type-aware rules).
 - `CLAUDE.md` for repository conventions.
 

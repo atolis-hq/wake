@@ -1,6 +1,6 @@
 # Design: custom workflows/policies + multi-CLI, multi-channel routing
 
-Date: 2026-07-06. Companion to `docs/handoffs/2026-07-06-harness-review.md` (referenced below as "the review"). Covers two features:
+Date: 2026-07-06. Companion to `project/handoffs/2026-07-06-harness-review.md` (referenced below as "the review"). Covers two features:
 
 1. **Custom-defined workflows and policies** — config or code, varying by ticket type.
 2. **Pluggable CLIs (Codex, Cursor) with per-stage routing**, plus additional channels (Slack).

@@ -2,8 +2,8 @@
 
 - Date: 2026-07-18
 - Status: proposed
-- Implements: [Issue #82](https://github.com/atolis-hq/wake/issues/82), [work graph implementation plan](../../../docs/plans/2026-07-12-work-graph-implementation-plan.md) §3 ("Correlation core, bundled with #82")
-- Governed by: [ADR 0001](../../../docs/adrs/0001-correlating-external-resources-to-work-items.md)
+- Implements: [Issue #82](https://github.com/atolis-hq/wake/issues/82), [work graph implementation plan](../../plans/2026-07-12-work-graph-implementation-plan.md) §3 ("Correlation core, bundled with #82")
+- Governed by: [ADR 0001](../../adrs/0001-correlating-external-resources-to-work-items.md)
 - Builds on: [work identity and correlation vocabulary design](2026-07-16-work-identity-correlation-design.md) (identity cutover, landed in #235)
 
 ## Purpose

@@ -87,7 +87,7 @@ return { conflict: true, code: 'retry-ineligible', detail: (error as Error).mess
 
 ### Task 5: Add Retry control and documentation
 
-**Files:** Modify `src/surfaces/web/src/features/work/work.tsx`, `docs/workflows.md`, `docs/specs/control-plane-ui.md`; test `src/surfaces/web/test/work-detail.test.tsx`.
+**Files:** Modify `src/surfaces/web/src/features/work/work.tsx`, `docs/workflows.md`, `project/specs/control-plane-ui.md`; test `src/surfaces/web/test/work-detail.test.tsx`.
 
 - [ ] Write failing UI tests: hide Retry for null/ineligible primary; for eligible blocked primary, click Retry and assert POST `/commands/retry`, refreshed work detail, and visible problem feedback.
 - [ ] Run `npm --workspace @atolis-hq/wake-web run test -- work-detail.test.tsx`; expect failure because no control exists.

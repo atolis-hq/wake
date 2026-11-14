@@ -38,7 +38,7 @@ Measured against the actual incident's `wake-home` (322 run records, ~8 day-buck
 
 ## Step by step
 
-1. Read the spec in full: [`docs/plans/2026-07-26-run-record-summary-index.md`](../plans/2026-07-26-run-record-summary-index.md).
+1. Read the spec in full: [`project/plans/2026-07-26-run-record-summary-index.md`](../plans/2026-07-26-run-record-summary-index.md).
 2. Continue on `fix/bound-run-record-listing-metadata` (or branch off it if you'd rather keep this as a separate reviewable commit set — either is fine, this docs commit itself lands on the same branch).
 3. Implement in `src/adapters/fs/state-store.ts`:
    - The per-date index read/write (Invariant 1-2 in the spec).

@@ -158,7 +158,7 @@ Expected: PASS.
 ### Task 5: Verify and document
 
 **Files:**
-- Modify: `docs/architecture/task26-operational-parity.md`
+- Modify: `project/architecture/task26-operational-parity.md`
 - Modify: `src-next/surfaces/cli/cli-surface.spec.md`
 
 - [ ] **Step 1: Record configured host adaptation evidence**

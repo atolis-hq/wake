@@ -216,7 +216,7 @@ context; tests PASS.
 Run:
 
 ```powershell
-rg -n -i --glob '!project/superpowers/**' --glob '!docs/design/**' --glob '!docs/reports/**' --glob '!docs/handoffs/**' --glob '!docs/vision-inputs/**' --glob '!docs/plans/**' 'defaultTier|\btiers\b|\.tier\b|tier:' src src-next test test-next docs README.md templates
+rg -n -i --glob '!project/superpowers/**' --glob '!project/design/**' --glob '!project/reports/**' --glob '!project/handoffs/**' --glob '!project/vision-inputs/**' --glob '!project/plans/**' 'defaultTier|\btiers\b|\.tier\b|tier:' src src-next test test-next docs README.md templates
 ```
 
 Expected: no active Wake configuration, runtime, test, or reference-document

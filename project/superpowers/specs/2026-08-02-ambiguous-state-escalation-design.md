@@ -2,7 +2,7 @@
 
 Status: approved, ready for implementation planning.
 Covers findings E1/E6 (`EXEC-RECOVERY`) and I4 (`INT-OUTBOX`) from
-`docs/reports/2026-08-02-target-architecture-spec-findings.md`, and settles
+`project/reports/2026-08-02-target-architecture-spec-findings.md`, and settles
 the escalation threshold `project/superpowers/specs/2026-08-02-agent-artifact-correlation-design.md`
 (X1) deferred to "whatever gets decided for I4."
 

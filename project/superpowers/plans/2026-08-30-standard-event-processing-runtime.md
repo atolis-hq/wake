@@ -363,7 +363,7 @@ git commit -m "feat: supervise one real-time processor registry"
 - Modify: `src/control-plane/SPEC.md`
 - Modify: `src/orchestration/MODULE.md`
 - Modify: `src/integrations/MODULE.md`
-- Modify: `docs/architecture/modules.md` if present
+- Modify: `project/architecture/modules.md` if present
 - Modify: current reference documentation found by the legacy scan
 
 - [ ] **Step 1: Scan for legacy architecture**
@@ -371,7 +371,7 @@ git commit -m "feat: supervise one real-time processor registry"
 Run:
 
 ```bash
-rg -n "DurableSubscription|runOnce\(limit|checkpoints\.(load|save).*reactor|reactor.*checkpoints\.(load|save)|projectionSubscriptions|activationSchedulerSubscriber" src test docs --glob '!project/superpowers/**' --glob '!docs/adrs/**' --glob '!docs/reports/**' --glob '!docs/handoffs/**'
+rg -n "DurableSubscription|runOnce\(limit|checkpoints\.(load|save).*reactor|reactor.*checkpoints\.(load|save)|projectionSubscriptions|activationSchedulerSubscriber" src test docs --glob '!project/superpowers/**' --glob '!project/adrs/**' --glob '!project/reports/**' --glob '!project/handoffs/**'
 ```
 
 Classify every match. Production manual cursor loops and split runtime types

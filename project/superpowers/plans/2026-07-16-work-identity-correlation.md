@@ -944,7 +944,7 @@ git commit -m "Write work item marker into PR bodies"
 **Files:**
 
 - Modify: `docs/architecture.md` (~line 31 and ~line 120)
-- Modify: `docs/handoffs/2026-07-05-event-first-persistence.md` (~line 23)
+- Modify: `project/handoffs/2026-07-05-event-first-persistence.md` (~line 23)
 
 **Interfaces:** none.
 

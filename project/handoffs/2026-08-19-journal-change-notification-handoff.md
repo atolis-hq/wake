@@ -1,8 +1,8 @@
 # Handoff: implement journal change notification, replace resident-loop polling
 
 - Date: 2026-08-19
-- Spec: [`docs/plans/2026-08-19-journal-change-notification.md`](../plans/2026-08-19-journal-change-notification.md) — read it first; this doc is branch state, step-by-step, and verification, not a replacement.
-- Report: [`docs/reports/2026-08-19-resident-loop-full-history-rescan.md`](../reports/2026-08-19-resident-loop-full-history-rescan.md) — the investigation and evidence behind the spec.
+- Spec: [`project/plans/2026-08-19-journal-change-notification.md`](../plans/2026-08-19-journal-change-notification.md) — read it first; this doc is branch state, step-by-step, and verification, not a replacement.
+- Report: [`project/reports/2026-08-19-resident-loop-full-history-rescan.md`](../reports/2026-08-19-resident-loop-full-history-rescan.md) — the investigation and evidence behind the spec.
 - Branch: none yet. Start fresh from `main` (this session's diagnostic instrumentation was all temporary and fully reverted — nothing to build on, no branch exists).
 - Prior related work: PR #713 (`fix/journal-projection-write-cache-invalidation`, merged) fixed a different bug in the same area (write-caused cache invalidation) — already shipped, don't re-touch `FileEventJournal`'s/`FileProjectionStore`'s existing cache-extension logic except to add the notifier hook described below.
 - Also filed from the same investigation, separate and unrelated — don't conflate:
