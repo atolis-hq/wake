@@ -60,6 +60,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
       conclusion: services.conclusion,
       conversations: services.conversations,
       conversationCapabilities,
+      authenticatedLogin: () => requests.run(() => client.authenticatedLogin()),
     });
     return {
       adapter,
@@ -198,6 +199,7 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
           const pr = await client.getPullRequest(parsed.owner, parsed.repo, parsed.number);
           return pr.merged && pr.head.sha === intent.payload.revision ? String(pr.id) : null;
         },
+        () => requests.run(() => client.authenticatedLogin()),
       ),
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== resourceKind('pull-request')) return ArtifactVerificationResult.NotFound;

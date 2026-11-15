@@ -34,14 +34,22 @@ import {
   integrationStream,
   type ExternalWorkObservedPayload,
 } from '../../../src/integrations/github/index.js';
+import { createGitHubDelivery } from '../../../src/integrations/github/infrastructure/delivery.js';
 import {
   adapterId,
+  createDeliveryIntentEventData,
+  DeliveryEventType,
   DeliveryIntentEventType,
+  deliveryProjection,
+  DeliveryService,
+  deliveryStream,
   publishConversationCommandFeedback,
+  selectDeliveryEvent,
 } from '../../../src/integrations/index.js';
 import {
   ConversationSurfaceCapability,
   createConversationCommandReactor,
+  workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
 import {
@@ -726,8 +734,370 @@ describe('InboundTranslator', () => {
     ]);
   });
 
+  it.each([
+    {
+      name: 'recorded producer survives a delivery account change',
+      producer: 'agent-account',
+      fallback: 'MAINTAINER',
+      applied: true,
+      reason: '',
+    },
+    {
+      name: 'recorded producer cannot escape self-approval after an account change',
+      producer: 'MAINTAINER',
+      fallback: 'agent-account',
+      applied: false,
+      reason: 'artifact producer',
+    },
+    {
+      name: 'issue author approves another account plan',
+      producer: 'agent-account',
+      fallback: undefined,
+      applied: true,
+      reason: '',
+    },
+    {
+      name: 'producer cannot self-approve case-insensitively',
+      producer: 'MAINTAINER',
+      fallback: undefined,
+      applied: false,
+      reason: 'artifact producer',
+    },
+    {
+      name: 'legacy Wake marker permits current delivery identity fallback',
+      producer: undefined,
+      fallback: 'agent-account',
+      applied: true,
+      reason: '',
+    },
+    {
+      name: 'legacy producer cannot self-approve',
+      producer: undefined,
+      fallback: 'MAINTAINER',
+      applied: false,
+      reason: 'artifact producer',
+    },
+    {
+      name: 'unattributed publication stays denied',
+      producer: undefined,
+      fallback: undefined,
+      applied: false,
+      reason: 'attribution is unknown',
+    },
+  ])('$name', async ({ producer, fallback, applied, reason }) => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    await recordPlanPublication(world, workflow, producer);
+    const unrelated = await world.createWork({ objective: 'Unrelated waiting work' });
+    const otherWorkflow = await world.startWorkflow({
+      workItemId: unrelated.workItemId,
+      workflowName: workflowName('waiting-issue-approval'),
+    });
+    await world.acceptOutcome(
+      otherWorkflow.workflowInstanceId,
+      otherWorkflow.pendingActivation!.activationId,
+      { kind: ActivityOutcomeKind.Done },
+    );
+    const automaticId = workflowInstanceId(workflow.workflowInstanceId + ':automatic');
+    const automaticWait = await world.orchestration.start(
+      {
+        workflowInstanceId: automaticId,
+        workItemId: workflow.workItemId,
+        workflowName: workflowName('waiting-issue-approval'),
+        orchestrationGroupId: workflow.orchestrationGroupId,
+        parentWorkflowInstanceId: workflow.workflowInstanceId,
+        watchId: 'automatic',
+        triggerId: 'test-trigger',
+        causalCycleId: 'test-cycle',
+        requestId: automaticId,
+      },
+      {
+        commandId: 'start-automatic-child',
+        correlationId: 'start-automatic-child' as never,
+        occurredAt: world.clock.now().toISOString(),
+        actor: { kind: 'system', id: 'test' },
+      },
+    );
+    await world.acceptOutcome(
+      automaticWait.workflowInstanceId,
+      automaticWait.pendingActivation!.activationId,
+      { kind: ActivityOutcomeKind.Done },
+    );
+    await world.waitForSignal(automaticWait.workflowInstanceId, {
+      signalKind: 'auto-only' as never,
+      from: [{ kind: 'auto' }],
+    });
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      orchestration: world.orchestration,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+      ...(fallback === undefined ? {} : { authenticatedLogin: async () => fallback }),
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/approved',
+        201,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, {
+        conversations,
+        publish: async () => {},
+      }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe(
+      applied ? 'completed' : 'waiting',
+    );
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      applied ? 'Command applied.' : reason,
+    );
+    expect((await world.orchestration.get(automaticWait.workflowInstanceId))?.status).toBe(
+      'waiting',
+    );
+    expect((await world.orchestration.get(otherWorkflow.workflowInstanceId))?.status).toBe(
+      'waiting',
+    );
+  });
+
+  it('denies an approval with no attributable artifact publication', async () => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      orchestration: world.orchestration,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+      authenticatedLogin: async () => 'agent-account',
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/approved',
+        202,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, {
+        conversations,
+        publish: async () => {},
+      }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      'attribution is unknown',
+    );
+  });
+
+  it.each([
+    { author: 'MAINTAINER', applied: false, reason: 'PR author' },
+    { author: 'agent-account', applied: true, reason: '' },
+    { author: 'unknown-github-identity', applied: false, reason: 'attribution is unknown' },
+  ])('uses the PR author for a PR gate ($author)', async ({ author, applied, reason }) => {
+    const { world, workflow } = await waitingIssueWorkflow('pull-request');
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      orchestration: world.orchestration,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+      authenticatedLogin: async () => 'different-publisher',
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/accepted',
+        203,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+        author,
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, {
+        conversations,
+        publish: async () => {},
+      }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe(
+      applied ? 'completed' : 'waiting',
+    );
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      applied ? 'Command applied.' : reason,
+    );
+  });
+
+  it('denies conflicting producer attribution across publications of the same activation', async () => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    await recordPlanPublication(world, workflow, 'first-agent');
+    await recordPlanPublication(world, workflow, 'second-agent', 'second');
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      orchestration: world.orchestration,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+      authenticatedLogin: async () => 'first-agent',
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/approved',
+        204,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, {
+        conversations,
+        publish: async () => {},
+      }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      'attribution is unknown or ambiguous',
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
+  });
+
+  it('does not reuse approval attribution after /changes creates a new plan wait', async () => {
+    const { world, workflow } = await waitingIssueWorkflow();
+    await recordPlanPublication(world, workflow, 'agent-account');
+    const conversations = createConversationService(world.journal);
+    const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+      lookup: world.resourceLookup,
+      orchestration: world.orchestration,
+      conversations,
+      conversationCapabilities: [ConversationSurfaceCapability.Review],
+    });
+    await world.journal.appendToStream(githubStream, 0, [
+      issueCommandEvent(
+        world,
+        '/approved',
+        205,
+        {
+          source: ReviewerAuthorizationSource.ProviderPermission,
+          permission: ProviderPermission.Write,
+        },
+        'maintainer',
+      ),
+    ]);
+    await processInbound(translator, world.journal, world.checkpoints);
+    const context = {
+      commandId: 'revise-before-approval',
+      correlationId: 'revise-before-approval' as never,
+      occurredAt: world.clock.now().toISOString(),
+      actor: { kind: 'operator' as const, id: 'maintainer' },
+    };
+    await world.orchestration.applyConversationCommand(
+      workflow.workItemId,
+      {
+        body: '/changes revise',
+        actorId: 'maintainer',
+        authorized: true,
+        reviewAuthorized: false,
+        capabilities: [ConversationSurfaceCapability.Review],
+      },
+      context,
+    );
+    const revised = await world.orchestration.get(workflow.workflowInstanceId);
+    await world.acceptOutcome(
+      workflow.workflowInstanceId,
+      revised!.pendingActivation!.activationId,
+      { kind: ActivityOutcomeKind.Done },
+    );
+    await processInbound(
+      createConversationCommandReactor(world.orchestration, {
+        conversations,
+        publish: async () => {},
+      }),
+      world.journal,
+      world.checkpoints,
+    );
+    expect((await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body).toContain(
+      'reviewed subject changed',
+    );
+    expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
+  });
+
+  it.each([
+    { body: '/approved', producer: 'MAINTAINER', reason: 'artifact producer' },
+    {
+      body: '/approved\n<!-- wake:agent -->',
+      producer: 'agent-account',
+      reason: 'independent-review authority',
+    },
+  ])(
+    'keeps configured-reviewer self-approval and Wake echo protections ($body)',
+    async ({ body, producer, reason }) => {
+      const { world, workflow } = await waitingIssueWorkflow();
+      await recordPlanPublication(world, workflow, producer);
+      const conversations = createConversationService(world.journal);
+      const translator = new InboundTranslator(world.journal, world.work, world.resources, {
+        lookup: world.resourceLookup,
+        orchestration: world.orchestration,
+        conversations,
+        conversationCapabilities: [ConversationSurfaceCapability.Review],
+      });
+      await world.journal.appendToStream(githubStream, 0, [
+        issueCommandEvent(
+          world,
+          body,
+          206,
+          {
+            source: ReviewerAuthorizationSource.ConfiguredReviewer,
+            reviewerId: 'maintainer',
+          },
+          'maintainer',
+        ),
+      ]);
+      await processInbound(translator, world.journal, world.checkpoints);
+      await processInbound(
+        createConversationCommandReactor(world.orchestration, {
+          conversations,
+          publish: async () => {},
+        }),
+        world.journal,
+        world.checkpoints,
+      );
+      expect((await world.orchestration.get(workflow.workflowInstanceId))?.status).toBe('waiting');
+      expect(
+        (await conversations.forWorkItem(workflow.workItemId))?.entries.at(-1)?.body,
+      ).toContain(reason);
+    },
+  );
+
   it('requires provider authorization and treats /accepted as approval on an issue wait', async () => {
     const fixture = await waitingIssueWorkflow();
+    await recordPlanPublication(fixture.world, fixture.workflow, 'agent-account');
     const apply = vi.spyOn(fixture.world.orchestration, 'applyConversationCommandWithFeedback');
     const conversations = createConversationService(fixture.world.journal);
     const translator = new InboundTranslator(
@@ -747,7 +1117,7 @@ describe('InboundTranslator', () => {
       3,
       {
         source: ReviewerAuthorizationSource.ProviderPermission,
-        permission: ProviderPermission.Write,
+        permission: ProviderPermission.Read,
       },
       'maintainer',
     );
@@ -1810,7 +2180,7 @@ async function blockedIssueWorkflow(
   return { world, workflow };
 }
 
-async function waitingIssueWorkflow() {
+async function waitingIssueWorkflow(kind = 'issue') {
   const world = new TestWorld();
   world.registerActivity({
     name: activityName('agent'),
@@ -1837,7 +2207,7 @@ async function waitingIssueWorkflow() {
   const work = await world.createWork({ objective: 'await issue approval' });
   const resource = await world.discoverResource({
     resourceId: `resource-${'0'.repeat(25)}4` as never,
-    kind: resourceKind('issue'),
+    kind: resourceKind(kind),
     externalKey: { adapter: 'github', key: 'atolis-hq/wake#583' },
     capabilities: [resourceCapability('commentable')],
   });
@@ -1864,6 +2234,7 @@ function issueCommandEvent(
   authorization: {
     readonly source: ReviewerAuthorizationSource;
     readonly permission?: ProviderPermission;
+    readonly reviewerId?: string;
   },
   resourceAuthorId = 'another-user',
 ) {
@@ -1910,4 +2281,68 @@ function watchGateVerdictMarker(runId: string): string {
     JSON.stringify({ wake: { watchGateVerdict: { runId, outcome: 'DONE' } } }),
     '```',
   ].join('\n');
+}
+
+async function recordPlanPublication(
+  world: TestWorld,
+  workflow: Awaited<ReturnType<typeof waitingIssueWorkflow>>['workflow'],
+  producerId: string | undefined,
+  suffix = 'test-plan',
+) {
+  const resourceId = (await world.resources.correlationsForWork(workflow.workItemId))[0]!
+    .resourceId;
+  const stream = { kind: 'resource', id: resourceId } as const;
+  const draft = createDeliveryIntentEventData({
+    eventId: `agent-run:${suffix}`,
+    eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+    occurredAt: world.clock.now().toISOString(),
+    correlationId: 'test-plan',
+    causationId: 'test-plan',
+    actor: { kind: 'integration', id: 'github' },
+    source: { kind: 'internal', id: 'test-plan' },
+    payload: {
+      workflowInstanceId: workflow.workflowInstanceId,
+      activationId: workflow.pendingActivation!.activationId,
+      resourceId,
+      report: {
+        runId: 'test-plan-run',
+        displayBody: 'Canonical plan',
+        outcome: 'DONE',
+        startedAt: world.clock.now().toISOString(),
+        finishedAt: world.clock.now().toISOString(),
+        metadata: {},
+        awaitingApproval: true,
+      },
+    },
+  });
+  const [event] = await world.journal.appendToStream(
+    stream,
+    (await world.journal.readStream(stream)).length,
+    [draft],
+  );
+  const intent = deliveryProjection.project(null, event!)!;
+  const service = new DeliveryService({
+    journal: world.journal,
+    intents: async () => [intent],
+    resource: async () => ({ resourceId, adapter: 'github' }),
+    adapter: () =>
+      createGitHubDelivery(
+        async () => 'published-comment',
+        undefined,
+        undefined,
+        undefined,
+        producerId === undefined ? undefined : async () => producerId,
+      ),
+    now: () => world.clock.now().toISOString(),
+  });
+  await service.deliverNext(new AbortController().signal);
+  const facts = (await world.journal.readStream(deliveryStream(draft.eventId))).map(
+    selectDeliveryEvent,
+  );
+  expect(
+    facts.find((fact) => fact?.event.eventType === DeliveryEventType.Confirmed)?.event.payload,
+  ).toMatchObject({
+    externalId: 'published-comment',
+    ...(producerId === undefined ? {} : { producerId }),
+  });
 }

@@ -13,7 +13,6 @@ import {
 import {
   ActivityEventType,
   createPullRequestService,
-  isReviewAuthorized,
   ReviewerAuthorizationSource,
   selectActivityEvent,
   type ObservePullRequest,
@@ -40,6 +39,7 @@ import {
   resourceStream,
   selectResourceEvent,
   type ResourceId,
+  type ResourceView,
 } from '../../../resources/index.js';
 import type { WorkService } from '../../../work/index.js';
 import { workItemId, type WorkItemId } from '../../../work/index.js';
@@ -60,7 +60,8 @@ import type {
   GitHubEventPayloads,
 } from '../contracts/events.js';
 import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
-import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
+import { GitHubAdapter } from '../contracts/vocabulary.js';
+import { conversationReviewAuthorization } from './conversation-approval-authorization.js';
 import { isHumanNonWakeReply } from './inbound-comment-syntax.js';
 import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
@@ -123,6 +124,7 @@ interface InboundTranslatorDependencies {
   readonly conclusion?: WorkConclusion;
   readonly conversations?: ConversationService;
   readonly conversationCapabilities?: readonly ConversationSurfaceCapability[];
+  readonly authenticatedLogin?: () => Promise<string>;
 }
 
 export class InboundTranslator {
@@ -160,6 +162,7 @@ export class InboundTranslator {
     private readonly resources?: ResourceService,
     dependencies: InboundTranslatorDependencies = {},
   ) {
+    this.authenticatedLogin = dependencies.authenticatedLogin;
     this.pullRequests = dependencies.pullRequests;
     this.ids = dependencies.ids ?? new UlidIdGenerator();
     this.lookup = dependencies.lookup;
@@ -183,6 +186,7 @@ export class InboundTranslator {
     this.reconciler = { reconcileOnce: () => this.reconcileOnce() };
   }
 
+  private readonly authenticatedLogin: (() => Promise<string>) | undefined;
   private readonly pullRequests: PullRequestService | undefined;
   private readonly ids: IdGenerator;
   private readonly lookup: ResourceLookup | undefined;
@@ -448,7 +452,7 @@ export class InboundTranslator {
           threadId: resource.externalKey.key,
           messageId: externalId,
           authorized: isAuthorizedWorkControlActor(event),
-          reviewAuthorized: isAuthorizedConversationActor(event),
+          ...(await this.reviewAuthorization(event, resource, correlation.workItemId)),
           canClarify: isHumanNonWakeReply(event.event.payload.actor.kind, event.event.payload.body),
           capabilities: this.conversationCapabilities,
           ...(event.event.payload.reviewKind !== 'issue' ||
@@ -459,6 +463,23 @@ export class InboundTranslator {
       },
       commandContext(event),
     );
+  }
+
+  private reviewAuthorization(
+    event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
+    resource: ResourceView,
+    workItemId: WorkItemId,
+  ) {
+    return conversationReviewAuthorization({
+      event,
+      journal: this.journal!,
+      resources: this.resources!,
+      resource,
+      workItemId,
+      adapter: this.adapter,
+      orchestration: this.orchestration,
+      authenticatedLogin: this.authenticatedLogin,
+    });
   }
 
   private async failureRecorded(sourceEventId: string): Promise<boolean> {
@@ -1044,18 +1065,6 @@ export class InboundTranslator {
       }
     }
   }
-}
-
-function isAuthorizedConversationActor(
-  event: GitHubAdapterEventOf<typeof GitHubEventType.CommentObserved>,
-): boolean {
-  const { actor, authorization, resourceAuthorId } = event.event.payload;
-  return isReviewAuthorized({
-    actorId: actor.id,
-    actorKind: actor.kind,
-    resourceAuthorId: resourceAuthorId ?? UnknownGitHubIdentity,
-    authorization: authorization ?? { source: ReviewerAuthorizationSource.None },
-  });
 }
 
 function observedCommentExternalId(

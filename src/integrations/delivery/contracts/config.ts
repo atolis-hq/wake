@@ -11,7 +11,11 @@ export interface ExternalDeliveryAdapter {
 }
 
 export type DeliveryResult =
-  | { readonly kind: typeof DeliveryResultKind.Confirmed; readonly externalId: string }
+  | {
+      readonly kind: typeof DeliveryResultKind.Confirmed;
+      readonly externalId: string;
+      readonly producerId?: string;
+    }
   | {
       readonly kind: typeof DeliveryResultKind.Failed;
       readonly code: string;
@@ -20,6 +24,10 @@ export type DeliveryResult =
   | { readonly kind: typeof DeliveryResultKind.Ambiguous; readonly reconciliationKey: string };
 
 export type ReconciliationResult =
-  | { readonly kind: typeof DeliveryResultKind.Confirmed; readonly externalId: string }
+  | {
+      readonly kind: typeof DeliveryResultKind.Confirmed;
+      readonly externalId: string;
+      readonly producerId?: string;
+    }
   | { readonly kind: typeof DeliveryResultKind.NotFound }
   | { readonly kind: typeof DeliveryResultKind.Unknown };
