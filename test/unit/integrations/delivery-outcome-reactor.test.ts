@@ -189,6 +189,7 @@ function confirmedEvent(overrides: {
   readonly intentEventId?: string;
   readonly workflowInstanceId?: string;
   readonly activationId?: string;
+  readonly producerId?: string;
 }) {
   const intentEventId = overrides.intentEventId ?? 'intent-1';
   return createEventData({
@@ -206,6 +207,7 @@ function confirmedEvent(overrides: {
       activationId: overrides.activationId ?? 'primary:work-1:activity:1',
       occurrenceOrdinal: 1,
       externalId: 'external-1',
+      ...(overrides.producerId === undefined ? {} : { producerId: overrides.producerId }),
     },
   }) as never;
 }
@@ -231,7 +233,7 @@ function failedEvent() {
   }) as never;
 }
 
-function reconciledConfirmedEvent() {
+function reconciledConfirmedEvent(producerId?: string) {
   return createEventData({
     eventId: 'intent-1:reconciled',
     eventType: DeliveryEventType.Reconciled,
@@ -248,6 +250,7 @@ function reconciledConfirmedEvent() {
       occurrenceOrdinal: 1,
       result: 'confirmed',
       externalId: 'external-1',
+      ...(producerId === undefined ? {} : { producerId }),
     },
   }) as never;
 }
@@ -635,6 +638,99 @@ it('resolves a confirmed reconciliation for its matching delivery wait', async (
   await reactor.react((await journal.readAll(0))[0]!);
 
   expect(accepted).toMatchObject([{ outcome: { kind: 'done' } }]);
+});
+
+it('accepts a confirmed delivery that carries the producer id', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1', producerId: 'producer-1' }),
+  ]);
+  const accepted: unknown[] = [];
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
+    },
+    new InMemoryProjectionStore(),
+  );
+  const host = new EventProcessorHost(
+    journal,
+    new InMemoryCheckpointStore(),
+    unitSerialiseRun,
+    clock,
+  );
+
+  await host.runOnce(reactor.processor);
+
+  expect(accepted).toMatchObject([{ outcome: { kind: 'done' } }]);
+});
+
+it('accepts a confirmed reconciliation that carries the producer id', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    reconciledConfirmedEvent('producer-1'),
+  ]);
+  const accepted: unknown[] = [];
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'waiting' },
+          waitingFor: { signalKind: 'delivery-result', intentEventId: 'intent-1' },
+        } as never;
+      },
+      async acceptOutcome(command) {
+        accepted.push(command);
+        return {} as never;
+      },
+    },
+    new InMemoryProjectionStore(),
+  );
+
+  await reactor.react((await journal.readAll(0))[0]!);
+
+  expect(accepted).toMatchObject([{ outcome: { kind: 'done' } }]);
+});
+
+it('keeps the producer id on a pending confirmation across reconciliation', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1', producerId: 'producer-1' }),
+  ]);
+  const states = new InMemoryProcessorStateStore();
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'unrelated', status: 'active' },
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('An active activation must leave the delivery pending');
+      },
+    },
+    new InMemoryProjectionStore(),
+    states,
+  );
+
+  await reactor.react((await journal.readAll(0))[0]!);
+  await reactor.reconcileOnce();
+
+  const stored = await states.read<{
+    readonly events: readonly StoredPendingDeliveryOutcome[];
+  }>('reactor:delivery-outcomes', 'pending-confirmations');
+  expect(stored?.value.events).toMatchObject([{ payload: { producerId: 'producer-1' } }]);
 });
 
 it('does not resolve a merely-still-open activation that never asked to wait on delivery', async () => {

@@ -85,7 +85,10 @@ const pendingDeliveryOutcomeSchema: z.ZodType<PendingDeliveryOutcome> = z.discri
   [
     pendingOutcomeHeaderSchema.extend({
       eventType: z.literal(DeliveryEventType.Confirmed),
-      payload: pendingCorrelationSchema.extend({ externalId: z.string().min(1) }),
+      payload: pendingCorrelationSchema.extend({
+        externalId: z.string().min(1),
+        producerId: z.string().min(1).optional(),
+      }),
     }),
     pendingOutcomeHeaderSchema.extend({
       eventType: z.literal(DeliveryEventType.Failed),
@@ -99,6 +102,7 @@ const pendingDeliveryOutcomeSchema: z.ZodType<PendingDeliveryOutcome> = z.discri
       payload: pendingCorrelationSchema.extend({
         result: z.literal(DeliveryResultKind.Confirmed),
         externalId: z.string().min(1),
+        producerId: z.string().min(1).optional(),
       }),
     }),
   ],
