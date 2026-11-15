@@ -14,12 +14,39 @@ export async function primaryExternalRef(
   suppliedCorrelations?: readonly ResourceCorrelationView[],
   suppliedResources?: readonly ResourceView[],
 ): Promise<string | undefined> {
+  const resource = await primaryResource(
+    root,
+    rawWorkItemId,
+    suppliedCorrelations,
+    suppliedResources,
+  );
+  return resource?.externalKey.key;
+}
+
+// Generic "repository" display field; only adapters that know a repository identity supply one.
+export async function primaryRepository(
+  root: CompositionRoot,
+  rawWorkItemId: string,
+): Promise<string | undefined> {
+  const resource = await primaryResource(root, rawWorkItemId);
+  return resource === undefined
+    ? undefined
+    : root.resolveResourceRepositoryIdentity(resource.externalKey);
+}
+
+async function primaryResource(
+  root: CompositionRoot,
+  rawWorkItemId: string,
+  suppliedCorrelations?: readonly ResourceCorrelationView[],
+  suppliedResources?: readonly ResourceView[],
+): Promise<ResourceView | undefined> {
   const correlations =
     suppliedCorrelations ?? (await root.resources.correlationsForWork(workItemId(rawWorkItemId)));
   const primary = correlations.find((value) => value.role === ResourceCorrelationRole.Primary);
   if (primary === undefined) return undefined;
-  const resource =
+  return (
     suppliedResources?.find((value) => value.resourceId === primary.resourceId) ??
-    (await root.resources.get(primary.resourceId));
-  return resource?.externalKey.key;
+    (await root.resources.get(primary.resourceId)) ??
+    undefined
+  );
 }

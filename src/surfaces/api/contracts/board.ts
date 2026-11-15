@@ -49,6 +49,7 @@ export interface BoardCardResponse {
   readonly totalCostUsd: number;
   readonly totalDurationMs: number;
   readonly externalRef?: string;
+  readonly repository?: string;
 }
 
 export interface BoardResponse {

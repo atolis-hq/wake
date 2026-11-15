@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
+import { resolveResourceRepositoryIdentity } from '../../../src/bootstrap/composition-root.js';
 import { boardProjection } from '../../../src/bootstrap/index.js';
 import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api-applications.js';
 import { RunStatus } from '../../../src/execution/index.js';
@@ -118,6 +119,53 @@ it('normalizes a retired single active-run phase during an immediate board API r
       phase: RunStatus.Started,
     },
   });
+});
+
+it('exposes the repository on board cards only when the adapter resolves one', async () => {
+  const github = workId('board-api-repo-github');
+  const other = workId('board-api-repo-other');
+  const card = (id: string, key: string) => ({
+    workItemKey: key,
+    workItemId: id,
+    objective: key,
+    condition: 'ready',
+    dwellSince: '2026-08-03T12:00:00.000Z',
+    runCount: 0,
+    activeRuns: {},
+    totalTokens: 0,
+    totalCostUsd: 0,
+    totalDurationMs: 0,
+  });
+  const root = rootWithBoard({
+    cards: { [github]: card(github, 'wk_github'), [other]: card(other, 'wk_other') },
+    workflows: {},
+    runs: {},
+    children: {},
+    childRuns: {},
+  } as unknown as ReturnType<typeof boardProjection.initial>);
+  const keys: Record<string, { adapter: string; key: string }> = {
+    [github]: { adapter: 'github', key: 'atolis-hq/wake#12' },
+    [other]: { adapter: 'fake', key: 'org/a#2' },
+  };
+  Object.assign(root, {
+    resolveResourceRepositoryIdentity,
+    resources: {
+      correlationsForWork: async (id: string) => [{ role: 'primary', resourceId: `res-${id}` }],
+      get: async (resourceId: string) => ({
+        resourceId,
+        externalKey: keys[resourceId.slice('res-'.length)],
+      }),
+    },
+  });
+
+  const result = await createSurfaceApiApplications(
+    root,
+    () => '2026-08-03T12:05:00.000Z',
+  ).board!.list({ limit: 10 });
+  const byKey = new Map(result.items.map((item) => [item.workItemKey, item]));
+
+  expect(byKey.get('wk_github')?.repository).toBe('atolis-hq/wake');
+  expect(byKey.get('wk_other')).not.toHaveProperty('repository');
 });
 
 function rootWithBoard(view: ReturnType<typeof boardProjection.initial>): CompositionRoot {
