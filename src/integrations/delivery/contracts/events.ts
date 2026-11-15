@@ -35,6 +35,7 @@ export interface DeliveryEventPayloads {
   readonly [DeliveryEventType.AttemptStarted]: DeliveryEventCorrelation;
   readonly [DeliveryEventType.Confirmed]: DeliveryEventCorrelation & {
     readonly externalId: string;
+    readonly producerId?: string | undefined;
   };
   readonly [DeliveryEventType.Failed]: DeliveryEventCorrelation & {
     readonly code: string;
@@ -49,6 +50,7 @@ export interface DeliveryEventPayloads {
       | {
           readonly result: typeof DeliveryResultKind.Confirmed;
           readonly externalId: string;
+          readonly producerId?: string | undefined;
         }
       | {
           readonly result: typeof DeliveryResultKind.NotFound | typeof DeliveryResultKind.Unknown;
@@ -80,6 +82,7 @@ const reconciledPayloadSchema = z.discriminatedUnion('result', [
   correlationSchema.extend({
     result: z.literal(DeliveryResultKind.Confirmed),
     externalId: z.string().min(1),
+    producerId: z.string().min(1).optional(),
   }),
   correlationSchema.extend({ result: z.literal(DeliveryResultKind.NotFound) }),
   correlationSchema.extend({ result: z.literal(DeliveryResultKind.Unknown) }),
@@ -96,7 +99,10 @@ const eventSchema: z.ZodType<DeliveryEvent> = z
     eventEnvelopeSchema.extend({
       event: eventDataSchema.extend({
         eventType: z.literal(DeliveryEventType.Confirmed),
-        payload: correlationSchema.extend({ externalId: z.string().min(1) }),
+        payload: correlationSchema.extend({
+          externalId: z.string().min(1),
+          producerId: z.string().min(1).optional(),
+        }),
       }),
       stream: deliveryStreamSchema,
     }),

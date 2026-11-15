@@ -21,6 +21,9 @@ export type ConversationEntryOrigin =
       readonly authorized?: boolean | undefined;
       /** Independent-review authority, separate from work control. */
       readonly reviewAuthorized?: boolean | undefined;
+      /** Surface attribution decision and opaque wait subjects for approval commands. */
+      readonly approvalRejectionReason?: string | undefined;
+      readonly approvalSubjects?: readonly string[] | undefined;
       /** Whether this participant may answer a clarification without control authority. */
       readonly canClarify?: boolean | undefined;
       /** Commands available to this entry's receiving surface. */

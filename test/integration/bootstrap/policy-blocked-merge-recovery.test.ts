@@ -402,57 +402,62 @@ it.each(['merged', 'closed', 'conflicting'] as const)(
   },
 );
 
-it('uses the pinned completion route after config changes and prioritizes prior merge evidence over a late approval', async () => {
-  const { root: original, path, provider } = await setup();
-  await until(original, () => waiting(original));
-  const wait = (await original.orchestration.get(iid))!.waitingFor!;
-  await observe(original, 'merged');
-  const changedConfig = config();
-  const changedWorkflow = {
-    ...workflow,
-    stages: {
-      ...workflow.stages,
-      'other-completion': workflow.stages['complete-issue'],
-      merge: {
-        ...workflow.stages.merge,
-        on: {
-          ...workflow.stages.merge.on,
-          done: {
-            then: 'complete-issue',
-            resourceTransitions: [
-              {
-                events: ['pr.state-changed'],
-                where: { state: 'merged' },
-                then: 'other-completion',
-              },
-            ],
+// Rebuilding both durable roots needs headroom under the parallel filesystem suite.
+it(
+  'uses the pinned completion route after config changes and prioritizes prior merge evidence over a late approval',
+  { timeout: 60_000 },
+  async () => {
+    const { root: original, path, provider } = await setup();
+    await until(original, () => waiting(original));
+    const wait = (await original.orchestration.get(iid))!.waitingFor!;
+    await observe(original, 'merged');
+    const changedConfig = config();
+    const changedWorkflow = {
+      ...workflow,
+      stages: {
+        ...workflow.stages,
+        'other-completion': workflow.stages['complete-issue'],
+        merge: {
+          ...workflow.stages.merge,
+          on: {
+            ...workflow.stages.merge.on,
+            done: {
+              then: 'complete-issue',
+              resourceTransitions: [
+                {
+                  events: ['pr.state-changed'],
+                  where: { state: 'merged' },
+                  then: 'other-completion',
+                },
+              ],
+            },
           },
         },
       },
-    },
-  };
-  const root = await createCompositionRoot(path, {
-    config: parseRootConfig({
-      ...changedConfig,
-      orchestration: { ...changedConfig.orchestration, workflows: { main: changedWorkflow } },
-    }),
-    fakeDeliveryProvider: provider,
-  });
-  await root.processorRuntime.catchUp('definition and evidence catch-up');
-  await root.orchestration.acceptSignal(
-    iid,
-    {
-      kind: wait.signalKind,
-      actorId: 'reviewer',
-      actorDecision: { authorized: true, evidenceId: 'late-approval' },
-      providerEventId: 'late-approval',
-      authority: { kind: 'human' },
-    },
-    command(),
-  );
-  expect((await root.orchestration.get(iid))?.currentStage).toBe('complete-issue');
-  await assertCompleted(root, provider);
-});
+    };
+    const root = await createCompositionRoot(path, {
+      config: parseRootConfig({
+        ...changedConfig,
+        orchestration: { ...changedConfig.orchestration, workflows: { main: changedWorkflow } },
+      }),
+      fakeDeliveryProvider: provider,
+    });
+    await root.processorRuntime.catchUp('definition and evidence catch-up');
+    await root.orchestration.acceptSignal(
+      iid,
+      {
+        kind: wait.signalKind,
+        actorId: 'reviewer',
+        actorDecision: { authorized: true, evidenceId: 'late-approval' },
+        providerEventId: 'late-approval',
+        authority: { kind: 'human' },
+      },
+      command(),
+    );
+    expect((await root.orchestration.get(iid))?.currentStage).toBe('complete-issue');
+    await assertCompleted(root, provider);
+  },
+);
 
 it.each(['closed', 'conflicting'] as const)(
   'blocks a primary merge wait for %s evidence without a repair route',

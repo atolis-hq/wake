@@ -689,8 +689,13 @@ sets. Granting `review-surface` or `operator-surface` enables command classes bu
 authorize an actor; the adapter must still verify its actor evidence before Wake applies a command.
 GitHub obtains collaborator permission evidence for syntactically valid slash commands.
 Human actors with repository write, maintain, or admin permission may control work on an issue
-they authored. Independent review remains separate: authors cannot approve their own issue or
-pull request, even through configured reviewer authority. Work control does not approve or merge
+they authored. Independent review remains separate: a trusted issue author may approve a plan
+produced by another account. Agent output belongs to the authenticated delivery account recorded
+when its publication is confirmed; that account cannot approve its own output (case-insensitive).
+PR gates use the PR author instead. Unknown or ambiguous attribution denies approval. Legacy
+confirmed Wake-marked agent publications without a recorded producer may use the integration's
+current authenticated login. Denial feedback identifies self-approval or unknown attribution.
+Configured reviewer authority does not bypass these rules. Work control does not approve or merge
 implementation or satisfy revision-bound review evidence.
 
 The authenticated control-plane operator retains human workflow-review authority: /approved and

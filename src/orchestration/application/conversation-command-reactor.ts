@@ -71,6 +71,8 @@ export function createConversationCommandReactor(
           authorized: entry.origin.authorized === true,
           // Legacy entries authorized commands only after enforcing review independence.
           reviewAuthorized: entry.origin.reviewAuthorized ?? entry.origin.authorized === true,
+          approvalRejectionReason: entry.origin.approvalRejectionReason,
+          approvalSubjects: entry.origin.approvalSubjects,
         };
         const context: CommandContext = {
           commandId: `${event.eventId}:conversation-command`,

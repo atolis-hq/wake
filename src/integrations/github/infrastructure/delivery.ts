@@ -1,7 +1,7 @@
 import { BuiltInActivityName } from '../../../activities/index.js';
 import type { ExternalDeliveryAdapter } from '../../delivery/contracts/config.js';
 import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
-import { DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
+import { DeliveryIntentKind, DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
 
 const GitHubDeliveryFailureCode = 'github-error';
 
@@ -12,11 +12,23 @@ export function createGitHubDelivery(
     intent: DeliveryIntentView,
   ) => Promise<{ readonly allowed: boolean; readonly reason?: string }>,
   mergedTarget?: (intent: DeliveryIntentView) => Promise<string | null>,
+  authenticatedLogin?: () => Promise<string>,
 ): ExternalDeliveryAdapter {
   async function confirmedMerge(intent: DeliveryIntentView) {
     if (intent.kind !== BuiltInActivityName.PullRequestMerge) return null;
     const externalId = await mergedTarget?.(intent);
     return externalId == null ? null : { kind: DeliveryResultKind.Confirmed, externalId };
+  }
+
+  async function publish(intent: DeliveryIntentView) {
+    // Resolve identity before publishing so an identity failure cannot lose a successful delivery.
+    const producerId =
+      intent.kind === DeliveryIntentKind.AgentRunPublish ? await authenticatedLogin?.() : undefined;
+    return {
+      kind: DeliveryResultKind.Confirmed,
+      externalId: await deliver(intent, intent.intentEventId),
+      ...(producerId === undefined ? {} : { producerId }),
+    };
   }
 
   return {
@@ -33,10 +45,7 @@ export function createGitHubDelivery(
           if (result !== undefined && !result.allowed)
             throw new Error(result.reason ?? 'auto-merge precondition failed');
         }
-        return {
-          kind: DeliveryResultKind.Confirmed,
-          externalId: await deliver(intent, intent.intentEventId),
-        };
+        return await publish(intent);
       } catch (error) {
         try {
           const merged = await confirmedMerge(intent);

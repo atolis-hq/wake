@@ -76,6 +76,7 @@ import { AdvanceWorkflow } from './advance-workflow.js';
 import {
   applyBuiltInConversationCommand,
   continuationCommandRejection,
+  conversationApprovalRejection,
   conversationCommand,
   type ConversationCommandInput,
   type ConversationCommandResult,
@@ -508,6 +509,8 @@ export class OrchestrationService {
       (workflow) => workflow.workItemId === workItemId,
     );
     if (conversationCommandAlreadyApplied(workflows, context.commandId)) return { applied: true };
+    const approvalRejection = conversationApprovalRejection(command, input, workflows);
+    if (approvalRejection !== undefined) return { applied: false, reason: approvalRejection };
     const work = await this.work.get(workItemId);
     if (!isWorkControllable(work))
       return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };

@@ -129,7 +129,10 @@ export class DeliveryService {
     const result = await adapter.deliver(intent, signal);
     switch (result.kind) {
       case DeliveryResultKind.Confirmed:
-        await this.append(intent, this.confirmed(intent, occurrence, result.externalId));
+        await this.append(
+          intent,
+          this.confirmed(intent, occurrence, result.externalId, result.producerId),
+        );
         break;
       case DeliveryResultKind.Failed:
         await this.append(intent, this.failed(intent, occurrence, result.code, result.message));
@@ -204,11 +207,16 @@ export class DeliveryService {
     intent: DeliveryIntentView,
     occurrence: DeliveryOccurrence,
     externalId: string,
+    producerId?: string,
   ): DeliveryEventDataInput {
     return {
       ...this.metadata(intent, occurrence, DeliveryEventType.Confirmed),
       eventType: DeliveryEventType.Confirmed,
-      payload: { ...this.correlation(intent, occurrence), externalId },
+      payload: {
+        ...this.correlation(intent, occurrence),
+        externalId,
+        ...(producerId === undefined ? {} : { producerId }),
+      },
     };
   }
 
@@ -264,7 +272,12 @@ export class DeliveryService {
         return {
           ...metadata,
           eventType: DeliveryEventType.Reconciled,
-          payload: { ...correlation, result: result.kind, externalId: result.externalId },
+          payload: {
+            ...correlation,
+            result: result.kind,
+            externalId: result.externalId,
+            ...(result.producerId === undefined ? {} : { producerId: result.producerId }),
+          },
         };
       case DeliveryResultKind.NotFound:
       case DeliveryResultKind.Unknown:

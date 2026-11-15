@@ -3,6 +3,7 @@ import { ActivityOutcomeKind } from '../../activities/index.js';
 import { type WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
+  ApprovalAuthorityKind,
   ConversationBuiltInCommand,
   ConversationSurfaceCapability,
 } from '../contracts/vocabulary.js';
@@ -27,6 +28,8 @@ export interface ConversationCommandInput {
   readonly authorized: boolean;
   /** Independent-review authority must be supplied explicitly. */
   readonly reviewAuthorized?: boolean;
+  readonly approvalRejectionReason?: string | undefined;
+  readonly approvalSubjects?: readonly string[] | undefined;
   /** Explicit continuation reenters the agent stage without a review decision. */
   readonly continuation?: boolean;
 }
@@ -93,7 +96,7 @@ export async function applyBuiltInConversationCommand(
   ) {
     if (!input.reviewAuthorized)
       return denied(
-        'Independent-review authority is required. An author cannot approve their own work; clarification uses /changes with instructions.',
+        'Independent-review authority is required: the approver must be a trusted human reviewer.',
       );
     let applied = false;
     for (const workflow of input.workflows)
@@ -153,4 +156,48 @@ export function continuationCommandRejection(
   if (input.body.trim().slice(command.length).trim() === '')
     return 'Supply instructions after /changes to continue the blocked stage.';
   return null;
+}
+
+/** Binds surface approval evidence to the exact wait observed at intake. */
+export function conversationApprovalSubject(workflow: WorkflowInstanceView): string {
+  return JSON.stringify([
+    workflow.workflowInstanceId,
+    workflow.pendingActivation?.activationId,
+    workflow.waitingFor?.signalKind,
+    workflow.waitingFor?.waitStartedAt,
+    workflow.waitingFor?.resourceId,
+    workflow.waitingFor?.revision,
+  ]);
+}
+
+export function conversationApprovalRejection(
+  command: string,
+  input: ConversationCommandInput,
+  workflows: readonly WorkflowInstanceView[],
+): string | undefined {
+  if (
+    command !== ConversationBuiltInCommand.Approved &&
+    command !== ConversationBuiltInCommand.Accepted
+  )
+    return undefined;
+  if (input.approvalRejectionReason !== undefined) return input.approvalRejectionReason;
+  if (
+    input.approvalSubjects !== undefined &&
+    workflows.some(
+      (workflow) =>
+        isHumanConversationApprovalWait(workflow) &&
+        !input.approvalSubjects!.includes(conversationApprovalSubject(workflow)),
+    )
+  )
+    return 'Approval attribution is unknown for the current wait; the reviewed subject changed.';
+  return undefined;
+}
+
+export function isHumanConversationApprovalWait(workflow: WorkflowInstanceView): boolean {
+  const wait = workflow.waitingFor;
+  return (
+    wait !== undefined &&
+    (wait.from === undefined ||
+      wait.from.some((authority) => authority.kind === ApprovalAuthorityKind.Human))
+  );
 }
