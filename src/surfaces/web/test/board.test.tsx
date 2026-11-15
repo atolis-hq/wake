@@ -596,6 +596,74 @@ describe('board', () => {
     expect(await screen.findByRole('heading', { name: 'No stage (1)' })).toBeTruthy();
   });
 
+  it('groups by repository alphabetically with a trailing fallback group', async () => {
+    const user = userEvent.setup();
+    window.localStorage.clear();
+    const card = (key: string, repository?: string) => ({
+      workItemKey: `wk_${key}`,
+      workItemId: `work-${key}`,
+      objective: `${key} work`,
+      condition: 'ready',
+      ...(repository === undefined ? {} : { repository }),
+      dwellSince: asOf,
+      runCount: 1,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+    });
+    const client = new WakeApiClient(async (input) => {
+      const body = String(input).includes('/board')
+        ? {
+            items: [
+              card('none'),
+              card('z', 'org/zeta'),
+              card('a1', 'org/alpha'),
+              card('a2', 'org/alpha'),
+            ],
+            conditionCounts: { ready: 4 },
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
+        : { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App client={client} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('listitem', { name: 'z work' });
+    await user.selectOptions(screen.getByLabelText('Group by'), 'repository');
+
+    const lanes = screen
+      .getAllByRole('button')
+      .map((node) => node.textContent?.replace(/[▸▾]/g, ''))
+      .filter((text) => /\(\d+\)$/.test(text ?? '') && /org\/|No repository/.test(text ?? ''));
+    expect(lanes).toEqual(['org/alpha (2)', 'org/zeta (1)', 'No repository (1)']);
+    expect(window.localStorage.getItem('wake:board:group-by')).toBe('repository');
+    window.localStorage.clear();
+  });
+
+  it('decodes the optional repository on board cards', () => {
+    const base = {
+      workItemKey: 'wk_r',
+      workItemId: 'work-r',
+      objective: 'Repo',
+      condition: 'ready',
+      dwellSince: asOf,
+      runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      activeRuns: {},
+    };
+    expect(decodeBoardCard({ ...base, repository: 'org/a' }).repository).toBe('org/a');
+    expect(decodeBoardCard(base)).not.toHaveProperty('repository');
+  });
+
   it('persists the selected grouping and restores it on the next render', async () => {
     const user = userEvent.setup();
     window.localStorage.clear();

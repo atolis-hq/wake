@@ -14,7 +14,7 @@ const collapseStorageKey = 'wake:board:collapsed-columns';
 const groupByStorageKey = 'wake:board:group-by';
 const swimlaneCollapseStorageKey = 'wake:board:collapsed-swimlanes';
 const boardColumns = ['ready', 'active', 'needs-input', 'error', 'finished'] as const;
-const groupByOptions = ['none', 'workflowName', 'stage'] as const;
+const groupByOptions = ['none', 'workflowName', 'stage', 'repository'] as const;
 type GroupBy = (typeof groupByOptions)[number];
 
 function swimlaneStorageId(groupBy: Exclude<GroupBy, 'none'>, laneKey: string): string {
@@ -41,6 +41,7 @@ function writeGroupBy(groupBy: GroupBy): void {
 const ungroupedLabel: Record<Exclude<GroupBy, 'none'>, string> = {
   workflowName: 'No workflow',
   stage: 'No stage',
+  repository: 'No repository',
 };
 
 interface Swimlane {
@@ -66,14 +67,19 @@ function groupItems(items: readonly BoardCardResponse[], groupBy: GroupBy): read
   if (groupBy === 'none') return [{ key: 'all', label: undefined, items }];
   const buckets = new Map<string, BoardCardResponse[]>();
   for (const item of items) {
-    const value = groupBy === 'workflowName' ? item.workflowName : item.stage;
+    const value = item[groupBy];
     const key = value === undefined || value === '' ? ungroupedLabel[groupBy] : value;
     const bucket = buckets.get(key);
     if (bucket) bucket.push(item);
     else buckets.set(key, [item]);
   }
+  const fallback = ungroupedLabel[groupBy];
   return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) =>
+      groupBy === 'repository' && (a === fallback || b === fallback)
+        ? Number(a === fallback) - Number(b === fallback)
+        : a.localeCompare(b),
+    )
     .map(([key, laneItems]) => ({ key, label: key, items: laneItems }));
 }
 
@@ -130,6 +136,7 @@ export function Board() {
             <option value="none">None</option>
             <option value="workflowName">Workflow</option>
             <option value="stage">Stage</option>
+            <option value="repository">Repository</option>
           </select>
         </label>
       </div>

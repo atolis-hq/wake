@@ -29,7 +29,7 @@ import {
   type BoardProjectionView,
 } from './board-projection.js';
 import type { CompositionRoot } from './composition-root.js';
-import { primaryExternalRef } from './external-ref.js';
+import { primaryExternalRef, primaryRepository } from './external-ref.js';
 import {
   createSelfUpdateFailureLog,
   describeSelfUpdateFailure,
@@ -81,6 +81,7 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
+          const repository = await primaryRepository(root, card.workItemId);
           const {
             activeRun: _legacyActiveRun,
             activeRuns: _activeRuns,
@@ -97,6 +98,7 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
               ]),
             ),
             ...(externalRef === undefined ? {} : { externalRef }),
+            ...(repository === undefined ? {} : { repository }),
             ...(card.lastRunAt === undefined
               ? {}
               : { lastRunAgeMs: elapsedSince(card.lastRunAt, nowMs) }),
