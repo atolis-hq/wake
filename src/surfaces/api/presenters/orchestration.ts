@@ -1,6 +1,7 @@
 import {
   isGroupBudgetExtensionEligible,
   isOperatorRetryEligible,
+  observedRetryDescription,
   WorkflowStatus,
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
@@ -18,6 +19,7 @@ export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowIn
       : { parentWorkflowInstanceId: value.parentWorkflowInstanceId }),
     status: value.status,
     currentStage: value.currentStage,
+    ...observedRetryCondition(value),
     ...(value.status === WorkflowStatus.Blocked && value.blockReason !== undefined
       ? { blockReason: value.blockReason }
       : {}),
@@ -26,5 +28,17 @@ export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowIn
     ...(value.waitingFor === undefined
       ? {}
       : { waitingFor: { signalKind: value.waitingFor.signalKind } }),
+  };
+}
+
+function observedRetryCondition(value: WorkflowInstanceView): { retryCondition?: string } {
+  if (value.status !== WorkflowStatus.Waiting || value.waitingFor?.observed === undefined)
+    return {};
+  return {
+    retryCondition: observedRetryDescription(
+      value.waitingFor.observed,
+      value.observedRetry?.activationId === value.pendingActivation?.activationId &&
+        value.observedRetry?.exhausted,
+    ),
   };
 }

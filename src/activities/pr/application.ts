@@ -261,7 +261,19 @@ class JournalPullRequestService implements PullRequestService {
   async authorityInput(
     workItemId: ObservePullRequest['workItemId'],
   ): Promise<PullRequestAuthorityInput> {
+    // Capture before reading views so a concurrent append remains visible to catch-up.
+    const workStream = workItemStream(workItemId);
+    const workVersion = (await this.journal.readStream(workStream)).length;
     const correlations = await this.resources.correlationsForWork(workItemId);
+    const observed = [
+      { stream: workStream, version: workVersion },
+      ...(await Promise.all(
+        correlations.map(async ({ resourceId }) => {
+          const stream = resourceStream(resourceId);
+          return { stream, version: (await this.journal.readStream(stream)).length };
+        }),
+      )),
+    ];
     const entries = await Promise.all(
       correlations.map(async ({ resourceId }) => this.resourceEntry(resourceId)),
     );
@@ -273,6 +285,7 @@ class JournalPullRequestService implements PullRequestService {
       await Promise.all(resources.map(({ resource }) => this.acceptedSignals(resource.resourceId)))
     ).flat();
     return {
+      observed,
       work: await this.work.get(workItemId),
       resources,
       pullRequests,

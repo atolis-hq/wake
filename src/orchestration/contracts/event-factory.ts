@@ -68,6 +68,8 @@ export function createOrchestrationEventData(
       return createEventData(input);
     case OrchestrationEventType.ActivityWaiting:
       return createEventData(input);
+    case OrchestrationEventType.ObservedStateRetryRecorded:
+      return createEventData(input);
     case OrchestrationEventType.SignalWaitStarted:
       return createEventData(input);
     case OrchestrationEventType.SignalDeferred:

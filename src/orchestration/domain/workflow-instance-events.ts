@@ -58,6 +58,7 @@ export type MutableWorkflowInstance = {
   repeatCounts: Record<string, number>;
   retryCounts: Record<string, number>;
   waitingFor?: WorkflowInstanceView['waitingFor'];
+  observedRetry?: WorkflowInstanceView['observedRetry'];
   supplementalQueue: Array<WorkflowInstanceView['supplementalQueue'][number]>;
   acceptedSignalIds: string[];
   operatorRetryCommandIds: string[];
@@ -92,6 +93,7 @@ type LifecycleFact = FactsOf<
   | typeof OrchestrationEventType.RetryCounted
   | typeof OrchestrationEventType.InstanceCompleted
   | typeof OrchestrationEventType.InstanceBlocked
+  | typeof OrchestrationEventType.ObservedStateRetryRecorded
   | typeof OrchestrationEventType.OperatorRetryRequested
   | typeof OrchestrationEventType.InstanceSuperseded
 >;
@@ -196,6 +198,8 @@ function isLifecycleFact(event: WorkflowFact): event is LifecycleFact {
     case OrchestrationEventType.RetryCounted:
     case OrchestrationEventType.InstanceCompleted:
     case OrchestrationEventType.InstanceBlocked:
+    case OrchestrationEventType.ObservedStateRetryRecorded:
+      return true;
     case OrchestrationEventType.OperatorRetryRequested:
     case OrchestrationEventType.InstanceSuperseded:
       return true;
@@ -226,6 +230,9 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.blockReason = event.payload.reason;
       if (event.payload.deliveryGate === undefined) delete state.deliveryGateBlock;
       else state.deliveryGateBlock = event.payload.deliveryGate;
+      return;
+    case OrchestrationEventType.ObservedStateRetryRecorded:
+      state.observedRetry = event.payload;
       return;
     case OrchestrationEventType.OperatorRetryRequested:
       state.operatorRetryCommandIds.push(event.payload.commandId);
@@ -344,6 +351,7 @@ function applySignalWaitStarted(
   state.status = orchestrationStatusTransitions[OrchestrationEventType.SignalWaitStarted]!;
   state.waitingFor = {
     signalKind: event.payload.signalKind,
+    ...(event.payload.observed === undefined ? {} : { observed: event.payload.observed }),
     ...(event.payload.timeoutMs === undefined ? {} : { timeoutMs: event.payload.timeoutMs }),
     ...(event.payload.waitStartedAt === undefined
       ? {}
@@ -425,6 +433,7 @@ export function immutableWorkflowInstanceView(
       ? {}
       : { deliveryGateBlock: state.deliveryGateBlock }),
     currentStage: state.currentStage,
+    ...(state.observedRetry === undefined ? {} : { observedRetry: state.observedRetry }),
     repeatCounts: state.repeatCounts,
     retryCounts: state.retryCounts,
     supplementalQueue: state.supplementalQueue,

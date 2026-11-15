@@ -9,6 +9,7 @@ import {
 } from '../execution/index.js';
 import {
   isApprovalAwaitingSignalKind,
+  observedRetryDescription,
   OrchestrationEventType,
   orchestrationStatusTransitions,
   selectWorkflowOrchestrationEvent,
@@ -85,6 +86,7 @@ interface StoredCard {
   readonly workflowName?: string;
   readonly stage?: string;
   readonly blockReason?: string;
+  readonly retryCondition?: string;
   readonly dwellSince: string;
   readonly runCount: number;
   /** Set on delegated children; present only for work created after delegation existed. */
@@ -325,6 +327,20 @@ function projectWorkflowUpdate(
   // the board instead of silently sitting at whatever condition it had
   // before — this is exactly the class of gap that let the card sit in
   // Ready while GitHub's own label already said working.
+  if (
+    event.event.eventType === OrchestrationEventType.ObservedStateRetryRecorded &&
+    event.event.payload.exhausted
+  )
+    return {
+      ...view,
+      cards: {
+        ...view.cards,
+        [workId]: {
+          ...card,
+          retryCondition: observedRetryDescription([], true),
+        },
+      },
+    };
   const status = orchestrationStatusTransitions[event.event.eventType];
   if (status === undefined) return view;
   const withCondition = cardForWorkflowStatus(card, status, event);
@@ -336,6 +352,9 @@ function projectWorkflowUpdate(
         [workId]: {
           ...withCondition,
           ...awaitingApprovalField(event.event.payload.signalKind),
+          ...(event.event.payload.observed === undefined
+            ? {}
+            : { retryCondition: observedRetryDescription(event.event.payload.observed) }),
         },
       },
     };
@@ -401,7 +420,7 @@ function awaitingApprovalField(signalKind: SignalName) {
 }
 
 function withoutBlockReason(card: StoredCard): StoredCard {
-  const { blockReason: _blockReason, ...withoutReason } = card;
+  const { blockReason: _blockReason, retryCondition: _retryCondition, ...withoutReason } = card;
   return withoutReason;
 }
 

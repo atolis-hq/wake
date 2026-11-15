@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { activityName } from '../../../src/activities/index.js';
+import { activityName, createPullRequestService } from '../../../src/activities/index.js';
 import {
   orchestrationGroupId,
   signalName,
   workflowInstanceId,
 } from '../../../src/orchestration/contracts/identifiers.js';
-import { resourceCapability, resourceKind } from '../../../src/resources/index.js';
+import { createObservedStateReactor } from '../../../src/orchestration/index.js';
+import { resourceCapability, resourceKind, resourceStream } from '../../../src/resources/index.js';
 import { resId, workId } from '../../support/identities.js';
 
 import { activationId, createPullRequestMergeActivity } from '../../../src/activities/index.js';
@@ -353,4 +354,151 @@ it('a scoped parent merge keeps its intent on the original child PR with the exa
       }),
     }),
   ]);
+});
+
+it.each([false, true])(
+  'reconsiders merge when the first PR state arrives (before wait: %s)',
+  async (beforeWait) => {
+    const world = new TestWorld();
+    const work = await world.createWork({
+      objective: 'merge arriving PR state',
+      workItemId: workId('late-pr'),
+    });
+    const resource = resId('1');
+    await world.discoverResource({
+      resourceId: resource,
+      kind: resourceKind('pull-request'),
+      externalKey: { adapter: 'github', key: 'owner/repo#118' },
+      capabilities: [
+        resourceCapability('reviewable'),
+        resourceCapability('revisioned'),
+        resourceCapability('mergeable'),
+      ],
+    });
+    await world.resources.correlate(
+      resource,
+      work.workItemId,
+      'primary',
+      command(world, 'correlate-late'),
+    );
+    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+    world.registerActivity(activity);
+    world.configureWorkflow('late', {
+      stages: {
+        merge: {
+          activity: 'pr.merge',
+          requiresApproval: false,
+          with: {
+            target: 'primary',
+            method: 'merge',
+            requireChecks: true,
+            requireApproval: false,
+            autoMerge: true,
+          },
+          on: { blocked: { then: 'await-human' }, done: { then: 'done' } },
+        },
+      },
+    });
+    const initial = await world.startWorkflow({
+      workItemId: work.workItemId,
+      workflowName: 'late',
+    });
+    const execute = (id: ReturnType<typeof activationId>) =>
+      activity.handler.execute(
+        {
+          ...invocation(work.workItemId, {
+            target: 'primary',
+            method: 'merge',
+            requireChecks: true,
+            requireApproval: false,
+            autoMerge: true,
+          }),
+          activationId: id,
+          workflowInstanceId: initial.workflowInstanceId,
+          orchestrationGroupId: initial.orchestrationGroupId,
+        },
+        context(),
+      );
+    expect(await world.pullRequests.get(resource)).toBeNull();
+    const denied = await execute(initial.pendingActivation!.activationId);
+    expect(denied).toMatchObject({
+      kind: 'blocked',
+      data: { reason: 'missing-resource' },
+      observed: expect.arrayContaining([
+        expect.objectContaining({ stream: resourceStream(resource) }),
+      ]),
+    });
+    const observe = () =>
+      world.pullRequests.observe(
+        {
+          resourceId: resource,
+          workItemId: work.workItemId,
+          state: 'open',
+          headRevision: 'head',
+          baseRevision: 'base',
+          checks: 'passing',
+          mergeability: 'clean',
+        },
+        command(world, 'first-pr-state'),
+      );
+    if (beforeWait) await observe();
+    await world.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: initial.workflowInstanceId,
+        activationId: initial.pendingActivation!.activationId,
+        outcome: denied,
+      },
+      command(world, 'accept-block'),
+    );
+    const reactor = createObservedStateReactor(world.orchestration);
+    if (!beforeWait) {
+      await world.orchestration.retryObservedState((await world.journal.readAll(0)).at(-1)!);
+      expect(
+        (await world.orchestration.get(initial.workflowInstanceId))?.pendingActivation?.ordinal,
+      ).toBe(1);
+      await observe();
+    }
+    const trigger = (await world.journal.readAll(0)).at(-1)!;
+    expect(reactor.consumer).toBe('reactor:orchestration.observed-state');
+    await world.orchestration.retryObservedState(trigger);
+    await world.orchestration.retryObservedState(trigger);
+    const retried = (await world.orchestration.get(initial.workflowInstanceId))!;
+    expect(retried.pendingActivation?.ordinal).toBe(2);
+    expect(await execute(retried.pendingActivation!.activationId)).toMatchObject({
+      kind: 'waiting',
+    });
+    expect(await execute(retried.pendingActivation!.activationId)).toMatchObject({
+      kind: 'waiting',
+    });
+    expect(await world.events('pr.merge-requested')).toHaveLength(1);
+  },
+);
+
+it('records attempted absent authority streams at version zero', async () => {
+  const world = new TestWorld();
+  const missingWork = workId('absent');
+  const missingResource = resId('absent');
+  const service = createPullRequestService(world.journal, world.work, {
+    ...world.resources,
+    async correlationsForWork() {
+      return [
+        {
+          resourceId: missingResource,
+          workItemId: missingWork,
+          role: 'primary',
+          provenance: 'provider-observed',
+          establishedByEventId: 'correlation',
+        },
+      ];
+    },
+  });
+  expect(await service.authorityInput(missingWork)).toMatchObject({
+    work: null,
+    resources: [],
+    pullRequests: [],
+    observed: [
+      { stream: { kind: 'work-item', id: missingWork }, version: 0 },
+      { stream: resourceStream(missingResource), version: 0 },
+    ],
+  });
 });

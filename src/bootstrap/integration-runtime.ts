@@ -75,6 +75,7 @@ import { type Clock, type UlidIdGenerator } from '../kernel/index.js';
 import {
   compileWorkflowSelectors,
   createConversationCommandReactor,
+  createObservedStateReactor,
   createPullRequestTransitionEvidence,
   createResourceTransitionReactor,
   createWatchReactor,
@@ -364,6 +365,7 @@ export async function composeIntegrationRuntime(
       },
     ],
   });
+  const observedState = createObservedStateReactor(input.orchestration);
   const resourceTransitions = createResourceTransitionReactor(
     input.orchestration,
     resourceTransitionEvidence,
@@ -486,6 +488,7 @@ export async function composeIntegrationRuntime(
       ...triggerReactors,
       watch.processor,
       resourceTransitions.processor,
+      observedState,
       artifacts.processor,
       outcomes.processor,
       agentRunPublications.processor,

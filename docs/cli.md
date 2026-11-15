@@ -64,7 +64,12 @@ scheduler. Use `wake doctor` after initialization and sandbox build, and use
 
 - `wake audit <workItemId>` reads canonical journal facts for that WorkItem,
   rather than relying on a projection, so it remains useful while views are
-  rebuilt.
+  rebuilt. It also includes workflow retry facts. State-dependent blocks show
+  "blocked, will retry when <streams> change" (for example `resource:<id>` or
+  `work:<id>`). PR merge opts in when correlated PR state is missing; policy
+  denials still need human action. Five retries are allowed per original blocked
+  activation; further changes record exhaustion and leave it blocked. The workflow
+  detail API and board payload expose this message as `retryCondition`.
 - `wake correlate <resource> <workItemId>` records a manual resource
   correlation in that order. Use it only when normal integration correlation
   cannot establish the intended link.

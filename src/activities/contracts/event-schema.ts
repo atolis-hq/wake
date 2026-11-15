@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pullRequestCheckEvidenceSchema } from '../pr/check-evidence.js';
 import { mergePolicyDetailsSchema } from '../pr/merge-policy-denial.js';
 import { parentActionContextSchema } from '../pr/parent-scope.js';
+import { observedStreamsSchema } from './observed-streams.js';
 
 import { eventDataSchema, eventEnvelopeSchema } from '@atolis-hq/eventing';
 import { brandedStringSchema } from '../../kernel/index.js';
@@ -172,6 +173,7 @@ export const requestedOutcomeSchema = z
 export const deniedOutcomeSchema = z
   .object({
     kind: z.literal(ActivityOutcomeKind.Blocked),
+    observed: observedStreamsSchema.optional(),
     data: z
       .object({
         reason: denialCodeSchema,

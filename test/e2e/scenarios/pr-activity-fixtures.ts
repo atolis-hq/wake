@@ -145,6 +145,7 @@ export async function createComposedMergeRoot(
 export async function prepareComposedSafeMerge(
   root: CompositionRoot,
   checks: 'unknown' | 'pending' | 'passing' | 'failing' = 'passing',
+  missingState = false,
 ): Promise<WorkflowInstanceId> {
   const context = composedCommand('create-work');
   const work = await root.work.create(
@@ -171,29 +172,31 @@ export async function prepareComposedSafeMerge(
     'primary',
     composedCommand('correlate-primary'),
   );
-  await root.pullRequests.observe(
-    {
-      resourceId: primary,
-      workItemId: work.workItemId,
-      state: 'open',
-      headRevision: 'revision-a',
-      baseRevision: 'base-a',
-      checks,
-    },
-    composedCommand('observe-primary'),
-  );
-  await root.pullRequests.acceptReviewSignal(
-    {
-      resourceId: primary,
-      revision: 'revision-a',
-      actorId: 'reviewer',
-      actorKind: 'human',
-      acceptedEventId: 'review-reviewer',
-      resourceAuthorId: 'author',
-      authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
-    },
-    composedCommand('accept-review'),
-  );
+  if (!missingState) {
+    await root.pullRequests.observe(
+      {
+        resourceId: primary,
+        workItemId: work.workItemId,
+        state: 'open',
+        headRevision: 'revision-a',
+        baseRevision: 'base-a',
+        checks,
+      },
+      composedCommand('observe-primary'),
+    );
+    await root.pullRequests.acceptReviewSignal(
+      {
+        resourceId: primary,
+        revision: 'revision-a',
+        actorId: 'reviewer',
+        actorKind: 'human',
+        acceptedEventId: 'review-reviewer',
+        resourceAuthorId: 'author',
+        authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+      },
+      composedCommand('accept-review'),
+    );
+  }
   const workflow = await root.orchestration.start(
     {
       workflowInstanceId: workflowInstanceId('workflow-merge'),

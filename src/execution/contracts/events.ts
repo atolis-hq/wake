@@ -12,6 +12,7 @@ import {
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
   ExternalExecutionKind,
+  observedStreamsSchema,
   type ActivationId,
   type ActivityName,
   type ActivityOrchestrationGroupId,
@@ -326,7 +327,13 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend(
             .string()
             .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i)
             .optional(),
-          outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
+          outcome: z
+            .object({
+              kind: z.string().min(1),
+              data: z.unknown().optional(),
+              observed: observedStreamsSchema.optional(),
+            })
+            .strict(),
           finishedAt: offsetIsoTimestampSchema,
         })
         .strict(),
@@ -393,7 +400,13 @@ const runEventSchema: z.ZodType<RunExecutionEvent> = eventEnvelopeSchema.extend(
       payload: z
         .object({
           result: runnerResultPayloadSchema,
-          outcome: z.object({ kind: z.string().min(1), data: z.unknown().optional() }).strict(),
+          outcome: z
+            .object({
+              kind: z.string().min(1),
+              data: z.unknown().optional(),
+              observed: observedStreamsSchema.optional(),
+            })
+            .strict(),
           finishedAt: offsetIsoTimestampSchema,
         })
         .strict(),

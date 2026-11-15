@@ -18,6 +18,8 @@ export * from './application/resource-transition-evidence.js';
 
 export * from './application/resource-transition-matching.js';
 
+export * from './application/observed-state-reactor.js';
+
 export * from './application/resource-transition-reactor.js';
 
 export * from './application/signal-reactor.js';
@@ -47,6 +49,8 @@ export * from './contracts/event-factory.js';
 export * from './contracts/identifiers.js';
 
 export * from './contracts/streams.js';
+
+export * from './contracts/observed-retry-description.js';
 
 export * from './contracts/views.js';
 

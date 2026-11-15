@@ -364,6 +364,7 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     <dt>Stage</dt>
                     <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
                   </div>
+                  {primaryWorkflow?.retryCondition && <p>{primaryWorkflow.retryCondition}</p>}
                   {primaryWorkflow?.mergePolicyBlock && (
                     <>
                       <div>

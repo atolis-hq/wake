@@ -16,8 +16,6 @@ const unboundedReadAllowlist: Readonly<Record<string, string>> = {
     'foldedJournalView reads only the tail after the position it already holds',
   'src/bootstrap/surface-api-applications.ts':
     'fallback for journals without readLatest; the production journal pages from the end',
-  'src/bootstrap/surface-cli-applications.ts':
-    'the one-off `wake audit` command, run per invocation and not in a resident loop',
   'src/surfaces/cli/commands/audit.ts':
     'one-off audit over canonical facts, deliberately independent of projections',
 };

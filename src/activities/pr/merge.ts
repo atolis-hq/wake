@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { readMergePolicyDenial } from './merge-policy-denial.js';
-import { MergeMethod } from './vocabulary.js';
+import { MergeMethod, PullRequestDenialCode } from './vocabulary.js';
 
 import type { CommandContext, EventJournal } from '@atolis-hq/eventing';
 import {
@@ -131,6 +131,10 @@ async function denyByAuthority(
     decisionKind: 'denied',
     outcome: {
       kind: ActivityOutcomeKind.Blocked,
+      ...(decision.reason === PullRequestDenialCode.MissingResource &&
+      authority.observed !== undefined
+        ? { observed: authority.observed }
+        : {}),
       data: {
         reason: decision.reason,
         ...(policyDenial === null

@@ -51,6 +51,8 @@ export type WakeCommand =
   | { readonly kind: 'sandbox'; readonly arguments: readonly string[] };
 
 export interface AuditRecord {
+  readonly payload?: unknown;
+  readonly retryCondition?: string;
   readonly eventId: string;
   readonly eventType: string;
   readonly occurredAt: string;

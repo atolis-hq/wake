@@ -155,3 +155,54 @@ it.each(['unknown', 'pending', 'failing'] as const)(
     });
   },
 );
+
+it('merges without human action after the first PR state arrives behind a missing-resource denial', async () => {
+  const provider = new DurableFakeDeliveryProvider();
+  const root = await createComposedMergeRoot({ provider });
+  wakeRoots.add(root.paths.wakeRoot);
+  const workflowId = await prepareComposedSafeMerge(root, 'passing', true);
+  await runComposedDeliveryCycle(root);
+  expect(await root.orchestration.get(workflowId)).toMatchObject({
+    status: 'waiting',
+    waitingFor: { signalKind: 'blocked', observed: expect.any(Array) },
+    lastOutcome: { kind: 'blocked', data: { reason: 'missing-resource' } },
+  });
+  expect(provider.effects).toHaveLength(0);
+  const authority = await root.pullRequests.authorityInput(workId('one'));
+  const resource = authority.resources[0]!.resource.resourceId;
+  const context = (commandId: string) => ({
+    commandId,
+    correlationId: 'late' as never,
+    occurredAt: '2026-07-30T12:01:00.000Z',
+    actor: { kind: 'system' as const, id: 'test' },
+  });
+  await root.pullRequests.observe(
+    {
+      resourceId: resource,
+      workItemId: workId('one'),
+      state: 'open',
+      headRevision: 'revision-a',
+      baseRevision: 'base-a',
+      checks: 'passing',
+    },
+    context('late-pr'),
+  );
+  await root.pullRequests.acceptReviewSignal(
+    {
+      resourceId: resource,
+      revision: 'revision-a',
+      actorId: 'reviewer',
+      actorKind: 'human',
+      acceptedEventId: 'review-late',
+      resourceAuthorId: 'author',
+      authorization: { source: 'configured-reviewer', reviewerId: 'reviewer' },
+    },
+    context('late-review'),
+  );
+  for (let index = 0; index < 4; index++) await runComposedDeliveryCycle(root);
+  expect((await root.orchestration.get(workflowId))?.status).toBe('completed');
+  expect(provider.effects).toHaveLength(1);
+  await root.processorRuntime.catchUp('redelivered observation');
+  await runComposedDeliveryCycle(root);
+  expect(provider.effects).toHaveLength(1);
+});

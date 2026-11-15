@@ -8,6 +8,7 @@ export interface WorkflowInstanceResponse {
   readonly currentStage: string;
   /** Why a blocked workflow requires operator intervention. */
   readonly blockReason?: string;
+  readonly retryCondition?: string;
   readonly retryEligible?: boolean;
   readonly extendEligible?: boolean;
   readonly mergePolicyBlock?: MergePolicyBlockResponse;

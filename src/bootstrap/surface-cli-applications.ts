@@ -28,10 +28,12 @@ import {
   type PromptTemplate,
 } from '../execution/index.js';
 import { SystemClock, UlidIdGenerator } from '../kernel/index.js';
+import { OrchestrationEventType } from '../orchestration/index.js';
 import { ResourceCorrelationRole, resourceId } from '../resources/index.js';
 import {
   DockerProcessError,
   WakeOperationalCommand,
+  auditFacts,
   createApiDispatcher,
   createLoggedDockerCli,
   createPackagedAssetSource,
@@ -69,7 +71,7 @@ import {
   type WakeCliApplications,
   type WakeCommand,
 } from '../surfaces/index.js';
-import { WorkStreamKind, workItemId } from '../work/index.js';
+import { workItemId } from '../work/index.js';
 import { createArtifactMcpServerForSession } from './artifact-mcp.js';
 import { createDiagnosticRoot, type CompositionRoot } from './composition-root.js';
 import { loadConfig } from './config/load-config.js';
@@ -1427,16 +1429,18 @@ function createAuditApplication(
 ): WakeCliApplications['audit'] {
   return {
     async read(id) {
-      return (await root.journal.readAll(0))
-        .filter((event) => event.stream.kind === WorkStreamKind.WorkItem && event.stream.id === id)
-        .map((event) => ({
-          eventId: event.event.eventId,
-          eventType: event.event.eventType,
-          occurredAt: event.event.occurredAt,
-          stream: `${event.stream.kind}:${event.stream.id}`,
-          causationId: event.event.causationId,
-          correlationId: event.event.correlationId,
-        }));
+      return (await auditFacts(root.journal, id)).map(({ event, retryCondition }) => ({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        occurredAt: event.occurredAt,
+        stream: `${event.stream.kind}:${event.stream.id}`,
+        ...(event.eventType === OrchestrationEventType.ObservedStateRetryRecorded
+          ? { payload: event.payload }
+          : {}),
+        ...(retryCondition === undefined ? {} : { retryCondition }),
+        causationId: event.causationId,
+        correlationId: event.correlationId,
+      }));
     },
   };
 }

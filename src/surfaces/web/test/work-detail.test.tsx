@@ -1575,3 +1575,23 @@ it('shows delivery ancestry, child status, repository links and blockers (DC-23)
     cache.clear();
   }
 });
+
+it('shows the pending observed-state retry condition in workflow detail', async () => {
+  const retryCondition = 'blocked, will retry when resource:pr-118, work:work-a change';
+  render(
+    <MemoryRouter initialEntries={['/work/wk_a']}>
+      <App
+        client={detailClient({
+          workflowInstanceId: 'workflow-1',
+          workflowName: 'delivery',
+          orchestrationGroupId: 'group-1',
+          status: 'waiting',
+          currentStage: 'merge',
+          waitingFor: { signalKind: 'blocked' },
+          retryCondition,
+        })}
+      />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText(retryCondition)).toBeTruthy();
+});
