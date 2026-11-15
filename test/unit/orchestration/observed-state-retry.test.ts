@@ -1,5 +1,9 @@
-import { correlationId, createEventData } from '@atolis-hq/eventing';
-import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
+import { correlationId, createEventData, EventProcessorHost } from '@atolis-hq/eventing';
+import {
+  createInMemoryProcessorRunSerialiser,
+  InMemoryCheckpointStore,
+  InMemoryEventJournal,
+} from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
@@ -236,4 +240,33 @@ it('does not reuse a consumed advance when a retry returns the same stale read v
   await world.append('second');
   await world.react();
   expect((await world.get())?.pendingActivation?.ordinal).toBe(3);
+});
+
+it('keeps the reactor dormant until an observed wait starts and bootstraps again after restart', async () => {
+  const world = await setup();
+  let reads = 0;
+  const port = {
+    async retryObservedState() {
+      reads++;
+      return false;
+    },
+  };
+  const reactor = createObservedStateReactor(port);
+  const host = new EventProcessorHost(
+    world.journal,
+    new InMemoryCheckpointStore(),
+    createInMemoryProcessorRunSerialiser(),
+    new FakeClock(),
+  );
+  await world.append('unrelated');
+  await host.runOnce(reactor);
+  await world.append('another');
+  await host.runOnce(reactor);
+  expect(reads).toBe(1);
+  await world.block();
+  await host.runOnce(reactor);
+  expect(reads).toBe(2);
+  await world.append('restart');
+  await host.runOnce(createObservedStateReactor(port));
+  expect(reads).toBe(3);
 });

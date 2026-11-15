@@ -15,7 +15,7 @@ export async function retryObservedState(
   journal: EventJournal,
   gate: DelegationGate,
   trigger: EventEnvelope,
-): Promise<void> {
+): Promise<boolean> {
   for (const { view } of await repository.list()) {
     if (view?.waitingFor?.observed === undefined) continue;
     await gate.run(view.workflowInstanceId, async () => {
@@ -32,6 +32,7 @@ export async function retryObservedState(
       return (await repository.loadRequired(state.workflowInstanceId)).view;
     });
   }
+  return (await repository.list()).some(({ view }) => view !== null && eligible(view));
 }
 
 function eligible(state: WorkflowInstanceView): boolean {
