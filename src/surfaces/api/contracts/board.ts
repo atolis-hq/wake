@@ -35,6 +35,7 @@ export interface BoardCardResponse {
   readonly stage?: string;
   /** Why the primary workflow is blocked, when it requires operator intervention. */
   readonly blockReason?: string;
+  readonly retryCondition?: string;
   readonly dwellSince: string;
   readonly runCount: number;
   readonly activeRuns?: Readonly<Record<string, BoardCardActiveRun>>;

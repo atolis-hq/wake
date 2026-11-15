@@ -24,6 +24,7 @@ import { DelegationCommands } from './delegation-commands.js';
 import { DelegationGate } from './delegation-gate.js';
 import { DeliveryCoordinator } from './delivery-coordinator.js';
 import { expireTimedOutWaits } from './expire-timed-out-waits.js';
+import { retryObservedState } from './observed-state-retry.js';
 import { recoverPolicyBlockedMerges } from './policy-blocked-merge-recovery.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 /* eslint-disable max-lines */
@@ -755,6 +756,10 @@ export class OrchestrationService {
       },
       { ...context, commandId: `${context.commandId}:dispatch` },
     );
+  }
+
+  retryObservedState(event: Parameters<typeof retryObservedState>[3]) {
+    return retryObservedState(this.repository, this.journal, this.delegationGate, event);
   }
 
   get(id: WorkflowInstanceId) {

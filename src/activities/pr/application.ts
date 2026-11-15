@@ -261,33 +261,52 @@ class JournalPullRequestService implements PullRequestService {
   async authorityInput(
     workItemId: ObservePullRequest['workItemId'],
   ): Promise<PullRequestAuthorityInput> {
+    // Capture before reading views so a concurrent append remains visible to catch-up.
+    const workStream = workItemStream(workItemId);
+    const workVersion = (await this.journal.readStream(workStream)).length;
     const correlations = await this.resources.correlationsForWork(workItemId);
+    const snapshots = await Promise.all(
+      correlations.map(async ({ resourceId }) => {
+        const stream = resourceStream(resourceId);
+        return { resourceId, stream, events: await this.journal.readStream(stream) };
+      }),
+    );
+    const observed = [
+      { stream: workStream, version: workVersion },
+      ...snapshots.map(({ stream, events }) => ({ stream, version: events.length })),
+    ];
+    const eventsByResource = new Map(
+      snapshots.map(({ resourceId, events }) => [resourceId, events]),
+    );
     const entries = await Promise.all(
       correlations.map(async ({ resourceId }) => this.resourceEntry(resourceId)),
     );
     const resources = entries.filter(isPresent);
-    const pullRequests = (
-      await Promise.all(resources.map(({ resource }) => this.get(resource.resourceId)))
-    ).filter(isPresent);
-    const acceptedSignals = (
-      await Promise.all(resources.map(({ resource }) => this.acceptedSignals(resource.resourceId)))
-    ).flat();
+    const pullRequests = resources
+      .map(({ resource }) =>
+        eventsByResource
+          .get(resource.resourceId)!
+          .reduce(
+            (view, event) => pullRequestProjection.project(view, event),
+            pullRequestProjection.initial(resource.resourceId),
+          ),
+      )
+      .filter(isPresent);
+    const acceptedSignals = resources.flatMap(({ resource }) =>
+      eventsByResource
+        .get(resource.resourceId)!
+        .reduce(
+          (view, event) => acceptedReviewSignalProjection.project(view, event),
+          acceptedReviewSignalProjection.initial(resource.resourceId),
+        ),
+    );
     return {
+      observed,
       work: await this.work.get(workItemId),
       resources,
       pullRequests,
       acceptedSignals,
     };
-  }
-
-  private async acceptedSignals(
-    resourceId: ObservePullRequest['resourceId'],
-  ): Promise<PullRequestAuthorityInput['acceptedSignals']> {
-    const events = await this.journal.readStream(resourceStream(resourceId));
-    return events.reduce(
-      (view, event) => acceptedReviewSignalProjection.project(view, event),
-      acceptedReviewSignalProjection.initial(resourceId),
-    );
   }
 
   private async resourceEntry(

@@ -8,6 +8,8 @@ export * from './issue/complete.js';
 
 export * from './contracts/activity.js';
 
+export * from './contracts/observed-streams.js';
+
 export * from './contracts/config.js';
 
 export * from './contracts/events.js';

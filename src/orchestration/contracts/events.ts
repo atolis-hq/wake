@@ -4,6 +4,7 @@ import type {
   ActivityName,
   ActivityOutcome,
   ActivityOutcomeKind,
+  ObservedStream,
 } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { OrchestrationWaitingActivityOutcome } from './activity-outcome.js';
@@ -72,6 +73,7 @@ export const OrchestrationEventType = {
   ActivityExecutionFailed: 'orchestration.activity-execution-failed',
   ActivityRetriedForRunnerQuota: 'orchestration.activity-retried-for-runner-quota',
   ActivityWaiting: 'orchestration.activity-waiting',
+  ObservedStateRetryRecorded: 'orchestration.observed-state-retry-recorded',
   SignalWaitStarted: 'orchestration.signal-wait-started',
   SignalAccepted: 'orchestration.signal-accepted',
   SignalDeferred: 'orchestration.signal-deferred',
@@ -189,6 +191,14 @@ export interface OrchestrationEventPayloads {
   readonly [OrchestrationEventType.ActivityWaiting]: {
     readonly activationId: ActivationId;
     readonly outcome: OrchestrationWaitingActivityOutcome;
+  };
+  readonly [OrchestrationEventType.ObservedStateRetryRecorded]: {
+    readonly observed?: readonly ObservedStream[] | undefined;
+    readonly rootActivationId: string;
+    readonly activationId: string;
+    readonly triggerEventId: string;
+    readonly count: number;
+    readonly exhausted: boolean;
   };
   readonly [OrchestrationEventType.SignalWaitStarted]: SignalExpectation;
   readonly [OrchestrationEventType.SignalAccepted]: OrchestrationSignal;
@@ -374,6 +384,7 @@ export interface ActivityRequestedPayload {
 
 export interface SignalExpectation {
   readonly signalKind: SignalName;
+  readonly observed?: readonly ObservedStream[] | undefined;
   /** Present only for an explicit workflow await with a configured deadline. */
   readonly timeoutMs?: number | undefined;
   /** The control-plane time recorded by the durable wait-start event. */

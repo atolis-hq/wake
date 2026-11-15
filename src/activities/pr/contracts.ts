@@ -1,5 +1,6 @@
 import type { ResourceCorrelationView, ResourceId, ResourceView } from '../../resources/index.js';
 import type { WorkItemId, WorkItemView } from '../../work/index.js';
+import type { ObservedStream } from '../contracts/observed-streams.js';
 import type {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -116,6 +117,7 @@ export type PullRequestActivityOutcome =
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Blocked;
+      readonly observed?: readonly ObservedStream[] | undefined;
       readonly data: {
         readonly reason: PullRequestDenialCode;
         readonly resourceId?: string | undefined;
@@ -155,6 +157,7 @@ export interface AcceptedReviewSignalView {
 }
 
 export interface PullRequestAuthorityInput {
+  readonly observed?: readonly ObservedStream[] | undefined;
   readonly work: WorkItemView | null;
   readonly resources: readonly PullRequestResourceView[];
   readonly pullRequests: readonly PullRequestView[];

@@ -1,3 +1,4 @@
+import { observedStreamsSchema } from '../../activities/index.js';
 /* eslint-disable max-lines */
 import { z } from 'zod';
 import {
@@ -102,7 +103,11 @@ export const childMetadataShape = {
 export const childMetadataSchema = z.object(childMetadataShape).strict();
 
 export const outcomeSchema = z
-  .object({ kind: z.string().min(1), data: z.unknown().optional() })
+  .object({
+    kind: z.string().min(1),
+    data: z.unknown().optional(),
+    observed: observedStreamsSchema.optional(),
+  })
   .strict();
 
 export const waitingOutcomeSchema = z
@@ -188,6 +193,7 @@ const resourceTransitionSchema = z
 export const expectationSchema = z
   .object({
     signalKind: brandedStringSchema(signalName),
+    observed: observedStreamsSchema.optional(),
     timeoutMs: z.number().int().positive().optional(),
     waitStartedAt: z.string().datetime().optional(),
     suppressWatchDispatch: z.literal(true).optional(),
@@ -457,6 +463,19 @@ const eventSchemas = {
       .object({
         activationId: brandedStringSchema(activationId),
         outcome: waitingOutcomeSchema,
+      })
+      .strict(),
+  ),
+  [OrchestrationEventType.ObservedStateRetryRecorded]: workflowEnvelope(
+    OrchestrationEventType.ObservedStateRetryRecorded,
+    z
+      .object({
+        observed: observedStreamsSchema.optional(),
+        rootActivationId: z.string().min(1),
+        activationId: z.string().min(1),
+        triggerEventId: z.string().min(1),
+        count: z.number().int().min(0).max(5),
+        exhausted: z.boolean(),
       })
       .strict(),
   ),

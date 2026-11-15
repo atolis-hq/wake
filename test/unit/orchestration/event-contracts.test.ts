@@ -363,6 +363,17 @@ const samples = [
     },
     workflowDefinitions,
   ),
+  eventEnvelope(
+    OrchestrationEventType.ObservedStateRetryRecorded,
+    {
+      rootActivationId: 'workflow-1:activity:1',
+      activationId: 'workflow-1:activity:2',
+      triggerEventId: 'dependency-event',
+      count: 1,
+      exhausted: false,
+    },
+    workflow,
+  ),
 ] as const;
 
 it('rejects a workflow definition registration without its workflow name', () => {

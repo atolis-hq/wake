@@ -1,5 +1,6 @@
 import {
   ActivityOutcomeKind,
+  observedStreamsSchema,
   type ActivityOutcome,
   type WaitingActivityOutcome,
 } from '../../activities/index.js';
@@ -27,6 +28,11 @@ export function orchestrationActivityOutcome(
 export function orchestrationActivityOutcome(
   outcome: ActivityOutcome,
 ): OrchestrationActivityOutcome {
+  if (outcome.observed !== undefined) {
+    if (outcome.kind !== ActivityOutcomeKind.Blocked)
+      throw new Error('Only blocked outcomes may observe streams');
+    observedStreamsSchema.parse(outcome.observed);
+  }
   if (outcome.kind !== ActivityOutcomeKind.Waiting) return outcome as OrchestrationActivityOutcome;
   if (typeof outcome.data !== 'object' || outcome.data === null)
     throw new Error('Waiting Activity outcome lacks expectation');

@@ -171,6 +171,7 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, 'workflowName', path),
     ...optionalStringProperty(record, boardStageField, path),
     ...optionalStringProperty(record, 'blockReason', path),
+    ...optionalStringProperty(record, 'retryCondition', path),
     dwellSince: string(record.dwellSince, child(path, 'dwellSince')),
     runCount: number(record.runCount, child(path, 'runCount')),
     ...optionalStringProperty(record, 'lastRunAt', path),
@@ -255,6 +256,7 @@ export const decodeWorkflow: Decoder<WorkflowInstanceResponse> = (value, path = 
     status: string(record.status, child(path, 'status')),
     currentStage: string(record.currentStage, child(path, 'currentStage')),
     ...optionalStringProperty(record, 'blockReason', path),
+    ...optionalStringProperty(record, 'retryCondition', path),
     ...optionalBooleanProperty(record, 'retryEligible', path),
     ...optionalBooleanProperty(record, 'extendEligible', path),
     ...(record.mergePolicyBlock === undefined

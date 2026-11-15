@@ -1,10 +1,11 @@
 import { ActivityOutcomeKind } from '../../activities/index.js';
+import type { OrchestrationActivityOutcome } from '../contracts/activity-outcome.js';
 import type { CompiledWorkflow } from '../contracts/config.js';
 import {
   OrchestrationEventType,
   type WorkflowOrchestrationEventData,
 } from '../contracts/events.js';
-import { stageName } from '../contracts/identifiers.js';
+import { signalName, stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   acceptOutcomeDraft,
@@ -82,6 +83,23 @@ export function acceptActivityOutcome(
   }
 
   const route = definition.stages[stageName(state.currentStage)]?.on[input.outcome.kind];
+  if (hasObservedBlockWithoutRoute(route, input.outcome)) {
+    events.push(
+      stateDraft(
+        state,
+        input,
+        {
+          eventType: OrchestrationEventType.SignalWaitStarted,
+          payload: {
+            signalKind: signalName(ActivityOutcomeKind.Blocked),
+            observed: input.outcome.observed,
+          },
+        },
+        2,
+      ),
+    );
+    return { kind: 'append', events };
+  }
   if (route === undefined) {
     // The outcome still durably happened even though this stage never
     // declared how to route it — recording it (not just blocking) is what
@@ -114,4 +132,15 @@ export function acceptActivityOutcome(
     return { kind: 'append', events };
   finishRoute(events, definition, state, input, route);
   return { kind: 'append', events };
+}
+
+function hasObservedBlockWithoutRoute(
+  route: unknown,
+  outcome: OrchestrationActivityOutcome,
+): boolean {
+  return (
+    route === undefined &&
+    outcome.kind === ActivityOutcomeKind.Blocked &&
+    outcome.observed !== undefined
+  );
 }

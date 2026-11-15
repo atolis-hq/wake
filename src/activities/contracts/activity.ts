@@ -3,6 +3,7 @@ import type { Brand } from '../../kernel/index.js';
 import type { ResourceCapability, ResourceView } from '../../resources/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type { ActivationId, ActivityName } from './identifiers.js';
+import type { ObservedStream } from './observed-streams.js';
 import type {
   ActivityExecutionKind,
   ActivityOutcomeKind,
@@ -46,6 +47,7 @@ export interface ActivityInvocation<Input = unknown> {
 
 export interface ActivityOutcome<Kind extends string = string, Data = unknown> {
   readonly kind: Kind;
+  readonly observed?: readonly ObservedStream[] | undefined;
   readonly data?: Data;
 }
 

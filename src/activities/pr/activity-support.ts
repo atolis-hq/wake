@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { observedStreamsSchema } from '../contracts/observed-streams.js';
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
@@ -58,6 +59,7 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Blocked),
+      observed: observedStreamsSchema.optional(),
       data: z
         .object({
           resourceId: z.string().optional(),

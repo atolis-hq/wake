@@ -1,4 +1,9 @@
-import type { ActivationId, ActivityName, ActivityOutcome } from '../../activities/index.js';
+import type {
+  ActivationId,
+  ActivityName,
+  ActivityOutcome,
+  ObservedStream,
+} from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
   ApprovalAuthority,
@@ -32,6 +37,7 @@ export interface ActivityActivationView {
 
 export interface SignalExpectationView {
   readonly signalKind: SignalName;
+  readonly observed?: readonly ObservedStream[] | undefined;
   readonly timeoutMs?: number;
   readonly waitStartedAt?: string;
   readonly suppressWatchDispatch?: true;
@@ -82,6 +88,13 @@ export interface WorkflowInstanceView {
   readonly repeatCounts: Readonly<Record<string, number>>;
   readonly retryCounts: Readonly<Record<string, number>>;
   readonly waitingFor?: SignalExpectationView;
+  readonly observedRetry?: {
+    readonly observed?: readonly ObservedStream[] | undefined;
+    readonly rootActivationId: string;
+    readonly activationId: string;
+    readonly count: number;
+    readonly exhausted: boolean;
+  };
   readonly supplementalQueue: readonly SupplementalActivityView[];
   readonly acceptedSignalIds: readonly string[];
   readonly operatorRetryCommandIds: readonly string[];

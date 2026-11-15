@@ -1,4 +1,5 @@
 import type { ActivityOutcome } from '../../activities/index.js';
+import { ActivityOutcomeKind } from '../../activities/index.js';
 import type {
   CompiledOutcomeRoute,
   CompiledWorkflow,
@@ -22,6 +23,7 @@ interface TransitionInput {
 }
 
 interface DecisionContext {
+  readonly outcome?: ActivityOutcome;
   readonly occurredAt: string;
   readonly causationId: string;
 }
@@ -188,7 +190,13 @@ export function resumeToTarget(
         input,
         {
           eventType: OrchestrationEventType.SignalWaitStarted,
-          payload: { signalKind: target.signal },
+          payload: {
+            signalKind: target.signal,
+            ...(input.outcome?.kind === ActivityOutcomeKind.Blocked &&
+            input.outcome.observed !== undefined
+              ? { observed: input.outcome.observed }
+              : {}),
+          },
         },
         events.length + 1,
       ),
