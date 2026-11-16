@@ -23,6 +23,7 @@ import type { AdvanceWorkflow } from './advance-workflow.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { GroupBudgetRecorder } from './group-budget-recorder.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import { watchPredatesPrerequisiteRefresh } from './prerequisite-review-freshness.js';
 import type { StartWorkflow } from './start-workflow.js';
 
 export class RequestChild {
@@ -150,7 +151,11 @@ export class RequestChild {
     const child = await this.repository.loadRequired(childWorkflowInstanceId);
     if (child.view.parentWorkflowInstanceId === undefined) return true;
     const parent = await this.repository.loadRequired(child.view.parentWorkflowInstanceId);
-    if (child.view.watchId !== undefined && parentWaitsForWatch(parent.view, child.view.watchId))
+    if (
+      child.view.watchId !== undefined &&
+      parentWaitsForWatch(parent.view, child.view.watchId) &&
+      !(await watchPredatesPrerequisiteRefresh(this.repository, child.view))
+    )
       return true;
     if (child.view.status !== WorkflowStatus.Superseded)
       await this.repository.append(childWorkflowInstanceId, child.sequence, [
@@ -200,6 +205,7 @@ export class RequestChild {
       ]);
     const parent = await this.repository.loadRequired(metadata.parentWorkflowInstanceId);
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
+    if (await watchPredatesPrerequisiteRefresh(this.repository, child)) return;
     const watchGateOutcome = watchGateVerdictOutcome(parent.view, child);
     const signal: ChildCompletionSignal = {
       kind:

@@ -2,6 +2,7 @@ import type { DelegationReservation } from '../contracts/delegation.js';
 import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { DeliveryFacts, Output } from '../domain/delivery-facts.js';
+import { selectedResults } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 /**
@@ -27,19 +28,18 @@ export async function readDeliveryFacts(
       reservation.children.map((child) => [child.workflowInstanceId, child.workItemId] as const),
     ),
   );
-  const results = all.flatMap(({ event }) =>
-    event.eventType === OrchestrationEventType.DelegationResultSelected &&
-    [...instances.values()].includes(event.payload.childWorkItemId)
-      ? [event.payload]
-      : [],
-  );
+  const results = reservations.flatMap((reservation) => selectedResults(all, reservation));
   const consumed = new Map<string, Output[]>();
   for (const { event } of all) {
-    if (event.eventType !== OrchestrationEventType.DelegationInputsResolved) continue;
-    // Consumption receipts belong to the parent stream and identify their child in the payload.
+    if (
+      event.eventType !== OrchestrationEventType.DelegationInputsResolved &&
+      event.eventType !== OrchestrationEventType.DelegationInputsRefreshed
+    )
+      continue;
+    // Receipts identify their child; a refresh replaces the effective basis, not its history.
     const child = event.payload.childWorkItemId;
     if (![...instances.values()].includes(child)) continue;
-    consumed.set(child, [...(consumed.get(child) ?? []), ...event.payload.consumed]);
+    consumed.set(child, [...event.payload.consumed]);
   }
   const mine = own.map(({ event }) => event);
   return {

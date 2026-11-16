@@ -63,8 +63,11 @@ Only the exact reserving activation's outcome may be held. Join waits for the
 reserving Run to end before continuation. New assignments must select a current
 configured workflow fingerprint; committed reservations recover the pinned one.
 Reservation contention retries are bounded and use fresh root-stream sequences.
-Unavailable prerequisites remain retryable. Hard child failures and changed
-consumed inputs retain durable blockers while independent siblings finish. A
+Unavailable prerequisites remain retryable. Hard child failures and unexplained changed
+consumed inputs retain durable blockers while independent siblings finish. Verified
+review-revision paths can instead record fresh input receipts and re-enter the
+dependent branch agent after its runs end. Old selections are invalidated; the
+agent refreshes Git and repeats the configured gates. Original receipts remain history. A
 queued cohort then settles as failed and atomically requests a fresh parent
 assessment activation after the reserving Run ends. Affected unfinished child
 workflows are superseded. The agent may explicitly submit a replacement batch

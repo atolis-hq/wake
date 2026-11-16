@@ -223,6 +223,14 @@ export class OrchestrationService {
     return this.delegatedWork.changeOutputAssignments(workItemId);
   }
 
+  prerequisiteRefreshPrompt(id: WorkflowInstanceId, activation: string) {
+    return this.delegatedWork.refreshPrompt(id, activation);
+  }
+
+  workspaceAssignmentHistory(workItemId: string) {
+    return this.delegatedWork.assignmentHistory(workItemId);
+  }
+
   repositoryAssignment(workItemId: string) {
     return this.delegatedWork.repositoryFor(workItemId);
   }
@@ -992,6 +1000,7 @@ type DelegationDependenciesFactory = (queries: {
   resources?: DelegationResources;
   integration?: DeliveryIntegration;
   runHasEnded: (runId: string) => Promise<boolean>;
+  childRunsEnded?: (id: string) => Promise<boolean>;
 };
 
 /** The delegation dependencies Orchestration hands to DelegatedWork, with safe unavailable stubs. */
@@ -1005,6 +1014,7 @@ function delegatedWorkDependencies(
     artifacts: dependencies?.artifacts ?? unavailableArtifacts,
     repositories: dependencies?.repositories,
     runHasEnded: dependencies?.runHasEnded ?? unavailableRunCompletion,
+    childRunsEnded: dependencies?.childRunsEnded,
     supportsAttention,
     resumeChild,
     messages: dependencies?.messages,

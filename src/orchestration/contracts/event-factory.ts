@@ -18,6 +18,7 @@ export function createOrchestrationEventData(
   input: OrchestrationEventDataInput,
 ): OrchestrationEventData {
   switch (input.eventType) {
+    case OrchestrationEventType.DelegationInputsRefreshed:
     case OrchestrationEventType.DelegationInputsResolved:
       return createEventData(input);
     case OrchestrationEventType.DelegationPrerequisiteBlocked:

@@ -1021,13 +1021,36 @@ affected workflows are superseded; late Run outcomes cannot qualify them.
 Batches without prerequisites retain their existing terminal-failure behavior.
 Transient verification failures remain retryable and use bounded diagnostics.
 
+Review-driven revisions have a narrower automatic recovery path. A verified
+watch rejection must follow its configured rejection route into a branch agent
+stage, and that stage must publish a provider-verified current named output.
+While the revision runs or its evidence is unavailable, dependents wait. Once
+Wake verifies the new head and same-repository base, it retains the original
+receipt and records a new consumption basis with a fresh branch-agent activation
+for each affected dependent. Existing runs must finish first. The agent receives
+the exact revised inputs, assesses its work, performs any rebase, push and PR
+updates, and runs the assignment checks again. Wake preserves the checkout and
+verifies that its resulting HEAD contains the revised base. Configured review
+gates run again; reviews started before the refresh cannot approve the new basis.
+Old selected results cannot qualify or join while refresh is
+pending. This can propagate through several stack layers, while independent
+siblings keep advancing.
+
+This recovery does not make `pushed-change` wait for review approval: a dependent
+can still start on a pushed unreviewed head. `delivery-ready`, `accepted-output`
+and `merged-change` retain their existing contracts. Unexplained branch movement,
+changed output identity, terminal upstream failure, and abandoned work retain the
+blocker and parent-assessment path. If the refresh agent cannot safely continue,
+its ordinary blocked/failed route requests attention. Git operations remain
+agent-owned and no merge authority is added.
+
 The parent agent inspects the failure and explicitly submits replacement work
 under a new cohort and assignment identity, using the current plan revision.
 Normal Run authority, workflow/repository policy and delivery limits still
 apply. Replacement assignments pin current verified inputs and require fresh
-outputs; old receipts, results and grants remain in the journal. Wake never
-chooses a rebase, replacement stack or semantic repair. Attention while
-independent work is still running is outside this slice.
+outputs; old receipts, results and grants remain in the journal. Wake schedules verified review-revision assessments but never performs Git
+repairs or chooses a replacement stack. Parent attention can be requested while
+independent work is still running.
 
 Successful joins are historical consumption boundaries, not permanent holds on
 the parent's later merge phase. Agents can merge a joined stack bottom-up and
