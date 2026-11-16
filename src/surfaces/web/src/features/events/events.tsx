@@ -9,6 +9,10 @@ import { LocalTime } from '../../components/local-time.js';
 import { Button, EmptyState, ErrorState, LoadingState } from '../../components/primitives.js';
 import styles from '../features.module.css';
 
+const eventLimit = 200;
+// Newest events are at the top, so distance from the top decides whether the user left it.
+const scrolledAwayThreshold = 16;
+
 export function EventsPage() {
   const client = useApiClient();
   const navigation = useCursorNavigation();
@@ -28,21 +32,38 @@ function EventsCollection({
   readonly client: ReturnType<typeof useApiClient>;
   readonly navigation: ReturnType<typeof useCursorNavigation>;
 }) {
-  const cursors = useRef({ page: navigation.cursor, live: navigation.cursor });
+  const live = navigation.cursor === undefined;
+  const newestKnown = useRef(-1);
   const [records, setRecords] = useState<AuditEventResponse[]>([]);
   const query = useQuery({
     queryKey: queryKeys.events.list(navigation.cursor),
     queryFn: async ({ signal }) => {
-      return client.events.list(cursors.current.live, undefined, signal);
+      const first = await client.events.list(navigation.cursor, undefined, signal);
+      if (!live) return first;
+      // The API is newest-first: follow nextCursor until we reach a known position.
+      let items = first.items;
+      let page = first.page;
+      while (
+        page.hasMore &&
+        page.nextCursor !== null &&
+        newestKnown.current >= 0 &&
+        items.length < eventLimit &&
+        Math.min(...items.map((item) => item.position)) > newestKnown.current
+      ) {
+        const older = await client.events.list(page.nextCursor, undefined, signal);
+        items = [...items, ...older.items];
+        page = older.page;
+        if (older.items.length === 0) break;
+      }
+      return { ...first, items };
     },
-    refetchInterval: (state) =>
-      state.state.data?.page.hasMore === true ? false : refreshPolicy.events,
+    refetchInterval: live ? refreshPolicy.events : false,
   });
   useEffect(() => {
     if (query.data === undefined) return;
     setRecords((current) => mergeBoundedEvents(current, query.data.items));
-    if (!query.data.page.hasMore && query.data.page.nextCursor !== null)
-      cursors.current.live = query.data.page.nextCursor;
+    for (const item of query.data.items)
+      newestKnown.current = Math.max(newestKnown.current, item.position);
   }, [query.data]);
   return (
     <>
@@ -102,7 +123,7 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
   useEffect(() => {
     const checkScrolledAway = () => {
       const scrollable = document.scrollingElement ?? document.documentElement;
-      setScrolledAway(scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight > 1);
+      setScrolledAway(scrollable.scrollTop > scrolledAwayThreshold);
     };
     window.addEventListener('scroll', checkScrolledAway, { passive: true });
     return () => window.removeEventListener('scroll', checkScrolledAway);
@@ -159,7 +180,7 @@ export function EventsFeed({ records }: { readonly records: readonly AuditEventR
 export function mergeBoundedEvents(
   current: readonly AuditEventResponse[],
   incoming: readonly AuditEventResponse[],
-  limit = 200,
+  limit = eventLimit,
 ): AuditEventResponse[] {
   const byId = new Map([...current, ...incoming].map((record) => [record.id, record]));
   return [...byId.values()].sort((left, right) => left.position - right.position).slice(-limit);

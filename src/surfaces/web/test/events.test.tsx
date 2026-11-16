@@ -99,56 +99,81 @@ describe('incremental event feed', () => {
     expect(selection.toString()).toBe('event-1');
     expect(selection.anchorNode).toBe(selectedText);
   });
-  it('navigates historical pages before applying the tail cursor to incremental polls', async () => {
-    const user = userEvent.setup();
+  it('keeps polling the first page when hasMore is true and merges newer events', async () => {
     const requests: string[] = [];
+    let newest = 2;
     const client = new WakeApiClient(async (input) => {
       const url = String(input);
       requests.push(url);
-      const historical = !url.includes('cursor=');
-      const tail = url.includes('cursor=c_page2');
-      const position = historical ? 1 : tail ? 2 : 3;
+      const items = url.includes('cursor=') ? [event(1)] : [event(newest), event(newest - 1)];
       return new Response(
         JSON.stringify({
-          items: [event(position)],
-          page: {
-            nextCursor: historical ? 'c_page2' : tail ? 'c_tail' : 'c_new_tail',
-            hasMore: historical,
-          },
-          meta: { asOf: '2026-07-31T10:00:00.000Z', position },
+          items,
+          page: { nextCursor: 'c_older', hasMore: true },
+          meta: { asOf: '2026-07-31T10:00:00.000Z', position: newest },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <MemoryRouter initialEntries={['/events']}>
-        {' '}
-        <QueryClientProvider client={queryClient}>
-          {' '}
-          <ApiClientContext.Provider value={client}>
-            {' '}
-            <EventsPage />{' '}
-          </ApiClientContext.Provider>{' '}
-        </QueryClientProvider>{' '}
-      </MemoryRouter>,
-    );
-    expect(await screen.findByText('event-1')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    renderPage(client, queryClient);
     expect(await screen.findByText('event-2')).toBeTruthy();
-    expect(screen.queryByText('event-1')).toBeNull();
+    newest = 3;
     await act(() => queryClient.refetchQueries({ queryKey: queryKeys.events.all, type: 'active' }));
-    expect(requests.slice(0, 2)).toEqual(['/api/v1/events', '/api/v1/events?cursor=c_page2']);
-    expect(requests.slice(2).every((request) => request === '/api/v1/events?cursor=c_tail')).toBe(
-      true,
-    );
     expect(await screen.findByText('event-3')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText('event-2')).toBeTruthy();
+    expect(requests.filter((r) => r === '/api/v1/events').length).toBeGreaterThan(1);
+  });
+  it('does not poll historical pages', async () => {
+    const user = userEvent.setup();
+    const requests: string[] = [];
+    const client = new WakeApiClient(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      const older = url.includes('cursor=c_older');
+      return new Response(
+        JSON.stringify({
+          items: [event(older ? 1 : 2)],
+          page: { nextCursor: 'c_older', hasMore: !older },
+          meta: { asOf: '2026-07-31T10:00:00.000Z', position: 2 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPage(client, queryClient);
+    expect(await screen.findByText('event-2')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
     expect(await screen.findByText('event-1')).toBeTruthy();
     expect(screen.queryByText('event-2')).toBeNull();
+    expect(requests).toEqual(['/api/v1/events', '/api/v1/events?cursor=c_older']);
+  });
+  it('shows new events at the top without pausing, and buffers once scrolled down', () => {
+    const page = (document.scrollingElement ?? document.documentElement) as HTMLElement;
+    dimensions(page, { clientHeight: 100, scrollHeight: 300 });
+    const { rerender } = render(<EventsFeed records={[event(1)]} />);
+    rerender(<EventsFeed records={[event(1), event(2)]} />);
+    expect(screen.getByText('event-2')).toBeTruthy();
+    page.scrollTop = 100;
+    fireEvent.scroll(window);
+    rerender(<EventsFeed records={[event(1), event(2), event(3)]} />);
     expect(screen.queryByText('event-3')).toBeNull();
+    expect(screen.getByRole('button', { name: '1 new event' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '1 new event' }));
+    expect(screen.getByText('event-3')).toBeTruthy();
   });
 });
+function renderPage(client: WakeApiClient, queryClient: QueryClient) {
+  render(
+    <MemoryRouter initialEntries={['/events']}>
+      <QueryClientProvider client={queryClient}>
+        <ApiClientContext.Provider value={client}>
+          <EventsPage />
+        </ApiClientContext.Provider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
 const event = (position: number) => ({
   id: `event-${position}`,
   type: 'work.created',
