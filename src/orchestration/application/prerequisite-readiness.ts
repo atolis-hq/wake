@@ -9,14 +9,11 @@ import type {
 } from '../contracts/delegation.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import {
-  PrerequisiteBlockCode as Code,
-  DelegationPrerequisiteCondition as Condition,
-  WorkflowStatus,
-} from '../contracts/vocabulary.js';
+import { PrerequisiteBlockCode as Code, WorkflowStatus } from '../contracts/vocabulary.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import { reservationsOf } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import { outputBlocker, workflowReason } from './prerequisite-output-blocker.js';
 import {
   changedInputsBlock,
   freshness,
@@ -200,7 +197,10 @@ export class PrerequisiteReadiness {
     for (const [index, edge] of (child.prerequisites ?? []).entries()) {
       const upstream = this.children.get(child.prerequisiteWorkItemIds?.[index] ?? '');
       if (upstream === undefined)
-        return { code: Code.Unavailable, reason: 'Prerequisite target unavailable' };
+        return {
+          code: Code.Unavailable,
+          reason: 'Upstream in another cohort not found: ' + edge.assignmentId + '/' + edge.output,
+        };
       const key = JSON.stringify([upstream.workItemId, edge.output, edge.condition]);
       let pending = this.selected.get(key);
       if (pending === undefined) {
@@ -268,7 +268,7 @@ export class PrerequisiteReadiness {
     )
       return {
         code: Code.Waiting,
-        reason: `Waiting for ${edge.condition} output ${upstream.assignmentId}/${edge.output}`,
+        reason: await outputBlocker(this.artifacts, workflow, output, edge, upstream.assignmentId),
       };
     if (await revisionOutputPending(workflow, selected.reference, this.artifacts, evidence))
       return { code: Code.Waiting, reason: 'Waiting for verified upstream review revision' };
@@ -312,13 +312,4 @@ export class PrerequisiteReadiness {
       return { code: Code.Changed, reason: 'Upstream branch moved; agent assessment required' };
     return undefined;
   }
-}
-
-function workflowReason(workflow: WorkflowInstanceView, edge: DelegationPrerequisite) {
-  if (workflow.status === WorkflowStatus.Completed && !isSuccessfulWorkflowCompletion(workflow))
-    return 'Upstream workflow failed';
-  if (edge.condition === Condition.DeliveryReady && !isSuccessfulWorkflowCompletion(workflow))
-    return 'Waiting for delivery-ready upstream';
-  if (workflow.status === WorkflowStatus.Superseded) return 'Upstream workflow was superseded';
-  return undefined;
 }

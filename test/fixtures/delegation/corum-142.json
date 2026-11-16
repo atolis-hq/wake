@@ -1,0 +1,1675 @@
+[
+  {
+    "eventId": "workflow-definition:child-impl:67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b",
+    "eventType": "orchestration.workflow-definition-registered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:43:10.913Z",
+    "correlationId": "artifact:run-01m7hrbb99xyhexrj73s7ax0re",
+    "causationId": "artifact-mcp:run-01m7hrbb99xyhexrj73s7ax0re:9e6d2d9b-620f-4319-a235-86bd87004ffb",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-definitions",
+      "id": "registry"
+    },
+    "payload": {
+      "workflowName": "child-impl",
+      "fingerprint": "67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b",
+      "compiledDefinition": {
+        "remainingAgentSteps": {
+          "implement": 1,
+          "revise": 1
+        },
+        "name": "child-impl",
+        "entry": "implement",
+        "commands": {},
+        "watches": [
+          {
+            "id": "pr-review",
+            "while": {
+              "stages": ["implement", "revise"],
+              "statuses": ["waiting"]
+            },
+            "on": {
+              "events": ["orchestration.signal-wait-started"]
+            },
+            "workflow": "pr-review",
+            "maxPerGroup": 5
+          }
+        ],
+        "stages": {
+          "implement": {
+            "activity": "agent",
+            "with": {
+              "template": "child-implement"
+            },
+            "execution": {
+              "workspace": "branch",
+              "runnerPool": "standard"
+            },
+            "on": {
+              "rejected": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "rejected"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:rejected"
+              },
+              "blocked": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "blocked"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:blocked"
+              },
+              "failed": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "failed"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:failed"
+              },
+              "done": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "watchGates": [
+                  {
+                    "watch": "pr-review",
+                    "onRejectTarget": {
+                      "kind": "stage",
+                      "stage": "revise"
+                    }
+                  }
+                ],
+                "id": "child-impl:implement:done"
+              }
+            }
+          },
+          "revise": {
+            "activity": "agent",
+            "with": {
+              "template": "revise"
+            },
+            "execution": {
+              "workspace": "branch",
+              "runnerPool": "standard"
+            },
+            "on": {
+              "done": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "repeat": {
+                  "max": 3
+                },
+                "watchGates": [
+                  {
+                    "watch": "pr-review",
+                    "onRejectTarget": {
+                      "kind": "stage",
+                      "stage": "revise"
+                    }
+                  }
+                ],
+                "id": "child-impl:revise:done"
+              },
+              "blocked": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "blocked"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "id": "child-impl:revise:blocked"
+              },
+              "failed": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "failed"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "retry": {
+                  "max": 2
+                },
+                "id": "child-impl:revise:failed"
+              }
+            }
+          }
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T08:43:12.769Z",
+    "sequence": 17,
+    "globalPosition": 65261
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.instance-started:1",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "child-impl",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "implement",
+      "workflowDefinitionFingerprint": "67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b"
+    },
+    "recordedAt": "2026-11-16T08:48:29.941Z",
+    "sequence": 1,
+    "globalPosition": 65349
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "implement"
+    },
+    "recordedAt": "2026-11-16T08:48:29.941Z",
+    "sequence": 2,
+    "globalPosition": 65350
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "implement",
+      "input": {
+        "template": "child-implement"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      }
+    },
+    "recordedAt": "2026-11-16T08:48:29.941Z",
+    "sequence": 3,
+    "globalPosition": 65351
+  },
+  {
+    "eventId": "run-01m7hrpejfp53y97z3bfxmnqzd:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:36.965Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hrpejfp53y97z3bfxmnqzd"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+      "activity": "agent",
+      "stage": "implement",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "codex-sol",
+        "model": "gpt-6.1-sol",
+        "pool": "standard",
+        "cli": "codex-cli"
+      },
+      "startedAt": "2026-11-16T08:48:36.965Z",
+      "workspace": {
+        "mode": "branch",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-branch-https-github-com-atolis-hq-corum-git",
+        "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv"
+      }
+    },
+    "recordedAt": "2026-11-16T08:48:37.019Z",
+    "sequence": 3,
+    "globalPosition": 65356
+  },
+  {
+    "eventId": "run-01m7hrpejfp53y97z3bfxmnqzd:succeeded",
+    "eventType": "execution.run-succeeded",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:49.763Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hrpejfp53y97z3bfxmnqzd"
+    },
+    "payload": {
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE",
+          "reportedArtifacts": [
+            {
+              "name": "change",
+              "kind": "pull-request",
+              "externalKey": {
+                "adapter": "github",
+                "key": "atolis-hq/corum#142"
+              }
+            }
+          ]
+        }
+      },
+      "finishedAt": "2026-11-16T08:52:49.763Z",
+      "workspaceRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35"
+    },
+    "recordedAt": "2026-11-16T08:52:49.819Z",
+    "sequence": 14,
+    "globalPosition": 65405
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE",
+          "reportedArtifacts": [
+            {
+              "name": "change",
+              "kind": "pull-request",
+              "externalKey": {
+                "adapter": "github",
+                "key": "atolis-hq/corum#142"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T08:52:57.799Z",
+    "sequence": 5,
+    "globalPosition": 65407
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "recordedAt": "2026-11-16T08:52:57.799Z",
+    "sequence": 6,
+    "globalPosition": 65408
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "recordedAt": "2026-11-16T08:52:58.295Z",
+    "sequence": 3,
+    "globalPosition": 65412
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "recordedAt": "2026-11-16T08:52:58.295Z",
+    "sequence": 4,
+    "globalPosition": 65413
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "recordedAt": "2026-11-16T08:52:58.295Z",
+    "sequence": 5,
+    "globalPosition": 65414
+  },
+  {
+    "eventId": "run-01m7hrytmcjwqvjx0qx7p490g1:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:53:11.386Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hrytmcjwqvjx0qx7p490g1"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+      "activity": "agent",
+      "stage": "review",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "claude-opus",
+        "model": "claude-opus-5-5",
+        "pool": "deep",
+        "cli": "claude-cli"
+      },
+      "startedAt": "2026-11-16T08:53:11.386Z",
+      "workspace": {
+        "mode": "read-only",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-read-only-https-github-com-atolis-hq-corum-git"
+      }
+    },
+    "recordedAt": "2026-11-16T08:53:11.440Z",
+    "sequence": 3,
+    "globalPosition": 65423
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "rejected",
+        "data": {
+          "status": "REJECTED"
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T08:54:19.035Z",
+    "sequence": 7,
+    "globalPosition": 65446
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "recordedAt": "2026-11-16T08:54:19.035Z",
+    "sequence": 8,
+    "globalPosition": 65447
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "outcome": "rejected"
+    },
+    "recordedAt": "2026-11-16T08:54:24.769Z",
+    "sequence": 7,
+    "globalPosition": 65459
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "revise"
+    },
+    "recordedAt": "2026-11-16T08:54:24.769Z",
+    "sequence": 8,
+    "globalPosition": 65460
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+      "ordinal": 2,
+      "activity": "agent",
+      "stage": "revise",
+      "input": {
+        "template": "revise"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      },
+      "watchDriven": true
+    },
+    "recordedAt": "2026-11-16T08:54:24.769Z",
+    "sequence": 9,
+    "globalPosition": 65461
+  },
+  {
+    "eventId": "run-01m7hs1gc0f562daajft09tj1b:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:37.647Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hs1gc0f562daajft09tj1b"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+      "activity": "agent",
+      "stage": "revise",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "codex-sol",
+        "model": "gpt-6.1-sol",
+        "pool": "standard",
+        "cli": "codex-cli"
+      },
+      "startedAt": "2026-11-16T08:54:37.647Z",
+      "workspace": {
+        "mode": "branch",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-branch-https-github-com-atolis-hq-corum-git",
+        "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv"
+      }
+    },
+    "recordedAt": "2026-11-16T08:54:37.707Z",
+    "sequence": 3,
+    "globalPosition": 65467
+  },
+  {
+    "eventId": "run-01m7hs1gc0f562daajft09tj1b:succeeded",
+    "eventType": "execution.run-succeeded",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:07.183Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hs1gc0f562daajft09tj1b"
+    },
+    "payload": {
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      },
+      "finishedAt": "2026-11-16T08:56:07.183Z",
+      "workspaceRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35"
+    },
+    "recordedAt": "2026-11-16T08:56:07.238Z",
+    "sequence": 8,
+    "globalPosition": 65477
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T08:56:19.977Z",
+    "sequence": 12,
+    "globalPosition": 65480
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "recordedAt": "2026-11-16T08:56:19.977Z",
+    "sequence": 13,
+    "globalPosition": 65481
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "recordedAt": "2026-11-16T08:56:21.153Z",
+    "sequence": 3,
+    "globalPosition": 65487
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "recordedAt": "2026-11-16T08:56:21.153Z",
+    "sequence": 4,
+    "globalPosition": 65488
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "recordedAt": "2026-11-16T08:56:21.153Z",
+    "sequence": 5,
+    "globalPosition": 65489
+  },
+  {
+    "eventId": "run-01m7hs54my3r7yaw6a3xfmzxeh:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:37.161Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hs54my3r7yaw6a3xfmzxeh"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+      "activity": "agent",
+      "stage": "review",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "claude-opus",
+        "model": "claude-opus-5-5",
+        "pool": "deep",
+        "cli": "claude-cli"
+      },
+      "startedAt": "2026-11-16T08:56:37.161Z",
+      "workspace": {
+        "mode": "read-only",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-read-only-https-github-com-atolis-hq-corum-git"
+      }
+    },
+    "recordedAt": "2026-11-16T08:56:37.217Z",
+    "sequence": 3,
+    "globalPosition": 65494
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "rejected",
+        "data": {
+          "status": "REJECTED"
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T08:57:18.253Z",
+    "sequence": 7,
+    "globalPosition": 65504
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "recordedAt": "2026-11-16T08:57:18.253Z",
+    "sequence": 8,
+    "globalPosition": 65505
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "outcome": "rejected"
+    },
+    "recordedAt": "2026-11-16T08:57:22.980Z",
+    "sequence": 14,
+    "globalPosition": 65510
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "revise"
+    },
+    "recordedAt": "2026-11-16T08:57:22.980Z",
+    "sequence": 15,
+    "globalPosition": 65511
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+      "ordinal": 3,
+      "activity": "agent",
+      "stage": "revise",
+      "input": {
+        "template": "revise"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      },
+      "watchDriven": true
+    },
+    "recordedAt": "2026-11-16T08:57:22.980Z",
+    "sequence": 16,
+    "globalPosition": 65512
+  },
+  {
+    "eventId": "run-01m7hs6xs7k8y2jksgmmkyvdjt:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:35.222Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hs6xs7k8y2jksgmmkyvdjt"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+      "activity": "agent",
+      "stage": "revise",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "codex-sol",
+        "model": "gpt-6.1-sol",
+        "pool": "standard",
+        "cli": "codex-cli"
+      },
+      "startedAt": "2026-11-16T08:57:35.222Z",
+      "workspace": {
+        "mode": "branch",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "a6e83e63fefb1351079f5ba0e103da7fc1ba5e35",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-branch-https-github-com-atolis-hq-corum-git",
+        "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv"
+      }
+    },
+    "recordedAt": "2026-11-16T08:57:35.281Z",
+    "sequence": 3,
+    "globalPosition": 65520
+  },
+  {
+    "eventId": "run-01m7hs6xs7k8y2jksgmmkyvdjt:succeeded",
+    "eventType": "execution.run-succeeded",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:16.641Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hs6xs7k8y2jksgmmkyvdjt"
+    },
+    "payload": {
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      },
+      "finishedAt": "2026-11-16T09:00:16.641Z",
+      "workspaceRevision": "3e883082484cfe7c53fb43eaaa81803038d26f02"
+    },
+    "recordedAt": "2026-11-16T09:00:16.695Z",
+    "sequence": 11,
+    "globalPosition": 65582
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T09:00:25.684Z",
+    "sequence": 19,
+    "globalPosition": 65584
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "recordedAt": "2026-11-16T09:00:25.684Z",
+    "sequence": 20,
+    "globalPosition": 65585
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "recordedAt": "2026-11-16T09:00:26.505Z",
+    "sequence": 3,
+    "globalPosition": 65590
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "recordedAt": "2026-11-16T09:00:26.505Z",
+    "sequence": 4,
+    "globalPosition": 65591
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "recordedAt": "2026-11-16T09:00:26.505Z",
+    "sequence": 5,
+    "globalPosition": 65592
+  },
+  {
+    "eventId": "run-01m7hscfmpethp5paefxx9d8mw:started",
+    "eventType": "execution.run-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:38.176Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hscfmpethp5paefxx9d8mw"
+    },
+    "payload": {
+      "repositoryAssignment": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      },
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+      "activity": "agent",
+      "stage": "review",
+      "workflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "attempt": 1,
+      "runner": {
+        "name": "claude-opus",
+        "model": "claude-opus-5-5",
+        "pool": "deep",
+        "cli": "claude-cli"
+      },
+      "startedAt": "2026-11-16T09:00:38.176Z",
+      "workspace": {
+        "mode": "read-only",
+        "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "checkoutRevision": "3e883082484cfe7c53fb43eaaa81803038d26f02",
+        "path": "/wake/workspaces/work-01m7hrcky7tr7rbwkkm39dx5kv-read-only-https-github-com-atolis-hq-corum-git"
+      }
+    },
+    "recordedAt": "2026-11-16T09:00:38.235Z",
+    "sequence": 3,
+    "globalPosition": 65601
+  },
+  {
+    "eventId": "run-01m7hscfmpethp5paefxx9d8mw:succeeded",
+    "eventType": "execution.run-succeeded",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:25.248Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+    "actor": {
+      "kind": "system",
+      "id": "execution"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "execution"
+    },
+    "stream": {
+      "kind": "run",
+      "id": "run-01m7hscfmpethp5paefxx9d8mw"
+    },
+    "payload": {
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      },
+      "finishedAt": "2026-11-16T09:01:25.248Z",
+      "workspaceRevision": "3e883082484cfe7c53fb43eaaa81803038d26f02"
+    },
+    "recordedAt": "2026-11-16T09:01:25.307Z",
+    "sequence": 7,
+    "globalPosition": 65608
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "recordedAt": "2026-11-16T09:01:33.380Z",
+    "sequence": 7,
+    "globalPosition": 65610
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "recordedAt": "2026-11-16T09:01:33.380Z",
+    "sequence": 8,
+    "globalPosition": 65611
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "outcome": "done"
+    },
+    "recordedAt": "2026-11-16T09:01:39.495Z",
+    "sequence": 21,
+    "globalPosition": 65627
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {},
+    "recordedAt": "2026-11-16T09:01:39.495Z",
+    "sequence": 22,
+    "globalPosition": 65628
+  }
+]

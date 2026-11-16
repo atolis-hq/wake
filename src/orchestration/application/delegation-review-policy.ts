@@ -28,20 +28,19 @@ export function createDelegationReviewPolicy(
       ])
       .filter((activity) => activity.use === BuiltInActivityName.PullRequestMerge)
       .map((activity) => pullRequestMergeInputSchema.safeParse(activity.with));
-    const requireApproval =
-      merges.length === 0 ||
-      merges.some(
-        (parsed) =>
-          !parsed.success ||
-          parsed.data.target !== ActivityResourceRole.Primary ||
-          parsed.data.scope !== undefined ||
-          parsed.data.requireApproval,
-      );
+    // Without a merge policy, either trusted PR review or an exact-head watch review can qualify.
+    const requireApproval = merges.some(
+      (parsed) =>
+        !parsed.success ||
+        parsed.data.target !== ActivityResourceRole.Primary ||
+        parsed.data.scope !== undefined ||
+        parsed.data.requireApproval,
+    );
     const history = await repository.history(child.workflowInstanceId);
     const accepted = acceptedReview(history.events);
     const review =
       accepted === undefined ? undefined : ((await repository.load(accepted)).view ?? undefined);
-    return { requireApproval, review };
+    return { requireApproval, review, allowTrustedReview: merges.length === 0 };
   };
 }
 

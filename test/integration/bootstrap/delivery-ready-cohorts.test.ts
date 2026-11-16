@@ -109,7 +109,7 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
       requiresApproval: false,
       on: {
         failed: { then: 'done' },
-        blocked: { then: 'merge' },
+        blocked: { then: 'done' },
         done: { then: 'done', watchGates: [{ watch: 'review', onReject: { then: 'revise' } }] },
       },
     });
@@ -145,17 +145,6 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
                 stages: {
                   implement: stage('branch'),
                   revise: stage('branch'),
-                  merge: {
-                    activity: 'pr.merge',
-                    with: {
-                      target: 'primary',
-                      method: 'squash',
-                      requireChecks: true,
-                      requireApproval: false,
-                      autoMerge: true,
-                    },
-                    on: { done: { then: 'done' } },
-                  },
                 },
                 watches: [
                   {
@@ -368,6 +357,7 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
           (row) => row.workItemId === entry.workItemId,
         )!;
         expect(row.prerequisiteBlocker).toContain('delivery-ready output two/change');
+        expect(row.prerequisiteBlocker).toContain('checks-failing');
         expect(row.blockReason).toBe(row.prerequisiteBlocker);
         await root.pullRequests.observe(
           { ...observed, checks: 'passing' },

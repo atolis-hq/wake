@@ -20,6 +20,11 @@ export interface DelegationArtifacts {
     output: DelegatedAssignment['outputs'][number],
     condition: DelegationPrerequisite['condition'],
   ): Promise<DelegationResult['outputs'][number] | null>;
+  prerequisiteOutputBlocker?(
+    child: WorkflowInstanceView,
+    output: DelegatedAssignment['outputs'][number],
+    condition: DelegationPrerequisite['condition'],
+  ): Promise<string | undefined>;
   validateInputs(
     parent: WorkflowInstanceView,
     references: readonly DelegationRevisionReference[],

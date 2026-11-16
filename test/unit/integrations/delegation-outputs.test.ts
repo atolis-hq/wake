@@ -316,6 +316,15 @@ describe('delivery-ready review policy', () => {
       approval: false,
       reviewHead: 'head-1',
       reviewOutcome: 'done',
+      checks: false,
+      accepted: false,
+      qualifies: false,
+      denial: 'checks-could-not-be-read',
+    },
+    {
+      approval: false,
+      reviewHead: 'head-1',
+      reviewOutcome: 'done',
       checks: true,
       accepted: false,
       qualifies: true,
@@ -366,6 +375,12 @@ describe('delivery-ready review policy', () => {
         (!options.requireAcceptedReview || scenario.accepted) &&
         (!options.requireChecks || scenario.checks),
       revision: 'head-1',
+      reason:
+        'denial' in scenario
+          ? scenario.denial
+          : scenario.checks
+            ? 'stale-approval'
+            : 'checks-failing',
     }));
     const service = createDelegationOutputs({
       artifacts: { qualifyingOutputs: async () => [] },
@@ -397,6 +412,7 @@ describe('delivery-ready review policy', () => {
           activationId: 'review-activation',
           status: 'succeeded',
           workspace: { mode: 'read-only' },
+          repositoryAssignment: { ...assignment, sourceRevision: 'base-not-head' },
           workspaceRevision: scenario.reviewHead,
           outcome: { kind: scenario.reviewOutcome },
         },
@@ -417,6 +433,24 @@ describe('delivery-ready review policy', () => {
       'delivery-ready',
     );
     expect(selected !== null).toBe(scenario.qualifies);
+    if (!scenario.qualifies) {
+      const reason = await service.prerequisiteOutputBlocker!(
+        child as never,
+        output as never,
+        'delivery-ready',
+      );
+      expect(reason).toContain(
+        scenario.approval
+          ? 'trusted review'
+          : scenario.reviewOutcome !== 'done'
+            ? 'No accepted'
+            : scenario.reviewHead !== 'head-1'
+              ? 'exact head head-1'
+              : 'denial' in scenario
+                ? scenario.denial
+                : 'checks-failing',
+      );
+    }
     if (scenario.qualifies)
       expect(authority).toHaveBeenCalledWith(
         'child',
