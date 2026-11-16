@@ -703,7 +703,10 @@ completion transition:
 
 `retry.max` accepts 1 or 2. Wake reconciles this route during the merge wait,
 including after restart, only when failing check evidence identifies the primary
-PR's current head revision. Missing or superseded head evidence does not consume
+PR's current head revision. `pr.checks-changed` records the observed head separately
+from verified passing execution evidence (`checkEvidence`); failing check runs and
+commit statuses can therefore qualify for repair without authorizing a merge.
+Legacy facts without an observed head and superseded head evidence do not consume
 an attempt. The durable per-workflow check repair counter is independent of
 conflict repair and stage `repeat` limits. The configured repair stage should
 push a fix to the existing PR and return through review and merge.

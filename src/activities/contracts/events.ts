@@ -161,6 +161,8 @@ export interface ActivityEventPayloads {
     readonly mergeability?: PullRequestMergeability | undefined;
   };
   readonly [ActivityEventType.PrChecksChanged]: {
+    /** Head whose provider checks produced this aggregate observation. Not merge authorization. */
+    readonly headRevision?: string | undefined;
     readonly checkEvidence?: PullRequestCheckEvidence | undefined;
     readonly checks: PullRequestDiscoveredPayload['checks'];
   };

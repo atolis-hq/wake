@@ -162,7 +162,7 @@ function matchesPrimaryPullRequestTransition(
   if (
     transition.retry !== undefined &&
     (pullRequest.state !== PullRequestState.Open ||
-      event.event.payload.checkEvidence?.headRevision !== pullRequest.headRevision)
+      event.event.payload.headRevision !== pullRequest.headRevision)
   )
     return false;
   return (

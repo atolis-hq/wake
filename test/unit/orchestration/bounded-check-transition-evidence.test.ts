@@ -10,8 +10,13 @@ import {
   TransitionTargetKind,
   type CompiledResourceTransition,
 } from '../../../src/orchestration/index.js';
-import { BuiltInResourceCapability, resourceKind } from '../../../src/resources/index.js';
+import {
+  BuiltInResourceCapability,
+  resourceKind,
+  resourceStream,
+} from '../../../src/resources/index.js';
 import { TestWorld } from '../../e2e/support/world.js';
+import { eventEnvelope } from '../../support/event-envelope.js';
 import { resId } from '../../support/identities.js';
 
 it('requires current-head evidence for live and recovered bounded failures, preserving legacy routes', async () => {
@@ -32,11 +37,6 @@ it('requires current-head evidence for live and recovered bounded failures, pres
     headRevision: 'old',
     baseRevision: 'base',
     checks: PullRequestCheckState.Failing,
-    checkEvidence: {
-      headRevision: 'old',
-      baseRevision: 'base',
-      startedAt: '2026-11-16T00:00:00.000Z',
-    },
   };
   await world.observePullRequest({ ...observation, checks: PullRequestCheckState.Passing });
   await world.observePullRequest(observation);
@@ -56,15 +56,20 @@ it('requires current-head evidence for live and recovered bounded failures, pres
   expect(await policy.resolve({ ...input, fact })).toMatchObject({
     failingCheckNames: ['integration'],
   });
-  await world.observePullRequest({ ...observation, headRevision: 'new', checkEvidence: undefined });
+  const legacyFact = eventEnvelope(
+    ActivityEventType.PrChecksChanged,
+    { checks: PullRequestCheckState.Failing },
+    resourceStream(resourceId),
+  );
+  expect(await policy.resolve({ ...input, fact: legacyFact })).toBeNull();
+  await world.observePullRequest({ ...observation, headRevision: 'new' });
   expect(await policy.resolve({ ...input, fact })).toBeNull();
-  expect(await policy.resolve(input)).toBeNull();
+  expect(await policy.resolve(input)).not.toBeNull();
   const { retry: _retry, ...legacy } = transition;
   expect(await policy.resolve({ ...input, transitions: [legacy], fact })).not.toBeNull();
   await world.observePullRequest({
     ...observation,
     headRevision: 'new',
-    checkEvidence: { ...observation.checkEvidence, headRevision: 'new' },
   });
   expect(await policy.resolve(input)).toMatchObject({ failingCheckNames: ['integration'] });
   await world.observePullRequest({ ...observation, state: PullRequestState.Merged });

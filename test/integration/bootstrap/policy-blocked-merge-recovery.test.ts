@@ -18,10 +18,13 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { createOneShotRunnerAdvance } from '../../../src/bootstrap/runner-tick-adapter.js';
 import { createWorkCancellationPolicy } from '../../../src/control-plane/index.js';
+import { observePullRequest as translatePullRequest } from '../../../src/integrations/github/application/pull-request-translation.js';
 import {
   DurableFakeDeliveryProvider,
   ExternalWorkOutcome,
+  adapterId,
   concludeObservedWork,
+  integrationStream,
 } from '../../../src/integrations/index.js';
 import {
   OrchestrationEventType,
@@ -38,6 +41,7 @@ import {
 } from '../../../src/resources/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { WorkStatus } from '../../../src/work/index.js';
+import { githubCheckObservation } from '../../support/github-check-observation.js';
 import { resId, workId } from '../../support/identities.js';
 
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
@@ -119,7 +123,7 @@ const pr = resId('merge-recovery');
 const iid = workflowInstanceId('merge-recovery');
 const group = orchestrationGroupId('merge-recovery');
 
-async function setup(definition: unknown = workflow) {
+async function setup(definition: unknown = workflow, githubChecks = false) {
   const path = await mkdtemp(join(tmpdir(), 'wake-merge-recovery-'));
   roots.push(path);
   const provider = new DurableFakeDeliveryProvider();
@@ -145,7 +149,10 @@ async function setup(definition: unknown = workflow) {
       {
         resourceId,
         kind: resourceKind(kind),
-        externalKey: { adapter: 'fake', key: kind },
+        externalKey: {
+          adapter: 'fake',
+          key: githubChecks && kind === 'pull-request' ? 'test/repo#1' : kind,
+        },
         capabilities,
       },
       command(),
@@ -633,38 +640,25 @@ async function observeChecks(
   root: Root,
   checks: 'failing' | 'passing' | 'unknown',
   head = 'head',
-  evidence = true,
+  retainEvidence = true,
+  commitStatus = false,
 ) {
-  await root.pullRequests.observe(
-    {
-      resourceId: pr,
-      workItemId: wid,
-      state: 'open',
-      headRevision: head,
-      baseRevision: 'base',
-      checks,
-      changedFiles: ['src/kernel/index.ts'],
-      ...(evidence
-        ? {
-            checkEvidence: {
-              headRevision: head,
-              baseRevision: 'base',
-              startedAt: command().occurredAt,
-            },
-          }
-        : {}),
-    },
-    command(),
-  );
+  const observed = await githubCheckObservation(checks, head, adapterId('fake'), commitStatus);
+  if (retainEvidence) {
+    const stream = integrationStream(adapterId('fake'));
+    const facts = await root.journal.readStream(stream);
+    await root.journal.appendToStream(stream, facts.length, [observed]);
+  }
+  await root.pullRequests.observe(translatePullRequest(pr, wid, observed.payload), command());
 }
 
 it.each([1, 2])(
   'bounds current-head failing checks to %s repairs across restart and escalates once',
   async (max) => {
     const definition = checkRepairWorkflow(max);
-    const { root: initial, path, provider } = await setup(definition);
+    const { root: initial, path, provider } = await setup(definition, true);
     await until(initial, () => waiting(initial));
-    await observeChecks(initial, 'failing');
+    await observeChecks(initial, 'failing', 'head', max === 1, max === 2);
     await tick(initial);
     expect((await initial.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
     const root = await createCompositionRoot(path, {
@@ -682,7 +676,9 @@ it.each([1, 2])(
     expect(view.retryCounts['pr.merge:failing']).toBe(max);
     expect(view.retryCounts['pr.merge:conflicting']).toBeUndefined();
     expect(view.waitingFor?.signalKind).toBe('blocked');
-    expect(view.blockReason).toContain('current failing check-name evidence unavailable');
+    expect(view.blockReason).toContain(
+      max === 1 ? 'failing checks: integration' : 'current failing check-name evidence unavailable',
+    );
     const repairs = (await root.journal.readAll(0))
       .map(selectWorkflowOrchestrationEvent)
       .filter(
@@ -704,13 +700,10 @@ it.each([1, 2])(
   60_000,
 );
 
-it('ignores superseded and missing check evidence without spending a repair', async () => {
-  const { root } = await setup(checkRepairWorkflow());
+it('ignores superseded failures and unknown checks without spending a repair', async () => {
+  const { root } = await setup(checkRepairWorkflow(), true);
   await until(root, () => waiting(root));
   await observeChecks(root, 'failing', 'old');
-  await observeChecks(root, 'failing', 'new', false);
-  await tick(root);
-  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBeUndefined();
   await observeChecks(root, 'unknown', 'new');
   await tick(root);
   expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBeUndefined();
@@ -722,7 +715,7 @@ it('ignores superseded and missing check evidence without spending a repair', as
 it('repairs red checks, observes the pushed green head, and requests merge through production composition', async () => {
   const definition = checkRepairWorkflow();
   definition.stages.merge.with.blockedPaths = [];
-  const { root } = await setup(definition);
+  const { root } = await setup(definition, true);
   await until(root, () => waiting(root));
   await observeChecks(root, 'failing');
   await tick(root);
@@ -753,4 +746,4 @@ it('repairs red checks, observes the pushed green head, and requests merge throu
     async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Completed,
   );
   expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
-});
+}, 60_000);

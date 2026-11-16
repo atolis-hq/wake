@@ -177,6 +177,7 @@ class JournalPullRequestService implements PullRequestService {
     )
       await this.append(command.resourceId, stateChanged(command, context));
     if (
+      revisionHasChanged ||
       current.checks !== command.checks ||
       !sameCheckEvidence(current.checkEvidence, command.checkEvidence)
     )
