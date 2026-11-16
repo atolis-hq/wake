@@ -14,7 +14,7 @@ export async function presentDelivery(
   work: WorkItemView,
 ): Promise<Pick<WorkDetailResponse, 'delegation'>> {
   if ((root as Partial<CompositionRoot>).orchestration?.deliveryTree === undefined) return {};
-  const cohorts = await root.orchestration.deliveryTree(work.workItemId);
+  const cohorts = await root.orchestration.deliveryTree(work.workItemId, { verify: true });
   if (cohorts.length === 0 && work.delegation === undefined) return {};
   const delivery = await root.work.deliverySnapshot();
   const parent = await primaryWorkflowFor(root, work);

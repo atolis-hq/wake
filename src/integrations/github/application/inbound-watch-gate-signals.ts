@@ -69,6 +69,7 @@ export async function applyWatchGateVerdictSignal(input: {
     {
       kind: WatchGateVerdictSignal,
       outcome: verdict.outcome,
+      childWorkflowInstanceId: verdict.childWorkflowInstanceId,
       authority: { kind: ApprovalAuthorityKind.Watch, watch: verdict.childWatchId },
       actorId: event.event.payload.actor.id,
       actorDecision: { authorized: true, evidenceId: event.event.eventId },
@@ -87,6 +88,7 @@ async function verifyWatchGateVerdict(input: {
   readonly parentWorkflowInstanceId: WorkflowInstanceId;
   readonly outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected;
   readonly childWatchId: WatchId;
+  readonly childWorkflowInstanceId: WorkflowInstanceId;
 } | null> {
   const { marker, outcome, runs, orchestration } = input;
   const run = (await runs.load(runId(marker.runId))).view;
@@ -109,7 +111,12 @@ async function verifyWatchGateVerdict(input: {
   );
   if (!isWaitingForChildWatch(parent, childWatchId)) return null;
 
-  return { parentWorkflowInstanceId: child.parentWorkflowInstanceId, outcome, childWatchId };
+  return {
+    parentWorkflowInstanceId: child.parentWorkflowInstanceId,
+    childWorkflowInstanceId: child.workflowInstanceId,
+    outcome,
+    childWatchId,
+  };
 }
 
 function isWaitingForChildWatch(parent: WorkflowInstanceView | undefined, childWatchId: WatchId) {

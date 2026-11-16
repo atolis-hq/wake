@@ -510,8 +510,9 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     // Rows carry the id and the provider reference of their PR so the UI can label them.
     expect(blockedRow.workItemId).toBe(childOf('a2').workItemId);
     expect(blockedRow.externalRef).toBe('org/a#2');
-    // Live drift is not computed on read; the UI shows blockers that reconciliation recorded.
-    expect(blockedRow.prerequisiteBlocker).toBeUndefined();
+    // The API verifies pinned inputs so drift is visible before an outcome is accepted.
+    expect(blockedRow.prerequisiteBlocker).toBe('Upstream branch moved; agent assessment required');
+    expect(blockedRow.blockReason).toBe(blockedRow.prerequisiteBlocker);
     expect(rows.get(toWorkItemKey(childOf('b2').workItemId))!.prerequisiteBlocker).toBeUndefined();
     // Preserve historical receipts; returning to the exact source is an explicit agent operation.
     await git(paths.a, 'update-ref', 'refs/heads/' + childOf('a1').workItemId, heads.get('a1')!);

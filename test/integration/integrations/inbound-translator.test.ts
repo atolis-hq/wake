@@ -49,6 +49,8 @@ import {
 import {
   ConversationSurfaceCapability,
   createConversationCommandReactor,
+  OrchestrationEventType,
+  selectWorkflowOrchestrationEvent,
   workflowInstanceId,
   workflowName,
 } from '../../../src/orchestration/index.js';
@@ -640,6 +642,17 @@ describe('InboundTranslator', () => {
     expect((await fixture.world.viewWorkflow(fixture.parent.workflowInstanceId))?.status).toBe(
       'completed',
     );
+    const accepted = (await fixture.world.journal.readAll(0))
+      .map(selectWorkflowOrchestrationEvent)
+      .find(
+        (event) =>
+          event?.stream.id === fixture.parent.workflowInstanceId &&
+          event.event.eventType === OrchestrationEventType.SignalAccepted,
+      );
+    expect(accepted?.event.payload).toMatchObject({
+      providerEventId: event.eventId,
+      childWorkflowInstanceId: fixture.run.workflowInstanceId,
+    });
   });
 
   it('resumes exactly an eligible blocked agent stage from a plain GitHub issue reply', async () => {

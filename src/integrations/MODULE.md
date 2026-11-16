@@ -80,3 +80,7 @@ normal passing semantics. Missing, ambiguous, expired or unreadable checkout evi
 cannot qualify. The current PR test-merge SHA is not used, so lazy recomputation cannot
 block base-only maintenance followed by a qualifying execution. Completed job logs and
 Git objects are cached; mutable workflow-run attempts are conditionally revalidated.
+
+Delivery-ready change prerequisites always require exact-head checks. Bootstrap supplies
+the pinned upstream merge approval policy and accepted configured watch review;
+when approval is disabled, the accepted read-only review Run must attest the exact head.
