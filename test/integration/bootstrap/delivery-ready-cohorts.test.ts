@@ -467,7 +467,7 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
           childWorkflowInstanceId: watch.workflowInstanceId,
         });
         expect([eventId, watch.workflowInstanceId]).toContain(
-          accepted?.event.payload.providerEventId,
+          (accepted?.event.payload as { providerEventId?: string } | undefined)?.providerEventId,
         );
         expect((await root.orchestration.get(entry.workflowInstanceId))!.status).toBe('completed');
       }
