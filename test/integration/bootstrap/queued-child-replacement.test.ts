@@ -4,13 +4,14 @@ import {
   InMemoryEventJournal,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import {
   boardProjection,
   createCompositionRoot,
+  createSurfaceApplications,
   parseRootConfig,
   type BoardProjectionView,
 } from '../../../src/bootstrap/index.js';
@@ -22,6 +23,7 @@ import {
   WorkflowStatus,
   type DelegationReservation,
 } from '../../../src/orchestration/index.js';
+import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { workId } from '../../support/identities.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
@@ -36,16 +38,19 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
       actor: { kind: 'system' as const, id: 'test' },
     });
     try {
+      await mkdir(join(home, 'prompts'));
+      await writeFile(join(home, 'prompts', 'assignment.md'), '---\n{}\n---\nPerform assignment');
       const runner = new ScriptedDelegationRunner();
       const stage = {
         activity: 'agent',
-        with: { prompt: 'Perform assignment' },
+        with: { template: 'assignment' },
         execution: { workspace: 'none' },
         requiresApproval: false,
         on: { done: { then: 'done' }, failed: { then: 'done' } },
       };
       const root = await createCompositionRoot(home, {
         config: parseRootConfig({
+          surfaces: { api: { conversationMessages: { enabled: true } } },
           execution: {
             agentRunners: { fake: { kind: 'fake' } },
             runnerPools: { standard: ['fake'] },
@@ -172,6 +177,105 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
       expect((await root.orchestration.get(originalChild.workflowInstanceId))!.status).toBe(
         WorkflowStatus.Active,
       );
+      const instruction = '/changes Re-assess the stack after the upstream base moved.';
+      const command = {
+        body: instruction,
+        actorId: 'maintainer',
+        capabilities: ['operator-surface' as const],
+        authorized: false,
+        reviewAuthorized: false,
+      };
+      expect(
+        await root.orchestration.applyConversationCommandWithFeedback(
+          parentWork,
+          command,
+          context('unauthorized-assessment'),
+        ),
+      ).toMatchObject({ applied: false });
+      expect(
+        (await root.orchestration.get(parent.workflowInstanceId))!.delegationAttention,
+      ).toBeUndefined();
+      await root.projectionSubscriptions.catchUpOnce();
+      const applications = await createSurfaceApplications(root);
+      const key = toWorkItemKey(parentWork);
+      expect((await applications.api.work.detail(key))!.data.conversation.canContinue).toBe(true);
+      expect(
+        await applications.api.work.message!(key, {
+          idempotencyKey: 'operator-assessment',
+          body: instruction,
+          continuation: true,
+        }),
+      ).toMatchObject({ status: 'accepted' });
+      const attending = (await root.orchestration.get(parent.workflowInstanceId))!;
+      expect(attending.delegationAttention).toBeDefined();
+      expect(
+        await root.orchestration.applyConversationCommandWithFeedback(
+          parentWork,
+          { ...command, authorized: true },
+          context('second-assessment'),
+        ),
+      ).toMatchObject({ applied: false });
+      runner.scripts.push(async (request) => {
+        expect(request.prompt).toContain(instruction);
+        const caller = {
+          workflowInstanceId: parent.workflowInstanceId,
+          activationId: attending.pendingActivation!.activationId,
+          runId: request.runId,
+        };
+        expect(
+          (await root.orchestration.inspectDelegation(caller, context('assess-inspect'))).tree,
+        ).toHaveLength(1);
+        await expect(
+          root.orchestration.submitDelegation(
+            caller,
+            {
+              cohortId: 'premature-repair',
+              assignments: replacements,
+            },
+            context('assess-replace'),
+          ),
+        ).rejects.toMatchObject({ code: 'replacement-unsupported' });
+        return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+      });
+      await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+      await awaitRuns();
+      const assessmentRun = (await root.execution.list()).find(
+        (run) => run.activationId === attending.pendingActivation!.activationId,
+      )!;
+      expect(assessmentRun.failure).toBeUndefined();
+      expect(assessmentRun.outcome).toMatchObject({ kind: 'done' });
+      await root.orchestration.acceptOutcome(
+        {
+          workflowInstanceId: parent.workflowInstanceId,
+          activationId: assessmentRun.activationId,
+          outcome: assessmentRun.outcome!,
+        },
+        context('accept-assessment'),
+      );
+      await root.orchestration.reconcileChildCompletions(context('restore-assessment-wait'));
+      const restored = (await root.orchestration.get(parent.workflowInstanceId))!;
+      expect(restored.delegationAttention).toBeUndefined();
+      expect(restored.delegationWait?.cohortId).toBe('original');
+      await root.projectionSubscriptions.catchUpOnce();
+      expect((await applications.api.work.detail(key))!.data.conversation.canContinue).toBe(true);
+      expect(restored.operatorRetryCommandIds).toContain('work:operator-assessment');
+      expect(
+        await root.orchestration.applyConversationCommandWithFeedback(
+          parentWork,
+          { ...command, authorized: true },
+          context('work:operator-assessment'),
+        ),
+      ).toMatchObject({ applied: true });
+      expect(
+        await applications.api.work.message!(key, {
+          idempotencyKey: 'operator-assessment',
+          body: instruction,
+          continuation: true,
+        }),
+      ).toMatchObject({ status: 'accepted' });
+      expect(
+        (await root.orchestration.get(parent.workflowInstanceId))!.delegationAttention,
+      ).toBeUndefined();
       if (status === WorkflowStatus.Superseded) {
         // Settlement abandons the live instance after its assignment is withdrawn.
         await root.work.cancel(
@@ -200,6 +304,13 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
         );
       }
       await root.orchestration.reconcileChildCompletions(context('settle'));
+      expect(
+        await root.orchestration.applyConversationCommandWithFeedback(
+          parentWork,
+          { ...command, authorized: true },
+          context('stale-assessment'),
+        ),
+      ).toMatchObject({ applied: false, reason: expect.stringContaining('No eligible') });
       expect((await root.orchestration.get(originalChild.workflowInstanceId))!.status).toBe(status);
       for (const child of original.children.slice(1))
         expect(await root.orchestration.get(child.workflowInstanceId)).toBeNull();

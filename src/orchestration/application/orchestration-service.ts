@@ -561,6 +561,9 @@ export class OrchestrationService {
         this.extendBlockedGroupBudget(id, { kind: ApprovalAuthorityKind.Human }, context),
       resumeChanges: async (id) => {
         if (!input.authorized) return false;
+        const parent = workflows.find((workflow) => workflow.workflowInstanceId === id)!;
+        if (parent.delegationWait !== undefined)
+          return this.delegatedWork.assessOperator(parent, context);
         const updated = await this.resumeBlockedStageForChanges(id, context);
         return updated?.operatorRetryCommandIds.includes(context.commandId) === true;
       },

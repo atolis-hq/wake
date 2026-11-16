@@ -222,7 +222,8 @@ export const delegationAttentionRequestSchema = z
     attentionKey: z.string().min(1),
     activationId: brandedStringSchema(activationId),
     revision: z.number().int().positive(),
-    blockers: z.array(delegationAttentionBlockerSchema).min(1),
+    // Operator-requested assessments need no child blocker.
+    blockers: z.array(delegationAttentionBlockerSchema),
   })
   .strict();
 
