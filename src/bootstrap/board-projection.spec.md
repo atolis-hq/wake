@@ -85,6 +85,17 @@ API surface application's board and status applications do that).
   (e.g. `children`/`childRuns` on a projection rebuilt from an older event
   history) by treating a missing map as empty rather than failing.
 
+- Superseded primary workflows MUST move to `finished` with an optional
+  `superseded: true` flag, cleared when a new primary instance starts.
+- Reserved delegated children MUST show optional `prerequisiteWait` metadata
+  containing their declared prerequisite assignment IDs, outputs and conditions.
+  Reservation precedes child creation, so creation MUST retain this metadata.
+  Prerequisite-blocked events MUST add the verbatim journal reason without
+  claiming which declared prerequisite is unmet. The condition remains `ready`.
+- The wait MUST clear on child start, supersession, cohort settlement, work
+  closure, cancellation, deletion, or removal by replacement. Missing child
+  cards on prerequisite-blocked events MUST be tolerated.
+
 ## Event catalogue
 
 This component reacts to Work's `ItemCreated`, `ObjectiveRevised`,

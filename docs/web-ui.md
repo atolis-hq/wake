@@ -25,6 +25,13 @@ input only when a child is blocked (shown as a "child blocked" badge) or the
 parent has escalated a question about its children to a human. Once the
 children's results are joined, the card goes back to the normal conditions.
 
+Superseded workflows appear in Finished with a "superseded" badge. Reserved
+delegated children remain in Ready with a queued badge listing their declared
+prerequisite assignments and outputs. When prerequisites are blocked, the badge
+tooltip shows the journal reason; the list does not claim which input is unmet.
+The board API adds optional `superseded` and `prerequisiteWait` fields without
+changing the five condition values.
+
 Freezing a work item pauses its delegated children and their descendants too.
 A frozen item shows a "frozen" badge. Delegated work that is paused only
 because a parent or ancestor is frozen shows "parent frozen" or "ancestor
