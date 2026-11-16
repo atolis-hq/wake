@@ -128,11 +128,8 @@ export class PrerequisiteReadiness {
   }
 
   private upstreamOf(child: Child, edge: DelegationPrerequisite): Child | undefined {
-    const owner = this.owners.get(child.workItemId);
-    return [...this.children.values()].find(
-      (entry) =>
-        this.owners.get(entry.workItemId) === owner && entry.assignmentId === edge.assignmentId,
-    );
+    const index = child.prerequisites?.indexOf(edge) ?? -1;
+    return this.children.get(child.prerequisiteWorkItemIds?.[index] ?? '');
   }
 
   private recordedUpstreamReason(

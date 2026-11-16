@@ -991,7 +991,14 @@ The conditions are:
   by this condition; the upstream's own output requirements still govern its
   eventual delivery-ready result.
 - `delivery-ready`: successful configured workflow completion and the named
-  output's acceptance, including required review/check authority for changes.
+  output's acceptance. Changes always need passing checks on the exact head.
+  Review follows the producing workflow's pinned merge-stage approval policy:
+  `requireApproval: false` permits a passing configured Wake watch review whose
+  accepted read-only Run attests that head; otherwise trusted accepted-review
+  authority is required. Missing or ambiguous merge policy keeps approval required.
+  Explicit `cohortId` references can reuse a prior cohort's producing child;
+  replacement never transfers output ownership. The API reports a verified
+  prerequisite reason even when a completed Run's outcome is still fenced.
 - `merged-change`: actual provider-observed merge at the verified upstream
   head. Issue closure and workflow completion never substitute for merge.
 

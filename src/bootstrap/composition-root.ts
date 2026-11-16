@@ -66,8 +66,11 @@ import {
 } from '../integrations/index.js';
 import { SystemClock, UlidIdGenerator, type Clock } from '../kernel/index.js';
 import {
+  OrchestrationRepository,
+  WorkflowDefinitionRegistry,
   compileWorkflow,
   createAgentActivityClassifier,
+  createDelegationReviewPolicy,
   createOrchestrationService,
   workflowInstanceId,
 } from '../orchestration/index.js';
@@ -283,6 +286,10 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         (id) => orchestration.repositoryAuthority(id),
       ),
       artifacts: createDelegationOutputs({
+        reviewPolicy: createDelegationReviewPolicy(
+          new OrchestrationRepository(journal),
+          new WorkflowDefinitionRegistry(journal, projections, definitions),
+        ),
         providers: () => providerInstances.promise,
         resources,
         pullRequests,

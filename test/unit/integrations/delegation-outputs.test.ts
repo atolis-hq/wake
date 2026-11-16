@@ -309,3 +309,118 @@ it('does not let a missing optional change waive a required change', async () =>
     ]),
   ).toEqual([]);
 });
+
+describe('delivery-ready review policy', () => {
+  it.each([
+    {
+      approval: false,
+      reviewHead: 'head-1',
+      reviewOutcome: 'done',
+      checks: true,
+      accepted: false,
+      qualifies: true,
+    },
+    {
+      approval: false,
+      reviewHead: 'old-head',
+      reviewOutcome: 'done',
+      checks: true,
+      accepted: false,
+      qualifies: false,
+    },
+    {
+      approval: false,
+      reviewHead: 'head-1',
+      reviewOutcome: 'rejected',
+      checks: true,
+      accepted: false,
+      qualifies: false,
+    },
+    {
+      approval: false,
+      reviewHead: 'head-1',
+      reviewOutcome: 'done',
+      checks: false,
+      accepted: false,
+      qualifies: false,
+    },
+    {
+      approval: true,
+      reviewHead: 'head-1',
+      reviewOutcome: 'done',
+      checks: true,
+      accepted: false,
+      qualifies: false,
+    },
+    {
+      approval: true,
+      reviewHead: 'old-head',
+      reviewOutcome: 'rejected',
+      checks: true,
+      accepted: true,
+      qualifies: true,
+    },
+  ])('enforces exact-head review, merge approval policy and checks: %j', async (scenario) => {
+    const authority = vi.fn(async (_work, options) => ({
+      allowed:
+        (!options.requireAcceptedReview || scenario.accepted) &&
+        (!options.requireChecks || scenario.checks),
+      revision: 'head-1',
+    }));
+    const service = createDelegationOutputs({
+      artifacts: { qualifyingOutputs: async () => [] },
+      reviewPolicy: async () => ({
+        requireApproval: scenario.approval,
+        review: {
+          workflowInstanceId: 'review',
+          parentWorkflowInstanceId: 'wf',
+          acceptedOutcomes: ['review-activation'],
+        },
+      }),
+      resources: {
+        get: async () => repository,
+        findByExternalKey: async () => pullRequest,
+        primaryCorrelation: async () => ({
+          workItemId: 'child',
+          role: ResourceCorrelationRole.Primary,
+          provenance: ResourceCorrelationProvenance.AgentReported,
+        }),
+      },
+      pullRequests: {
+        get: async () => ({ headRevision: 'head-1', state: 'open' }),
+        decideAuthority: authority,
+      },
+      runs: async () => [
+        run('a1', 'head-1', true),
+        {
+          workflowInstanceId: 'review',
+          activationId: 'review-activation',
+          status: 'succeeded',
+          workspace: { mode: 'read-only' },
+          workspaceRevision: scenario.reviewHead,
+          outcome: { kind: scenario.reviewOutcome },
+        },
+      ],
+      providers: async () => [
+        {
+          adapter: 'fake',
+          verifyArtifact: async () => ({
+            externalKey: pullRequest.externalKey,
+            revision: 'head-1',
+          }),
+        },
+      ],
+    } as never);
+    const selected = await service.prerequisiteOutput!(
+      child as never,
+      output as never,
+      'delivery-ready',
+    );
+    expect(selected !== null).toBe(scenario.qualifies);
+    if (scenario.qualifies)
+      expect(authority).toHaveBeenCalledWith(
+        'child',
+        expect.objectContaining({ requireAcceptedReview: scenario.approval, requireChecks: true }),
+      );
+  });
+});

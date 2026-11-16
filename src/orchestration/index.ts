@@ -124,3 +124,5 @@ export type {
   DelegationResult,
   DelegationSubmission,
 } from './contracts/delegation.js';
+
+export { createDelegationReviewPolicy } from './application/delegation-review-policy.js';

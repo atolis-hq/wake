@@ -59,7 +59,17 @@ function resolveChild(
   return {
     ...child,
     prerequisiteWorkItemIds: child.prerequisites.map((edge) => {
-      const cohort = all.find((entry) => entry.cohortId === (edge.cohortId ?? candidate.cohortId));
+      const cohorts = all.filter(
+        (entry) =>
+          entry.cohortId === (edge.cohortId ?? candidate.cohortId) &&
+          entry.children.some((target) => target.assignmentId === edge.assignmentId),
+      );
+      if (cohorts.length !== 1)
+        reject(
+          Code.MissingTarget,
+          'Prerequisite cohort is missing or ambiguous within this delivery',
+        );
+      const cohort = cohorts[0];
       const target = cohort?.children.find((entry) => entry.assignmentId === edge.assignmentId);
       if (target === undefined)
         reject(

@@ -23,6 +23,10 @@ import {
 } from '../../resources/index.js';
 import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
 import type { ProviderInstance } from '../contracts/provider.js';
+import {
+  deliveryReadyRequirements,
+  type DelegationReviewPolicy,
+} from './delegation-output-review.js';
 
 const reportsSchema = z.object({ reportedArtifacts: z.array(reportedArtifactSchema) });
 
@@ -32,6 +36,7 @@ type ChangeOutput = Extract<
 >;
 
 interface OutputDependencies {
+  readonly reviewPolicy?: DelegationReviewPolicy;
   readonly artifacts: DelegationArtifacts;
   readonly resources: ResourceService;
   readonly pullRequests: PullRequestService;
@@ -208,29 +213,24 @@ async function qualifyingObservation(
   revision: string,
   condition: DelegationPrerequisite['condition'] | undefined,
 ) {
-  const owner = await input.resources.primaryCorrelation(id);
-  if (
-    owner?.workItemId !== child.workItemId ||
-    owner.role !== ResourceCorrelationRole.Primary ||
-    owner.provenance !== ResourceCorrelationProvenance.AgentReported
-  )
-    return null;
+  if (!(await ownsOutput(input, child, id))) return null;
   const observed = await input.pullRequests.get(id);
   if (observed === null || observed.headRevision !== revision) return null;
   if (condition === Condition.MergedChange) {
     if (observed.state !== PullRequestState.Merged) return null;
-  } else if (
-    !(await hasOutputAuthority(
-      input,
-      child,
-      condition === Condition.PushedChange
-        ? { ...output, requireReview: false, requireChecks: false }
-        : output,
-      id,
-      revision,
-    ))
-  )
-    return null;
+  } else {
+    const requirements =
+      condition === Condition.DeliveryReady
+        ? await deliveryReadyRequirements(input, child, revision)
+        : condition === Condition.PushedChange
+          ? { requireReview: false, requireChecks: false }
+          : output;
+    if (
+      requirements === null ||
+      !(await hasOutputAuthority(input, child, { ...output, ...requirements }, id, revision))
+    )
+      return null;
+  }
   return observed;
 }
 
@@ -241,13 +241,7 @@ async function hasOutputAuthority(
   id: Parameters<ResourceService['get']>[0],
   revision: string,
 ): Promise<boolean> {
-  const owner = await input.resources.primaryCorrelation(id);
-  if (
-    owner?.workItemId !== child.workItemId ||
-    owner.role !== ResourceCorrelationRole.Primary ||
-    owner.provenance !== ResourceCorrelationProvenance.AgentReported
-  )
-    return false;
+  if (!(await ownsOutput(input, child, id))) return false;
   const options = {
     target: { resourceId: id },
     requireAcceptedReview: output.requireReview ?? true,
@@ -289,5 +283,18 @@ function hasSuccessfulOutcome(run: RunView): boolean {
     run.outcome.kind !== ActivityOutcomeKind.Failed &&
     run.outcome.kind !== ActivityOutcomeKind.Blocked &&
     run.outcome.kind !== ActivityOutcomeKind.Rejected
+  );
+}
+
+async function ownsOutput(
+  input: OutputDependencies,
+  child: WorkflowInstanceView,
+  id: Parameters<ResourceService['get']>[0],
+) {
+  const owner = await input.resources.primaryCorrelation(id);
+  return (
+    owner?.workItemId === child.workItemId &&
+    owner.role === ResourceCorrelationRole.Primary &&
+    owner.provenance === ResourceCorrelationProvenance.AgentReported
   );
 }
