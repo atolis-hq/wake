@@ -943,8 +943,10 @@ recipe, and repository paths. Workspace prepare hooks apply to each checkout.
 Repair uses a new child: submit an assignment with `replaces: { cohortId, assignmentId }`
 naming the original. It must keep every original criterion, repository and output; if the
 original change is unmerged it must start from that contribution and keep the original
-pull request base. Only a completed or superseded child can be replaced; correcting a running
-child is not supported (`replacement-unsupported`). New children count against the same root
+pull request base. A completed or superseded child can be replaced. A child with no workflow
+instance can also be replaced once its cohort has settled unsuccessfully. Children with
+unresolved runs cannot be replaced; correcting a running child is not supported
+(`replacement-unsupported`). New children count against the same root
 `maxDescendants` and workflow repeat/retry limits. When a failing QA verdict is recorded with
 no root-wide descendant capacity or no configured QA failure-repeat capacity left, it is
 marked `exhausted` and the findings stay visible for a

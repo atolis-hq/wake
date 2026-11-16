@@ -333,6 +333,14 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
               !execution.isLocallyActive(run.runId),
           );
       },
+      hasUnresolvedRuns: async (id) =>
+        (await execution.list()).some(
+          (run) =>
+            run.workflowInstanceId === id &&
+            (isActiveRunStatus(run.status) ||
+              run.status === RunStatus.Ambiguous ||
+              execution.isLocallyActive(run.runId)),
+        ),
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
         return (
