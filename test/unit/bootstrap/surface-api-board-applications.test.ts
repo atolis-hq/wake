@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js';
 import { resolveResourceRepositoryIdentity } from '../../../src/bootstrap/composition-root.js';
 import { boardProjection } from '../../../src/bootstrap/index.js';
@@ -6,7 +6,7 @@ import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api
 import { RunStatus } from '../../../src/execution/index.js';
 import { WorkEventType, workItemStream } from '../../../src/work/index.js';
 import { eventEnvelope } from '../../support/event-envelope.js';
-import { workId } from '../../support/identities.js';
+import { resId, workId } from '../../support/identities.js';
 
 it('normalizes a retired keyed active-run phase during an immediate board API read', async () => {
   const item = workId('board-api-concurrent-runs');
@@ -150,10 +150,12 @@ it('exposes the repository on board cards only when the adapter resolves one', a
   Object.assign(root, {
     resolveResourceRepositoryIdentity,
     resources: {
-      correlationsForWork: async (id: string) => [{ role: 'primary', resourceId: `res-${id}` }],
+      correlationsForWork: async (id: string) => [
+        { role: 'primary', resourceId: resId(id === github ? 'github-board' : 'other-board') },
+      ],
       get: async (resourceId: string) => ({
         resourceId,
-        externalKey: keys[resourceId.slice('res-'.length)],
+        externalKey: keys[resourceId === resId('github-board') ? github : other],
       }),
     },
   });
@@ -166,6 +168,70 @@ it('exposes the repository on board cards only when the adapter resolves one', a
 
   expect(byKey.get('wk_github')?.repository).toBe('atolis-hq/wake');
   expect(byKey.get('wk_other')).not.toHaveProperty('repository');
+});
+
+it.each([
+  ['assigned queued child', undefined, 'assigned', 'org/assigned'],
+  ['primary resource wins', 'primary', 'assigned', 'org/primary'],
+  ['unresolved primary does not fall back', 'missing', 'assigned', undefined],
+  ['unsupported primary does not fall back', 'unsupported', 'assigned', undefined],
+  ['unassigned child', undefined, undefined, undefined],
+  ['missing assignment resource', undefined, 'missing', undefined],
+  ['unsupported assignment adapter', undefined, 'unsupported', undefined],
+])('resolves the board repository for %s', async (_name, primary, assignment, expected) => {
+  const id = workId('repository-child');
+  const root = rootWithBoard({
+    ...boardProjection.initial('global'),
+    cards: {
+      [id]: {
+        workItemKey: 'wk_child',
+        workItemId: id,
+        objective: 'Queued child',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        condition: 'ready',
+        parentWorkItemKey: 'wk_parent',
+        dwellSince: '2026-08-03T12:00:00.000Z',
+        runCount: 0,
+        activeRuns: {},
+        totalTokens: 0,
+        totalCostUsd: 0,
+        totalDurationMs: 0,
+      },
+    },
+  });
+  const repositoryAssignment = vi.fn(async () =>
+    assignment === undefined ? undefined : { resourceId: resId(assignment) },
+  );
+  Object.assign(root, {
+    resolveResourceRepositoryIdentity,
+    orchestration: { repositoryAssignment },
+    resources: {
+      correlationsForWork: async () => [
+        { role: 'secondary', resourceId: resId('parent') },
+        ...(primary === undefined ? [] : [{ role: 'primary', resourceId: resId(primary) }]),
+      ],
+      get: async (resourceId: string) =>
+        resourceId === resId('missing')
+          ? undefined
+          : {
+              resourceId,
+              externalKey: {
+                adapter: resourceId === resId('unsupported') ? 'fake' : 'github',
+                key: resourceId === resId('primary') ? 'org/primary#12' : 'org/assigned',
+              },
+            },
+    },
+  });
+  const result = await createSurfaceApiApplications(
+    root,
+    () => '2026-08-03T12:05:00.000Z',
+  ).board!.list({ limit: 10 });
+  if (expected === undefined) expect(result.items[0]).not.toHaveProperty('repository');
+  else expect(result.items[0]?.repository).toBe(expected);
+  expect(repositoryAssignment).toHaveBeenCalledTimes(primary === undefined ? 1 : 0);
 });
 
 it('presents a waiting cohort as delegation progress and keeps its stored state internal', async () => {
@@ -288,5 +354,6 @@ function rootWithBoard(view: ReturnType<typeof boardProjection.initial>): Compos
     },
     journal: { readAll: async () => [event] },
     resources: { correlationsForWork: async () => [] },
+    orchestration: { repositoryAssignment: async () => undefined },
   } as unknown as CompositionRoot;
 }

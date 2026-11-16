@@ -25,10 +25,12 @@ it('selects repository before PR before issue, with stable identity ordering', (
   expect(repositoryCandidate([repository, earlier])).toBe(earlier);
   expect(repositoryCandidate([earlier, repository])).toBe(earlier);
 });
-it('resolves only valid provider-owned issue and pull request keys', () => {
+it('resolves valid provider-owned repository, issue and pull request keys', () => {
+  expect(gitHubRepositoryIdentity('org/repo')).toBe('org/repo');
   expect(gitHubRepositoryIdentity('org/repo#123')).toBe('org/repo');
   for (const key of [
-    'org/repo',
+    'org/',
+    '/repo',
     'org/repo#0',
     'org/repo#9007199254740992',
     'org/repo#NaN',
