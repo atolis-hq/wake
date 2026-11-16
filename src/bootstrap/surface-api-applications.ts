@@ -24,6 +24,7 @@ import { analyticsProjection, type AnalyticsProjectionView } from './analytics-p
 import { createAnalyticsReports } from './analytics-reports.js';
 import {
   boardConditionCounts,
+  boardDelegationWait,
   boardProjection,
   normalizeBoardActiveRunPhase,
   type BoardProjectionView,
@@ -85,11 +86,14 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
           const {
             activeRun: _legacyActiveRun,
             activeRuns: _activeRuns,
+            delegatedCohort: _delegatedCohort,
             ...withoutActiveRuns
           } = card;
           const activeRuns = activeBoardRuns(board, card);
+          const delegationWait = boardDelegationWait(card);
           return presentBoardCard({
             ...withoutActiveRuns,
+            ...(delegationWait === undefined ? {} : { delegationWait }),
             totalDurationMs: card.totalDurationMs ?? 0,
             activeRuns: Object.fromEntries(
               Object.entries(activeRuns).map(([runId, activeRun]) => [

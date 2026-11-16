@@ -168,6 +168,52 @@ it('exposes the repository on board cards only when the adapter resolves one', a
   expect(byKey.get('wk_other')).not.toHaveProperty('repository');
 });
 
+it('presents a waiting cohort as delegation progress and keeps its stored state internal', async () => {
+  const item = workId('board-api-delegating-parent');
+  const root = rootWithBoard({
+    cards: {
+      [item]: {
+        workItemKey: 'wk_board_api_delegating_parent',
+        workItemId: item,
+        objective: 'Ship the stack',
+        condition: 'active',
+        dwellSince: '2026-08-03T12:00:00.000Z',
+        runCount: 1,
+        childCount: 3,
+        lastRunOutcome: 'blocked',
+        delegatedCohort: {
+          cohortId: 'cohort-1',
+          children: { a: 'task-a', b: 'task-b', c: 'task-c' },
+          finished: { a: true },
+          needsAttention: { b: true },
+          waiting: true,
+        },
+        activeRuns: {},
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalCostUsd: 0,
+        totalDurationMs: 0,
+      },
+    },
+    workflows: {},
+    runs: {},
+    children: {},
+    childRuns: {},
+    delegatedChildren: {},
+  } as unknown as ReturnType<typeof boardProjection.initial>);
+
+  const result = await createSurfaceApiApplications(
+    root,
+    () => '2026-08-03T12:05:00.000Z',
+  ).board!.list({ limit: 10 });
+
+  expect(result.items[0]?.delegationWait).toEqual({ total: 3, finished: 1, needsAttention: 1 });
+  expect(result.items[0]).not.toHaveProperty('delegatedCohort');
+});
+
 function rootWithBoard(view: ReturnType<typeof boardProjection.initial>): CompositionRoot {
   const event = eventEnvelope(
     WorkEventType.ItemCreated,

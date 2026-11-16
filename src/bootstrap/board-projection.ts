@@ -74,6 +74,27 @@ interface StoredActiveRun {
   readonly phase?: BoardActiveRunPhase;
 }
 
+// A cohort the card's primary workflow delegated. Children are keyed by work
+// item ID (value: assignment ID, so a corrective child can retire the one it
+// replaces); `waiting` is set once the cohort holds the parent workflow.
+interface StoredDelegatedCohort {
+  readonly cohortId: string;
+  readonly children: Readonly<Record<string, string>>;
+  readonly finished: Readonly<Record<string, true>>;
+  readonly needsAttention: Readonly<Record<string, true>>;
+  readonly waiting?: true;
+  /** The parent's assessment handed a question about its children to a human. */
+  readonly escalated?: true;
+}
+
+/** What a waiting parent's card shows about its cohort. */
+export interface BoardDelegationWait {
+  readonly total: number;
+  readonly finished: number;
+  readonly needsAttention: number;
+  readonly escalated?: true;
+}
+
 interface StoredCard {
   readonly workItemKey: string;
   readonly workItemId: string;
@@ -93,6 +114,7 @@ interface StoredCard {
   readonly parentWorkItemKey?: string;
   /** Delegated children created under this card's work item. */
   readonly childCount?: number;
+  readonly delegatedCohort?: StoredDelegatedCohort;
   readonly activeRuns: Readonly<Record<string, StoredActiveRun>>;
   // Kept only to recover checkpoints written before active runs were keyed
   // by run ID. Newly projected cards never write this field.
@@ -128,12 +150,22 @@ export interface BoardProjectionView {
   // card stays Needs Input while activeRuns/runCount/totals still reflect
   // the child's Run for display.
   readonly childRuns: Readonly<Record<string, true>>;
+  // Delegated child work item ID -> the parent work item that reserved it, so
+  // root-stream delegation facts naming only the child reach the parent card.
+  readonly delegatedChildren: Readonly<Record<string, string>>;
 }
 
 export const boardProjection: ProjectionDefinition<BoardProjectionView> = {
   name: 'operator-board',
   select: () => ({ key: 'global' }),
-  initial: () => ({ cards: {}, workflows: {}, runs: {}, children: {}, childRuns: {} }),
+  initial: () => ({
+    cards: {},
+    workflows: {},
+    runs: {},
+    children: {},
+    childRuns: {},
+    delegatedChildren: {},
+  }),
   project(previous, envelope) {
     const work = selectWorkEvent(envelope);
     if (work !== null) return projectWork(previous, work, envelope.event.occurredAt);
@@ -227,7 +259,7 @@ function projectWork(
       cards: {
         ...view.cards,
         [id]: {
-          ...withoutExtendEligible(withoutAwaitingApproval(current)),
+          ...withoutDelegatedCohort(withoutExtendEligible(withoutAwaitingApproval(current))),
           condition: BoardCondition.Finished,
         },
       },
@@ -249,7 +281,7 @@ function projectWorkflow(
 ): BoardProjectionView {
   if (isWorkflowEventType(event, OrchestrationEventType.InstanceStarted))
     return projectWorkflowStarted(view, event, occurredAt);
-  return projectWorkflowUpdate(view, event, occurredAt);
+  return projectDelegation(view, event) ?? projectWorkflowUpdate(view, event, occurredAt);
 }
 
 function isWorkflowEventType<Type extends WorkflowOrchestrationEventData['eventType']>(
@@ -257,6 +289,265 @@ function isWorkflowEventType<Type extends WorkflowOrchestrationEventData['eventT
   eventType: Type,
 ): event is WorkflowEventOf<Type> {
   return event.event.eventType === eventType;
+}
+
+// Delegation facts land on the root stream (reservation, results) or the
+// parent's stream (wait, child blockers, attention, settlement); each is
+// attributed to the parent card from its payload or the reservation index.
+// Returns undefined for every other event so ordinary handling applies.
+function projectDelegation(
+  view: BoardProjectionView,
+  event: WorkflowEvent,
+): BoardProjectionView | undefined {
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationReserved))
+    return projectDelegationReserved(view, event);
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationResultSelected))
+    return updateCohort(
+      view,
+      view.delegatedChildren?.[event.event.payload.childWorkItemId],
+      event.event.payload.cohortId,
+      (cohort) => ({
+        ...cohort,
+        finished: { ...cohort.finished, [event.event.payload.childWorkItemId]: true },
+        needsAttention: withoutKey(cohort.needsAttention, event.event.payload.childWorkItemId),
+      }),
+    );
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationChildBlocked))
+    return updateCohort(
+      view,
+      view.delegatedChildren?.[event.event.payload.childWorkItemId] ??
+        primaryWorkId(view, event.stream.id),
+      undefined,
+      (cohort) =>
+        cohort.children[event.event.payload.childWorkItemId] === undefined
+          ? cohort
+          : {
+              ...cohort,
+              needsAttention: {
+                ...cohort.needsAttention,
+                [event.event.payload.childWorkItemId]: true,
+              },
+            },
+    );
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationWaitStarted))
+    return projectDelegationWaitStarted(view, event);
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationAttentionRequested))
+    return updateCohort(
+      view,
+      primaryWorkId(view, event.stream.id),
+      event.event.payload.cohortId,
+      withoutEscalation,
+    );
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationAttentionResolved))
+    return projectDelegationAttentionResolved(view, event);
+  if (
+    isWorkflowEventType(event, OrchestrationEventType.DelegationJoined) ||
+    isWorkflowEventType(event, OrchestrationEventType.DelegationFailed)
+  )
+    return projectDelegationSettled(view, event);
+  return undefined;
+}
+
+function projectDelegationReserved(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<typeof OrchestrationEventType.DelegationReserved>,
+): BoardProjectionView {
+  const reservation = event.event.payload;
+  const parentId = reservation.parentWorkItemId;
+  const card = view.cards[parentId];
+  if (card === undefined || view.children?.[reservation.parentWorkflowInstanceId] !== undefined)
+    return view;
+  const previous =
+    card.delegatedCohort?.cohortId === reservation.cohortId
+      ? card.delegatedCohort
+      : { cohortId: reservation.cohortId, children: {}, finished: {}, needsAttention: {} };
+  const cohort = reservation.children.reduce<StoredDelegatedCohort>(
+    (current, child) => ({
+      ...withoutReplacedChild(current, child.replaces),
+      children: {
+        ...withoutReplacedChild(current, child.replaces).children,
+        [child.workItemId]: child.assignmentId,
+      },
+    }),
+    previous,
+  );
+  return {
+    ...view,
+    delegatedChildren: {
+      ...view.delegatedChildren,
+      ...Object.fromEntries(reservation.children.map((child) => [child.workItemId, parentId])),
+    },
+    cards: { ...view.cards, [parentId]: { ...card, delegatedCohort: cohort } },
+  };
+}
+
+function withoutReplacedChild(
+  cohort: StoredDelegatedCohort,
+  replaces: { readonly cohortId: string; readonly assignmentId: string } | undefined,
+): StoredDelegatedCohort {
+  if (replaces === undefined || replaces.cohortId !== cohort.cohortId) return cohort;
+  const replaced = Object.entries(cohort.children).find(
+    ([, assignmentId]) => assignmentId === replaces.assignmentId,
+  )?.[0];
+  if (replaced === undefined) return cohort;
+  return {
+    ...cohort,
+    children: withoutKey(cohort.children, replaced),
+    finished: withoutKey(cohort.finished, replaced),
+    needsAttention: withoutKey(cohort.needsAttention, replaced),
+  };
+}
+
+function projectDelegationWaitStarted(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<typeof OrchestrationEventType.DelegationWaitStarted>,
+): BoardProjectionView {
+  const workId = primaryWorkId(view, event.stream.id);
+  const card = workId === undefined ? undefined : view.cards[workId];
+  if (workId === undefined || card === undefined || card.condition === BoardCondition.Finished)
+    return view;
+  const { cohortId } = event.event.payload;
+  const cohort: StoredDelegatedCohort = {
+    ...(card.delegatedCohort?.cohortId === cohortId
+      ? card.delegatedCohort
+      : { cohortId, children: {}, finished: {}, needsAttention: {} }),
+    waiting: true,
+  };
+  return withCohortCard(view, workId, {
+    ...withoutExtendEligible(withoutBlockReason(card)),
+    delegatedCohort: cohort,
+  });
+}
+
+function projectDelegationAttentionResolved(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<typeof OrchestrationEventType.DelegationAttentionResolved>,
+): BoardProjectionView {
+  const { cohortId, escalation, assessmentFailure } = event.event.payload;
+  const workId = primaryWorkId(view, event.stream.id);
+  // A failed assessment run is re-raised by orchestration; keep the Error its
+  // run terminal already projected rather than masking it as progress.
+  if (assessmentFailure !== undefined) return view;
+  return updateCohort(view, workId, cohortId, (cohort) =>
+    escalation === undefined ? withoutEscalation(cohort) : { ...cohort, escalated: true },
+  );
+}
+
+function projectDelegationSettled(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<
+    typeof OrchestrationEventType.DelegationJoined | typeof OrchestrationEventType.DelegationFailed
+  >,
+): BoardProjectionView {
+  const workId = primaryWorkId(view, event.stream.id);
+  const card = workId === undefined ? undefined : view.cards[workId];
+  if (
+    workId === undefined ||
+    card?.delegatedCohort === undefined ||
+    card.delegatedCohort.cohortId !== event.event.payload.cohortId
+  )
+    return view;
+  const settled = withoutDelegatedCohort(card);
+  // A failed cohort is followed by InstanceBlocked, which decides the condition;
+  // a joined one resumes ordinary advancement, so it reads Ready until a Run starts.
+  const condition =
+    event.event.eventType === OrchestrationEventType.DelegationFailed ||
+    card.condition === BoardCondition.Finished
+      ? card.condition
+      : hasPrimaryActiveRun(view, activeRunsFor(view, card, workId))
+        ? BoardCondition.Active
+        : BoardCondition.Ready;
+  return { ...view, cards: { ...view.cards, [workId]: { ...settled, condition } } };
+}
+
+/** Applies `update` to the parent's cohort when it matches, then re-derives a waiting card's condition. */
+function updateCohort(
+  view: BoardProjectionView,
+  workId: string | undefined,
+  cohortId: string | undefined,
+  update: (cohort: StoredDelegatedCohort) => StoredDelegatedCohort,
+): BoardProjectionView {
+  const card = workId === undefined ? undefined : view.cards[workId];
+  const cohort = card?.delegatedCohort;
+  if (
+    workId === undefined ||
+    card === undefined ||
+    cohort === undefined ||
+    (cohortId !== undefined && cohort.cohortId !== cohortId)
+  )
+    return view;
+  return withCohortCard(view, workId, { ...card, delegatedCohort: update(cohort) });
+}
+
+function withCohortCard(
+  view: BoardProjectionView,
+  workId: string,
+  card: StoredCard,
+): BoardProjectionView {
+  const cohort = card.delegatedCohort;
+  const recondition =
+    cohort?.waiting === true &&
+    card.condition !== BoardCondition.Finished &&
+    card.condition !== BoardCondition.Error;
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [workId]: recondition
+        ? {
+            ...card,
+            condition: hasPrimaryActiveRun(view, activeRunsFor(view, card, workId))
+              ? BoardCondition.Active
+              : cohortCondition(cohort),
+          }
+        : card,
+    },
+  };
+}
+
+// A waiting parent is progressing through its children, so it reads Active;
+// it needs a human only when a child is blocked or the parent escalated.
+function cohortCondition(cohort: StoredDelegatedCohort): BoardConditionValue {
+  return cohort.escalated === true || Object.keys(cohort.needsAttention).length > 0
+    ? BoardCondition.NeedsInput
+    : BoardCondition.Active;
+}
+
+export function boardDelegationWait(card: {
+  readonly delegatedCohort?: StoredDelegatedCohort;
+}): BoardDelegationWait | undefined {
+  const cohort = card.delegatedCohort;
+  if (cohort?.waiting !== true) return undefined;
+  const children = Object.keys(cohort.children);
+  return {
+    total: children.length,
+    finished: children.filter((id) => cohort.finished[id] === true).length,
+    needsAttention: children.filter((id) => cohort.needsAttention[id] === true).length,
+    ...(cohort.escalated === true ? { escalated: true } : {}),
+  };
+}
+
+/** The card a primary (non-watch-child) workflow stream drives. */
+function primaryWorkId(view: BoardProjectionView, streamId: string): string | undefined {
+  return view.children?.[streamId] === undefined ? view.workflows[streamId] : undefined;
+}
+
+function withoutEscalation(cohort: StoredDelegatedCohort): StoredDelegatedCohort {
+  const { escalated: _escalated, ...rest } = cohort;
+  return rest;
+}
+
+function withoutDelegatedCohort(card: StoredCard): StoredCard {
+  const { delegatedCohort: _delegatedCohort, ...rest } = card;
+  return rest;
+}
+
+function withoutKey<Value>(
+  record: Readonly<Record<string, Value>>,
+  key: string,
+): Readonly<Record<string, Value>> {
+  const { [key]: _removed, ...rest } = record;
+  return rest;
 }
 
 function projectWorkflowStarted(
@@ -279,7 +570,7 @@ function projectWorkflowStarted(
     cards: {
       ...view.cards,
       [workId]: {
-        ...card,
+        ...withoutDelegatedCohort(card),
         workflowName: event.event.payload.workflowName,
         stage: event.event.payload.entry,
         dwellSince: occurredAt,
@@ -370,16 +661,26 @@ function cardForWorkflowStatus(
 ): StoredCard {
   if (event.event.eventType !== OrchestrationEventType.InstanceBlocked)
     return {
-      ...withoutExtendEligible(withoutBlockReason(card)),
+      ...withoutExtendEligible(withoutBlockReason(cardForCohortStatus(card, status))),
       condition: boardConditionForStatus(status, card),
     };
   const extensionEligible = isExtendEligibleBlock(event.event.payload.reason);
+  const unblocked = withoutDelegatedCohort(card);
   return {
-    ...(extensionEligible ? card : withoutExtendEligible(card)),
+    ...(extensionEligible ? unblocked : withoutExtendEligible(unblocked)),
     condition: boardConditionForStatus(status, card),
     blockReason: event.event.payload.reason,
     ...(extensionEligible ? { extendEligible: true } : {}),
   };
+}
+
+// Orchestration drops a delegation wait whenever the instance terminates or blocks.
+function cardForCohortStatus(card: StoredCard, status: WorkflowStatus): StoredCard {
+  return status === WorkflowStatus.Completed ||
+    status === WorkflowStatus.Blocked ||
+    status === WorkflowStatus.Superseded
+    ? withoutDelegatedCohort(card)
+    : card;
 }
 
 function boardConditionForStatus(status: WorkflowStatus, card: StoredCard): BoardConditionValue {
@@ -555,11 +856,23 @@ function projectRunTerminal(
             ? { condition: BoardCondition.Active }
             : terminal === undefined || isChildRun || terminal.condition === undefined
               ? {}
-              : { condition: terminal.condition }),
+              : { condition: settledRunCondition(card, terminal.condition) }),
         totalDurationMs: card.totalDurationMs + runDurationMs,
       },
     },
   };
+}
+
+// A delegating run's own outcome is held, not routed, while its cohort holds
+// the workflow, so a blocked sentinel there means "waiting on my children",
+// not "a human is needed". Failed or ambiguous runs still read as Error.
+function settledRunCondition(
+  card: StoredCard,
+  condition: BoardConditionValue,
+): BoardConditionValue {
+  return condition === BoardCondition.NeedsInput && card.delegatedCohort?.waiting === true
+    ? cohortCondition(card.delegatedCohort)
+    : condition;
 }
 
 function hasPrimaryActiveRun(

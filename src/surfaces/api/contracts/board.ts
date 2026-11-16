@@ -18,6 +18,18 @@ export interface BoardCardActiveRun {
   readonly phase: BoardActiveRunPhase;
 }
 
+/** Progress of the delegated cohort a parent's workflow is waiting on. */
+export interface BoardCardDelegationWait {
+  /** Child work items in the cohort. */
+  readonly total: number;
+  /** Children whose results the cohort has accepted. */
+  readonly finished: number;
+  /** Children that failed or stopped and need attention. */
+  readonly needsAttention: number;
+  /** The parent handed a question about its children to a human. */
+  readonly escalated?: boolean;
+}
+
 export interface BoardCardResponse {
   readonly workItemKey: string;
   readonly workItemId: string;
@@ -27,6 +39,11 @@ export interface BoardCardResponse {
   readonly parentWorkItemKey?: string;
   /** Present on a delegating parent: how many child work items it created. */
   readonly childCount?: number;
+  /**
+   * Present while the primary workflow waits on delegated children. Such a card
+   * is Active unless a child is blocked or the parent escalated (Needs input).
+   */
+  readonly delegationWait?: BoardCardDelegationWait;
   readonly frozen?: boolean;
   readonly awaitingApproval?: boolean;
   /** Whether the primary workflow needs a gate-budget extension to continue. */
