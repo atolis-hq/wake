@@ -82,6 +82,10 @@ const resourceTransitionConfigSchema = z.union([
     .object({
       events: z.tuple([z.literal(ActivityEventType.PrChecksChanged)]),
       where: z.object({ checks: z.literal(PullRequestCheckState.Failing) }).strict(),
+      retry: z
+        .object({ max: z.number().int().min(1).max(2) })
+        .strict()
+        .optional(),
       then: identifier.optional(),
     })
     .strict(),

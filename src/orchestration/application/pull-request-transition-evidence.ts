@@ -29,6 +29,10 @@ const triggers = [
 
 export function createPullRequestTransitionEvidence(
   pullRequests: PullRequestService,
+  failingCheckNames?: (
+    resourceId: PullRequestView['resourceId'],
+    headRevision: string,
+  ) => Promise<readonly string[] | undefined>,
 ): ResourceTransitionEvidence {
   return {
     triggers,
@@ -102,7 +106,10 @@ export function createPullRequestTransitionEvidence(
           }).allowed
         : false;
 
-      return firstMatch(candidates, transitions, selected.pullRequest, authorized);
+      const resolved = firstMatch(candidates, transitions, selected.pullRequest, authorized);
+      if (resolved === null || resolved.transition.retry === undefined) return resolved;
+      const names = await failingCheckNames?.(resourceId, selected.pullRequest.headRevision);
+      return { ...resolved, ...(names === undefined ? {} : { failingCheckNames: names }) };
     },
   };
 }
@@ -152,6 +159,12 @@ function matchesPrimaryPullRequestTransition(
       pullRequest.state === PullRequestState.Merged
     );
   if (event.event.eventType !== ActivityEventType.PrChecksChanged) return false;
+  if (
+    transition.retry !== undefined &&
+    (pullRequest.state !== PullRequestState.Open ||
+      event.event.payload.checkEvidence?.headRevision !== pullRequest.headRevision)
+  )
+    return false;
   return (
     transition.where !== undefined &&
     'checks' in transition.where &&

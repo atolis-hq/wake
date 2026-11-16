@@ -9,6 +9,7 @@ import {
   ActivityOutcomeKind,
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
+  selectActivityEvent,
 } from '../../../src/activities/index.js';
 import {
   createCompositionRoot,
@@ -598,4 +599,158 @@ it('reconciles a merge wait using its pinned explicit await signal', async () =>
   await observe(root, 'closed');
   await tick(root);
   expect((await root.orchestration.get(iid))?.blockReason).toContain('pr-closed-unmerged');
+});
+
+function checkRepairWorkflow(max = 2) {
+  const definition = repairWorkflow();
+  return {
+    ...definition,
+    stages: {
+      ...definition.stages,
+      merge: {
+        ...definition.stages.merge,
+        on: {
+          ...definition.stages.merge.on,
+          done: {
+            then: 'wait',
+            resourceTransitions: [
+              ...workflow.stages.merge.on.done.resourceTransitions,
+              {
+                events: ['pr.checks-changed'],
+                where: { checks: 'failing' },
+                then: 'repair',
+                retry: { max },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+async function observeChecks(
+  root: Root,
+  checks: 'failing' | 'passing' | 'unknown',
+  head = 'head',
+  evidence = true,
+) {
+  await root.pullRequests.observe(
+    {
+      resourceId: pr,
+      workItemId: wid,
+      state: 'open',
+      headRevision: head,
+      baseRevision: 'base',
+      checks,
+      changedFiles: ['src/kernel/index.ts'],
+      ...(evidence
+        ? {
+            checkEvidence: {
+              headRevision: head,
+              baseRevision: 'base',
+              startedAt: command().occurredAt,
+            },
+          }
+        : {}),
+    },
+    command(),
+  );
+}
+
+it.each([1, 2])(
+  'bounds current-head failing checks to %s repairs across restart and escalates once',
+  async (max) => {
+    const definition = checkRepairWorkflow(max);
+    const { root: initial, path, provider } = await setup(definition);
+    await until(initial, () => waiting(initial));
+    await observeChecks(initial, 'failing');
+    await tick(initial);
+    expect((await initial.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+    const root = await createCompositionRoot(path, {
+      config: config(),
+      fakeDeliveryProvider: provider,
+    });
+    await until(
+      root,
+      async () =>
+        (await root.orchestration.get(iid))?.blockReason?.startsWith(
+          'merge.checks-retry-exhausted:',
+        ) === true,
+    );
+    const view = (await root.orchestration.get(iid))!;
+    expect(view.retryCounts['pr.merge:failing']).toBe(max);
+    expect(view.retryCounts['pr.merge:conflicting']).toBeUndefined();
+    expect(view.waitingFor?.signalKind).toBe('blocked');
+    expect(view.blockReason).toContain('current failing check-name evidence unavailable');
+    const repairs = (await root.journal.readAll(0))
+      .map(selectWorkflowOrchestrationEvent)
+      .filter(
+        (fact) =>
+          fact?.event.eventType === OrchestrationEventType.StageEntered &&
+          fact.event.payload.stage === 'repair',
+      );
+    expect(repairs).toHaveLength(max);
+    const before = (await root.journal.readAll(0)).filter(
+      (fact) => fact.event.eventType === OrchestrationEventType.InstanceBlocked,
+    ).length;
+    await tick(root);
+    expect(
+      (await root.journal.readAll(0)).filter(
+        (fact) => fact.event.eventType === OrchestrationEventType.InstanceBlocked,
+      ),
+    ).toHaveLength(before);
+  },
+  60_000,
+);
+
+it('ignores superseded and missing check evidence without spending a repair', async () => {
+  const { root } = await setup(checkRepairWorkflow());
+  await until(root, () => waiting(root));
+  await observeChecks(root, 'failing', 'old');
+  await observeChecks(root, 'failing', 'new', false);
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBeUndefined();
+  await observeChecks(root, 'unknown', 'new');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBeUndefined();
+  await observeChecks(root, 'failing', 'new');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+});
+
+it('repairs red checks, observes the pushed green head, and requests merge through production composition', async () => {
+  const definition = checkRepairWorkflow();
+  definition.stages.merge.with.blockedPaths = [];
+  const { root } = await setup(definition);
+  await until(root, () => waiting(root));
+  await observeChecks(root, 'failing');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+  await observeChecks(root, 'passing', 'fixed-head');
+  await until(root, async () =>
+    (await root.journal.readAll(0))
+      .map(selectActivityEvent)
+      .some(
+        (fact) =>
+          fact?.event.eventType === ActivityEventType.PrMergeRequested &&
+          fact.event.payload.revision === 'fixed-head',
+      ),
+  );
+  await root.pullRequests.observe(
+    {
+      resourceId: pr,
+      workItemId: wid,
+      state: 'merged',
+      headRevision: 'fixed-head',
+      baseRevision: 'base',
+      checks: 'passing',
+    },
+    command(),
+  );
+  await until(
+    root,
+    async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Completed,
+  );
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
 });

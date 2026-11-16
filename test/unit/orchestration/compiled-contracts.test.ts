@@ -277,3 +277,35 @@ describe('compiled workflow signal contracts', () => {
     ).toThrow(/reserved stage name/i);
   });
 });
+
+it.each([1, 2, undefined])('accepts failing check repair with retry max %s', (max) => {
+  expect(
+    outcomeRouteConfigSchema.safeParse({
+      then: 'wait',
+      resourceTransitions: [
+        {
+          events: ['pr.checks-changed'],
+          where: { checks: 'failing' },
+          then: 'implement',
+          ...(max === undefined ? {} : { retry: { max } }),
+        },
+      ],
+    }).success,
+  ).toBe(true);
+});
+
+it.each([0, 3, -1, 1.5])('rejects failing check retry max %s', (max) => {
+  expect(
+    outcomeRouteConfigSchema.safeParse({
+      then: 'wait',
+      resourceTransitions: [
+        {
+          events: ['pr.checks-changed'],
+          where: { checks: 'failing' },
+          then: 'implement',
+          retry: { max },
+        },
+      ],
+    }).success,
+  ).toBe(false);
+});
