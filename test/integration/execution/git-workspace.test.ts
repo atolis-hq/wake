@@ -142,6 +142,77 @@ describe('GitWorkspaceProvider', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('requires durable assignment history for refresh and rejects completion on the old Git base', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-workspace-refresh-'));
+    roots.push(root);
+    let head = 'a'.repeat(40);
+    const commands: string[][] = [];
+    const provider = new GitWorkspaceProvider(
+      root,
+      { cloneLocator: async () => 'fixture' },
+      workspaceLocks,
+      async (args) => {
+        if (args.includes('rev-parse')) return head;
+        commands.push([...args]);
+        if (args[0] === 'clone') await mkdir(join(args[2]!, '.git'), { recursive: true });
+        if (args.includes('--is-ancestor') && head !== 'b'.repeat(40)) throw new Error('Old base');
+      },
+    );
+    const assignment = {
+      resourceId: resId('refresh-repo'),
+      sourceRef: 'upstream',
+      sourceRevision: head,
+      pullRequestBase: 'upstream',
+    };
+    const request = {
+      runId: runId('refresh-first'),
+      workItemId: workId('refresh-child'),
+      mode: 'branch' as const,
+      signal: new AbortController().signal,
+      assignment,
+      checkoutRevision: head,
+      repositoryResource: {
+        resourceId: resId('refresh-repo'),
+        kind: resourceKind('repository'),
+        externalKey: { adapter: 'fake', key: 'org/repo' },
+        capabilities: [],
+      },
+    };
+    const first = await provider.acquire(request);
+    await first.release();
+    const next = {
+      ...request,
+      runId: runId('refresh-next'),
+      assignment: { ...assignment, sourceRevision: 'b'.repeat(40) },
+      checkoutRevision: 'b'.repeat(40),
+    };
+    await expect(provider.acquire(next)).rejects.toThrow('assignment changed');
+    await expect(
+      provider.acquire({
+        ...next,
+        assignmentHistory: [assignment],
+        assignment: { ...next.assignment, pullRequestBase: 'unrelated' },
+      }),
+    ).rejects.toThrow('assignment changed');
+    commands.length = 0;
+    const refreshed = await provider.acquire({ ...next, assignmentHistory: [assignment] });
+    expect(refreshed.path).toBe(first.path);
+    expect(commands.some((args) => args.includes('reset') || args.includes('rebase'))).toBe(false);
+    await expect(refreshed.readRevision!()).rejects.toThrow('Old base');
+    // The agent changes Git; Wake only verifies the resulting ancestry.
+    head = 'b'.repeat(40);
+    await expect(refreshed.readRevision!()).resolves.toBe(head);
+    expect(commands).toContainEqual([
+      '-C',
+      refreshed.path,
+      'merge-base',
+      '--is-ancestor',
+      head,
+      head,
+    ]);
+    await refreshed.release();
+  });
+
   it('reuses a retained branch workspace for a follow-up activity', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-workspace-'));
     roots.push(root);

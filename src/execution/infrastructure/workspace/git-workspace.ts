@@ -107,7 +107,26 @@ export class GitWorkspaceProvider implements WorkspaceProvider, WorkspaceRecover
         workspaceId: name,
         path,
         mode: request.mode,
-        readRevision: () => readCheckoutRevision(path, this.git, signal),
+        readRevision: async () => {
+          const revision = await readCheckoutRevision(path, this.git, signal);
+          if (
+            request.mode === WorkspaceMode.Branch &&
+            request.assignment !== undefined &&
+            (request.assignmentHistory?.length ?? 0) > 0
+          )
+            await this.git(
+              [
+                '-C',
+                path,
+                'merge-base',
+                '--is-ancestor',
+                request.assignment.sourceRevision,
+                revision,
+              ],
+              signal,
+            );
+          return revision;
+        },
         repositoryResourceId: request.repositoryResource.resourceId,
         checkoutRevision: await readCheckoutRevision(path, this.git, signal),
         ...(request.assignment === undefined ? {} : { assignment: request.assignment }),
@@ -696,7 +715,14 @@ function assertAssignment(
   if (
     request.mode === WorkspaceMode.Branch &&
     previousMarker?.assignment !== undefined &&
-    !isDeepStrictEqual(previousMarker.assignment, request.assignment)
+    !isDeepStrictEqual(previousMarker.assignment, request.assignment) &&
+    !request.assignmentHistory?.some(
+      (assignment) =>
+        isDeepStrictEqual(assignment, previousMarker.assignment) &&
+        assignment.resourceId === request.assignment?.resourceId &&
+        assignment.sourceRef === request.assignment.sourceRef &&
+        assignment.pullRequestBase === request.assignment.pullRequestBase,
+    )
   )
     throw new Error(
       'Workspace repository assignment changed; reconcile the existing branch before retrying',

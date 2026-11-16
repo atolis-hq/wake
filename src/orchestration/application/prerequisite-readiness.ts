@@ -17,6 +17,17 @@ import {
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 import { reservationsOf } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import {
+  changedInputsBlock,
+  freshness,
+  inheritedBlock,
+  type PrerequisiteBlock,
+} from './prerequisite-refresh-inputs.js';
+import {
+  prerequisiteRevisions,
+  revisionOutputPending,
+  revisionPending,
+} from './prerequisite-revisions.js';
 
 type Child = DelegationReservation['children'][number];
 
@@ -25,10 +36,7 @@ export interface PrerequisiteAdmission {
   readonly abandoned: boolean;
 }
 
-export interface PrerequisiteBlock {
-  readonly code: Code;
-  readonly reason: string;
-}
+export type { PrerequisiteBlock } from './prerequisite-refresh-inputs.js';
 
 /** A bounded read pass: one journal/Work snapshot and one lookup per declared input. */
 export class PrerequisiteReadiness {
@@ -44,6 +52,8 @@ export class PrerequisiteReadiness {
     Promise<DelegationInputs['consumed'][number] | PrerequisiteBlock>
   >();
 
+  private readonly revisionEvidence: ReturnType<typeof prerequisiteRevisions>;
+
   private readonly bases = new Map<string, Promise<PrerequisiteBlock | undefined>>();
 
   constructor(
@@ -52,6 +62,7 @@ export class PrerequisiteReadiness {
     private readonly artifacts: DelegationArtifacts,
     private readonly repositories: DelegationRepositories | undefined,
   ) {
+    this.revisionEvidence = prerequisiteRevisions(snapshot.events);
     const failures = new Set(
       snapshot.events.flatMap(({ event, stream }) =>
         event.eventType === OrchestrationEventType.DelegationFailed
@@ -72,7 +83,10 @@ export class PrerequisiteReadiness {
     for (const { view } of snapshot.instances)
       if (view !== null) this.workflows.set(view.workflowInstanceId, view);
     for (const { event } of snapshot.events) {
-      if (event.eventType === OrchestrationEventType.DelegationInputsResolved)
+      if (
+        event.eventType === OrchestrationEventType.DelegationInputsResolved ||
+        event.eventType === OrchestrationEventType.DelegationInputsRefreshed
+      )
         this.receipts.set(event.payload.childWorkItemId, event.payload);
       if (event.eventType === OrchestrationEventType.DelegationChildBlocked)
         this.blockers.set(event.payload.childWorkItemId, {
@@ -158,12 +172,12 @@ export class PrerequisiteReadiness {
 
   private async evaluate(id: string, seen: Set<string>): Promise<PrerequisiteBlock | undefined> {
     const blocked = this.blockers.get(id);
-    if (blocked !== undefined) return blocked;
+    if (blocked !== undefined) return inheritedBlock(blocked);
     const child = this.children.get(id);
     if (child === undefined || (child.prerequisites?.length ?? 0) === 0) return undefined;
     for (const upstream of child.prerequisiteWorkItemIds ?? []) {
       const block = await this.block(upstream, seen);
-      if (block !== undefined) return block;
+      if (block !== undefined) return inheritedBlock(block);
     }
     const current = await this.select(child, seen);
     if (!Array.isArray(current)) return current;
@@ -171,10 +185,13 @@ export class PrerequisiteReadiness {
     if (stored === undefined)
       return { code: Code.Waiting, reason: 'Prerequisite inputs have not been pinned' };
     if (!isDeepStrictEqual(freshness(stored.consumed), freshness(current)))
-      return {
-        code: Code.Changed,
-        reason: 'Consumed upstream output or base changed; agent assessment required',
-      };
+      return changedInputsBlock(
+        stored.consumed,
+        current,
+        this.children,
+        this.artifacts,
+        this.revisionEvidence.revisions,
+      );
     return undefined;
   }
 
@@ -235,14 +252,17 @@ export class PrerequisiteReadiness {
     const statusReason = workflowReason(workflow, edge);
     if (statusReason !== undefined)
       return {
-        code:
-          workflow.status === WorkflowStatus.Completed ||
-          workflow.status === WorkflowStatus.Superseded
-            ? Code.Failed
-            : Code.Waiting,
+        code: [WorkflowStatus.Completed, WorkflowStatus.Superseded].some(
+          (status) => status === workflow.status,
+        )
+          ? Code.Failed
+          : Code.Waiting,
         reason: statusReason,
       };
     const output = upstream.outputs.find((entry) => entry.name === edge.output)!;
+    const evidence = this.revisionEvidence;
+    if (revisionPending(workflow, evidence.pending))
+      return { code: Code.Waiting, reason: 'Waiting for upstream review revision' };
     const selected = await this.artifacts.prerequisiteOutput?.(workflow, output, edge.condition);
     if (
       selected == null ||
@@ -253,6 +273,8 @@ export class PrerequisiteReadiness {
         code: Code.Waiting,
         reason: `Waiting for ${edge.condition} output ${upstream.assignmentId}/${edge.output}`,
       };
+    if (await revisionOutputPending(workflow, selected.reference, this.artifacts, evidence))
+      return { code: Code.Waiting, reason: 'Waiting for verified upstream review revision' };
     return selected;
   }
 
@@ -302,18 +324,4 @@ function workflowReason(workflow: WorkflowInstanceView, edge: DelegationPrerequi
     return 'Waiting for delivery-ready upstream';
   if (workflow.status === WorkflowStatus.Superseded) return 'Upstream workflow was superseded';
   return undefined;
-}
-
-function freshness(outputs: DelegationInputs['consumed']) {
-  return outputs.map(({ name, reference }) => {
-    if (!('runId' in reference)) return { name, reference };
-    const {
-      runId: _run,
-      baseRevision: _base,
-      merged: _merged,
-      pullRequestBase: _baseBranch,
-      ...revision
-    } = reference;
-    return { name, reference: revision };
-  });
 }

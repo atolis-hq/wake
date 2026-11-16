@@ -116,13 +116,18 @@ export function selectedResults(
   reservation: DelegationReservation,
 ): readonly DelegationResult[] {
   const children = new Set(reservation.children.map((child) => child.workItemId));
-  return events.flatMap((event) =>
-    event.event.eventType === OrchestrationEventType.DelegationResultSelected &&
-    event.event.payload.cohortId === reservation.cohortId &&
-    children.has(event.event.payload.childWorkItemId)
-      ? [event.event.payload]
-      : [],
-  );
+  const selected = new Map<string, DelegationResult>();
+  for (const { event } of events) {
+    if (event.eventType === OrchestrationEventType.DelegationInputsRefreshed)
+      selected.delete(event.payload.childWorkItemId);
+    if (
+      event.eventType === OrchestrationEventType.DelegationResultSelected &&
+      event.payload.cohortId === reservation.cohortId &&
+      children.has(event.payload.childWorkItemId)
+    )
+      selected.set(event.payload.childWorkItemId, event.payload);
+  }
+  return [...selected.values()];
 }
 
 export function reservedEvent(

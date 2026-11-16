@@ -8,6 +8,11 @@ import type { DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import { PrerequisiteReadiness, type PrerequisiteAdmission } from './prerequisite-readiness.js';
 
+import {
+  refreshPrerequisites,
+  type PrerequisiteRefreshDependencies,
+} from './refresh-prerequisites.js';
+
 type Child = DelegationReservation['children'][number];
 
 /** Immutable consumption receipts and live eligibility; never chooses a repair. */
@@ -18,15 +23,19 @@ export class DelegationPrerequisites {
     private readonly artifacts: DelegationArtifacts,
     private readonly repositories: DelegationRepositories | undefined,
     private readonly work: WorkService,
+    private readonly refresh?: PrerequisiteRefreshDependencies,
   ) {}
 
   async inputs(id: string): Promise<DelegationInputs | undefined> {
-    return (await this.ledger.events()).flatMap(({ event }) =>
-      event.eventType === OrchestrationEventType.DelegationInputsResolved &&
-      event.payload.childWorkItemId === id
-        ? [event.payload]
-        : [],
-    )[0];
+    return (await this.ledger.events())
+      .flatMap(({ event }) =>
+        (event.eventType === OrchestrationEventType.DelegationInputsResolved ||
+          event.eventType === OrchestrationEventType.DelegationInputsRefreshed) &&
+        event.payload.childWorkItemId === id
+          ? [event.payload]
+          : [],
+      )
+      .at(-1);
   }
 
   async read(workSnapshot?: DeliverySnapshot): Promise<PrerequisiteReadiness> {
@@ -154,6 +163,21 @@ export class DelegationPrerequisites {
     const read = readiness ?? (await this.read());
     const blocked = await read.block(child.workItemId);
     if (blocked === undefined) return true;
+    if (blocked.refresh !== undefined && this.refresh !== undefined) {
+      const repository = await this.resolveBase(reservation, child, blocked.refresh);
+      await refreshPrerequisites(
+        this.repository,
+        this.refresh,
+        child,
+        {
+          childWorkItemId: child.workItemId,
+          consumed: blocked.refresh,
+          ...(repository === undefined ? {} : { repository }),
+        },
+        context,
+      );
+      return false;
+    }
     await this.diagnostic(reservation, child, blocked.reason, context);
     if (
       blocked.code === PrerequisiteBlockCode.Changed ||

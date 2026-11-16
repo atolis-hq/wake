@@ -14,7 +14,9 @@ Delegated execution selects the recorded Repository Resource explicitly. New
 writable branches start at the assignment's pinned source commit; the logical
 PR base is separate. Workflows without an assignment keep the clone default for
 new branches. Existing branch workspaces retain their branch and dirty
-state. Run preparation records the assignment, Run start records the checkout,
+state. A durable upstream-refresh receipt can authorize a new source pin in the
+same repository and branch; the checkout stays intact for agent assessment, and
+completion verifies that HEAD contains the refreshed base. Run preparation records the assignment, Run start records the checkout,
 and successful completion records the resulting HEAD. Read-only reviews in the
 same orchestration group use that implementation HEAD, including watch children.
 Candidate QA acquires all selected repository leases in deterministic resource-ID order,

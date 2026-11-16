@@ -69,6 +69,7 @@ import {
   compileWorkflow,
   createAgentActivityClassifier,
   createOrchestrationService,
+  workflowInstanceId,
 } from '../orchestration/index.js';
 import {
   ResourceCorrelationProvenance,
@@ -320,6 +321,18 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           );
         },
       },
+      childRunsEnded: async (id) => {
+        const child = await orchestration.get(workflowInstanceId(id));
+        if (child === null) return false;
+        return (await execution.list())
+          .filter((run) => run.orchestrationGroupId === child.orchestrationGroupId)
+          .every(
+            (run) =>
+              !isActiveRunStatus(run.status) &&
+              run.status !== RunStatus.Ambiguous &&
+              !execution.isLocallyActive(run.runId),
+          );
+      },
       runHasEnded: async (runId) => {
         const run = (await execution.list()).find((entry) => entry.runId === runId);
         return (
@@ -399,7 +412,16 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
           },
         }
       : {}),
-    workspaces,
+    workspaces: {
+      acquire: async (request) =>
+        workspaces.acquire({
+          ...request,
+          assignmentHistory:
+            request.assignment === undefined
+              ? []
+              : await orchestration.workspaceAssignmentHistory(request.workItemId),
+        }),
+    },
   });
   orchestration.setWatchChildCancellation({
     cancelSupersededWatchChildren: (workflowInstanceIds) =>

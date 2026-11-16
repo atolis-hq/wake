@@ -313,6 +313,10 @@ const eventSchemas = {
       .object({ childWorkItemId: brandedStringSchema(workItemId), reason: z.string().min(1) })
       .strict(),
   ),
+  [OrchestrationEventType.DelegationInputsRefreshed]: workflowEnvelope(
+    OrchestrationEventType.DelegationInputsRefreshed,
+    delegationInputsSchema,
+  ),
   [OrchestrationEventType.DelegationInputsResolved]: workflowEnvelope(
     OrchestrationEventType.DelegationInputsResolved,
     delegationInputsSchema,

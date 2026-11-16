@@ -86,6 +86,12 @@ export function createArtifactMcpProvisioner(input: {
               activation.activationId,
             ),
           ),
+          context.repositoryAssignment === undefined
+            ? ''
+            : await input.orchestration.prerequisiteRefreshPrompt(
+                workflowInstanceId(context.workflowInstanceId),
+                activation.activationId,
+              ),
           operatorInstructionsPrompt(instructions),
         ]
           .filter(Boolean)

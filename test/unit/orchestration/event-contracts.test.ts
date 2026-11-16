@@ -162,6 +162,11 @@ const delegationSamples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.DelegationInputsRefreshed,
+    { childWorkItemId: workId('2'), consumed: delegationResult.outputs },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.DelegationInputsResolved,
     { childWorkItemId: workId('2'), consumed: delegationResult.outputs },
     workflow,

@@ -125,8 +125,12 @@ const context: ExecutionAttemptContext = {
 
 function orchestration(
   attention: Awaited<ReturnType<OrchestrationService['openDelegationAttention']>> = null,
-): Pick<OrchestrationService, 'listAll' | 'openDelegationAttention'> {
-  return { listAll: async () => [], openDelegationAttention: async () => attention };
+): Pick<OrchestrationService, 'listAll' | 'openDelegationAttention' | 'prerequisiteRefreshPrompt'> {
+  return {
+    listAll: async () => [],
+    openDelegationAttention: async () => attention,
+    prerequisiteRefreshPrompt: async () => '',
+  };
 }
 
 async function directory(): Promise<string> {

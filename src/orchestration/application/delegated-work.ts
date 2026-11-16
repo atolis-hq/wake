@@ -67,6 +67,7 @@ import { resolvePrerequisites } from './delegation-wait-graph.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { PrerequisiteReadiness } from './prerequisite-readiness.js';
+import { prerequisiteRefreshPrompt } from './refresh-prerequisites.js';
 import type { StartWorkflow } from './start-workflow.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -97,6 +98,7 @@ export class DelegatedWork {
       readonly artifacts: DelegationArtifacts;
       readonly repositories?: DelegationRepositories | undefined;
       readonly runHasEnded: (runId: string) => Promise<boolean>;
+      readonly childRunsEnded?: ((id: string) => Promise<boolean>) | undefined;
       readonly authority?: DelegationAuthority | undefined;
       readonly supportsAttention?: ((activity: ActivityName) => boolean) | undefined;
       readonly resumeChild?: DelegationAttentionDependencies['resumeChild'] | undefined;
@@ -121,6 +123,12 @@ export class DelegatedWork {
       dependencies.artifacts,
       dependencies.repositories,
       work,
+      {
+        workflows,
+        messages: dependencies.messages,
+        supportsAttention: dependencies.supportsAttention,
+        childRunsEnded: dependencies.childRunsEnded,
+      },
     );
     this.repositories = dependencies.repositories;
     this.runHasEnded = dependencies.runHasEnded;
@@ -204,6 +212,41 @@ export class DelegatedWork {
               repository: repositoryAssignmentSchema.parse(output.repository ?? repository),
             },
           ]
+        : [],
+    );
+  }
+
+  async refreshPrompt(id: WorkflowInstanceId, activation: string) {
+    const history = await this.repository.history(id);
+    let inputs;
+    for (const { event } of history.events) {
+      if (event.eventType === OrchestrationEventType.DelegationInputsRefreshed)
+        inputs = event.payload;
+      if (event.eventType === OrchestrationEventType.ActivityRequested) {
+        if (event.payload.activationId === activation && inputs !== undefined)
+          return prerequisiteRefreshPrompt(inputs);
+        inputs = undefined;
+      }
+    }
+    return '';
+  }
+
+  async assignmentHistory(workItemId: string) {
+    const events = await this.ledger.events();
+    if (
+      !events.some(
+        ({ event }) =>
+          event.eventType === OrchestrationEventType.DelegationInputsRefreshed &&
+          event.payload.childWorkItemId === workItemId,
+      )
+    )
+      return [];
+    return events.flatMap(({ event }) =>
+      (event.eventType === OrchestrationEventType.DelegationInputsResolved ||
+        event.eventType === OrchestrationEventType.DelegationInputsRefreshed) &&
+      event.payload.childWorkItemId === workItemId &&
+      event.payload.repository !== undefined
+        ? [event.payload.repository]
         : [],
     );
   }
@@ -896,10 +939,15 @@ export class DelegatedWork {
       await this.failChild(reservation, child, 'Invalid qualifying output contract', context);
       return;
     }
-    await this.ledger.appendOnce(root, context, `result:${child.grantId}`, {
-      eventType: OrchestrationEventType.DelegationResultSelected,
-      payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
-    });
+    await this.ledger.appendOnce(
+      root,
+      context,
+      `result:${child.grantId}:${workflow.acceptedOutcomes.at(-1)}`,
+      {
+        eventType: OrchestrationEventType.DelegationResultSelected,
+        payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
+      },
+    );
   }
 
   private async failChild(

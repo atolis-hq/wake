@@ -43,6 +43,9 @@ interface OutputDependencies {
 export function createDelegationOutputs(input: OutputDependencies): DelegationArtifacts {
   return {
     ...input.artifacts,
+    async runActivation(runId) {
+      return (await input.runs()).find((run) => run.runId === runId)?.activationId;
+    },
     async prerequisiteOutput(child, output, condition) {
       if (
         'path' in output &&

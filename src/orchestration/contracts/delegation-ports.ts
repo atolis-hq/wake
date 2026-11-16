@@ -1,4 +1,5 @@
 import type { CommandContext } from '@atolis-hq/eventing';
+import type { ActivationId } from '../../activities/index.js';
 import type { RepositoryAssignment } from '../../execution/index.js';
 import type {
   DelegatedAssignment,
@@ -13,6 +14,7 @@ import type { WorkflowInstanceView } from './views.js';
 
 /** Trusted Bootstrap adapters; no provider, Run or session authority is supplied by assignments. */
 export interface DelegationArtifacts {
+  runActivation?(runId: string): Promise<ActivationId | undefined>;
   prerequisiteOutput?(
     child: WorkflowInstanceView,
     output: DelegatedAssignment['outputs'][number],

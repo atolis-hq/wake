@@ -19,6 +19,8 @@ export interface WorkspaceRequest {
   readonly checkoutRevision?: string;
   readonly requiredSourceRef?: string;
   readonly assignment?: RepositoryAssignment;
+  /** Prior pins authorized by durable upstream-refresh receipts; checkout contents are retained. */
+  readonly assignmentHistory?: readonly RepositoryAssignment[];
 }
 
 export interface WorkspaceLease {
