@@ -21,6 +21,7 @@ import type {
   DelegationInputs,
   DelegationReservation,
   DelegationResult,
+  DelegationReviewRefresh,
 } from './delegation.js';
 import type {
   DeliveryCandidate,
@@ -50,6 +51,7 @@ export const OrchestrationEventType = {
   DelegationReserved: 'orchestration.delegation-reserved',
   DelegationInputsResolved: 'orchestration.delegation-inputs-resolved',
   DelegationInputsRefreshed: 'orchestration.delegation-inputs-refreshed',
+  DelegationReviewRefreshRequested: 'orchestration.delegation-review-refresh-requested',
   DelegationChildBlocked: 'orchestration.delegation-child-blocked',
   DelegationPrerequisiteBlocked: 'orchestration.delegation-prerequisite-blocked',
   DelegationRegistered: 'orchestration.delegation-registered',
@@ -113,6 +115,7 @@ export interface OrchestrationEventPayloads {
   };
   readonly [OrchestrationEventType.DelegationInputsResolved]: DelegationInputs;
   readonly [OrchestrationEventType.DelegationInputsRefreshed]: DelegationInputs;
+  readonly [OrchestrationEventType.DelegationReviewRefreshRequested]: DelegationReviewRefresh;
   readonly [OrchestrationEventType.DelegationPrerequisiteBlocked]: {
     readonly childWorkItemId: WorkItemId;
     readonly reason: string;

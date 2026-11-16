@@ -36,6 +36,9 @@ export interface OrchestrationPort {
   ): Promise<
     readonly { name: string; repository: RepositoryAssignment; isolated?: boolean }[] | undefined
   >;
+  reviewPreparation?(
+    workflowInstanceId: string,
+  ): Promise<{ name: string; reference: { revision?: string; branch?: string } } | undefined>;
   repositoryAssignment?(workItemId: string): Promise<RepositoryAssignment | undefined>;
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
@@ -99,6 +102,7 @@ export interface ExecutionPort {
         isolated?: boolean;
       }[];
       repositoryAssignment?: RepositoryAssignment;
+      reviewSubject?: { name: string; revision: string; branch: string };
       candidate?: ExecutionCandidate;
       maintenance?: ExecutionMaintenance;
       resources: readonly NonNullable<Awaited<ReturnType<ResourceService['get']>>>[];

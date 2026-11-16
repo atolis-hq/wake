@@ -1,52 +1,39 @@
 import {
-  ActivityOutcomeKind,
   decidePullRequestOutputAuthority,
   PullRequestState,
   type PullRequestService,
 } from '../../activities/index.js';
-import { RunStatus, WorkspaceMode, type RunView } from '../../execution/index.js';
+import { RunStatus, WorkspaceMode } from '../../execution/index.js';
 import type {
   DelegationArtifacts,
-  DelegationOutputKind,
   DelegationPrerequisite,
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import { DelegationPrerequisiteCondition as Condition } from '../../orchestration/index.js';
 import {
-  BuiltInResourceKind,
   ResourceCorrelationProvenance,
   ResourceCorrelationRole,
-  resourceId,
   type ResourceService,
 } from '../../resources/index.js';
-import { ArtifactVerificationResult } from '../contracts/artifact-vocabulary.js';
-import type { ProviderInstance } from '../contracts/provider.js';
 import { reportedChange } from './delegation-output-claims.js';
+import { deliveryReadyRequirements, outputAuthorityReason } from './delegation-output-review.js';
 import {
-  deliveryReadyRequirements,
-  outputAuthorityReason,
-  type DelegationReviewPolicy,
-} from './delegation-output-review.js';
-
-type ChangeOutput = Extract<
-  Parameters<DelegationArtifacts['qualifyingOutputs']>[1][number],
-  { readonly kind: typeof DelegationOutputKind.Change }
->;
-
-interface OutputDependencies {
-  readonly blocked?: (reason: string) => void;
-  readonly reviewPolicy?: DelegationReviewPolicy;
-  readonly artifacts: DelegationArtifacts;
-  readonly resources: ResourceService;
-  readonly pullRequests: PullRequestService;
-  readonly runs: () => Promise<readonly RunView[]>;
-  readonly providers: () => Promise<readonly ProviderInstance[]>;
-}
+  hasSuccessfulOutcome,
+  reviewSource,
+  runSource,
+  verifiedChange,
+  type ChangeOutput,
+  type OutputDependencies,
+} from './delegation-output-source.js';
 
 /** Select exact provider-verified results owned by the producing child. */
 export function createDelegationOutputs(input: OutputDependencies): DelegationArtifacts {
   return {
     ...input.artifacts,
+    async reviewSubject(child, output) {
+      if (!('kind' in output)) return null;
+      return qualifyingChange(input, child, output, Condition.PushedChange, true);
+    },
     async runActivation(runId) {
       return (await input.runs()).find((run) => run.runId === runId)?.activationId;
     },
@@ -96,48 +83,12 @@ export function createDelegationOutputs(input: OutputDependencies): DelegationAr
   };
 }
 
-async function verifiedChange(
-  input: OutputDependencies,
-  report: NonNullable<ReturnType<typeof reportedChange>>['report'],
-  source: NonNullable<ReturnType<typeof runSource>>,
-) {
-  const { assignment, branch, revision } = source;
-  const repository = await input.resources.get(resourceId(assignment.resourceId));
-  const provider = (await input.providers()).find(
-    (entry) => entry.adapter === report.externalKey.adapter,
-  );
-  if (repository === null || provider === undefined) return null;
-  const verified = await provider.verifyArtifact(
-    BuiltInResourceKind.PullRequest,
-    report.externalKey,
-    {
-      repository: repository.externalKey,
-      workspaceBranch: branch,
-      workspaceRevision: revision,
-      pullRequestBase: assignment.pullRequestBase,
-    },
-  );
-  if (verified === ArtifactVerificationResult.Ambiguous)
-    throw new Error(
-      'Child PR verification is ambiguous; reconcile provider evidence before selecting the output',
-    );
-  if (typeof verified === 'string') return null;
-  const resource = await input.resources.findByExternalKey(verified.externalKey);
-  if (
-    resource === null ||
-    resource.kind !== BuiltInResourceKind.PullRequest ||
-    verified.revision !== revision ||
-    resource.primaryCorrelationConflict !== undefined
-  )
-    return null;
-  return resource;
-}
-
 async function qualifyingChange(
   input: OutputDependencies,
   child: WorkflowInstanceView,
   output: ChangeOutput,
   condition?: DelegationPrerequisite['condition'],
+  currentHead = false,
 ) {
   const runs = (await input.runs()).filter(
     (run) =>
@@ -157,12 +108,14 @@ async function qualifyingChange(
           entry.changeOutputs?.some((source) => source.name === output.name) === true),
     )
     .at(-1);
-  const source = run === undefined ? undefined : runSource(run, output.name);
+  let source = run === undefined ? undefined : runSource(run, output.name);
   if (run === undefined || source === undefined) return null;
+  source = await reviewSource(input, child, output, { ...latest, run }, source, currentHead);
+  if (source === undefined) return null;
   const { assignment, branch, revision } = source;
   const resource = await verifiedChange(input, latest.report, source);
   if (resource === null) return null;
-  const observed = await qualifyingObservation(
+  const qualified = await qualifyingObservation(
     input,
     child,
     output,
@@ -170,7 +123,7 @@ async function qualifyingChange(
     revision,
     condition,
   );
-  if (observed === null) return null;
+  if (qualified === null) return null;
   return {
     name: output.name,
     reference: {
@@ -181,8 +134,8 @@ async function qualifyingChange(
       branch,
       pullRequestBase: assignment.pullRequestBase,
       runId: run.runId,
-      baseRevision: observed.baseRevision,
-      ...(observed.state === PullRequestState.Merged ? { merged: true as const } : {}),
+      baseRevision: qualified.baseRevision,
+      ...(qualified.state === PullRequestState.Merged ? { merged: true as const } : {}),
     },
   };
 }
@@ -256,33 +209,6 @@ async function hasOutputAuthority(
     return false;
   }
   return true;
-}
-
-function runSource(run: RunView, name?: string) {
-  if (run.workspace?.changeOutputs !== undefined) {
-    const output = run.changeOutputs?.find((entry) => entry.name === name);
-    return output === undefined
-      ? undefined
-      : {
-          assignment: output.repository,
-          branch: output.branch,
-          revision: output.revision,
-        };
-  }
-  const assignment = run.repositoryAssignment;
-  const branch = run.workspace?.branch;
-  const revision = run.workspaceRevision;
-  if (assignment === undefined || branch === undefined || revision === undefined) return undefined;
-  return { assignment, branch, revision };
-}
-
-function hasSuccessfulOutcome(run: RunView): boolean {
-  return (
-    run.outcome !== undefined &&
-    run.outcome.kind !== ActivityOutcomeKind.Failed &&
-    run.outcome.kind !== ActivityOutcomeKind.Blocked &&
-    run.outcome.kind !== ActivityOutcomeKind.Rejected
-  );
 }
 
 async function ownsOutput(

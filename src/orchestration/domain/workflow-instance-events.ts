@@ -305,6 +305,7 @@ function applyCoordinationFact(state: MutableWorkflowInstance, event: Coordinati
         };
       return;
     case OrchestrationEventType.DelegationRegistered:
+    case OrchestrationEventType.DelegationReviewRefreshRequested:
     case OrchestrationEventType.DelegationInputsRefreshed:
     case OrchestrationEventType.DelegationInputsResolved:
     case OrchestrationEventType.DelegationPrerequisiteBlocked:

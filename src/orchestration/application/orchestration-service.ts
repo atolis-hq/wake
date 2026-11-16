@@ -8,6 +8,7 @@ import type {
 import type {
   DelegationAttentionReply,
   DelegationCaller,
+  DelegationRecovery,
   DelegationSubmission,
 } from '../contracts/delegation.js';
 import type { DeliveryDependencies, DeliveryIntegration } from '../contracts/delivery-ports.js';
@@ -435,6 +436,31 @@ export class OrchestrationService {
     const view = (await this.repository.load(id)).view;
     if (view?.delegationAttention?.activationId !== activationId) return null;
     return this.delegatedWork.attention.current(view);
+  }
+
+  recoverDelegation(
+    caller: DelegationCaller,
+    command: DelegationRecovery,
+    context: CommandContext,
+  ) {
+    return this.delegationCommands.recover(caller, command, context);
+  }
+
+  async reviewPreparation(id: string) {
+    const child = (await this.repository.loadRequired(toWorkflowInstanceId(id))).view;
+    if (child.parentWorkflowInstanceId === undefined) return undefined;
+    const history = await this.repository.history(child.parentWorkflowInstanceId);
+    const subject = history.events
+      .flatMap(({ event }) =>
+        event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested &&
+        event.payload.requestId === id
+          ? [event.payload.subject]
+          : [],
+      )
+      .at(-1);
+    return subject !== undefined && 'revision' in subject.reference
+      ? { name: subject.name, reference: subject.reference }
+      : undefined;
   }
 
   respondToDelegationAttention(

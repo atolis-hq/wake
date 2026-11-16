@@ -231,3 +231,14 @@ deletion. Admission batches share one journal/Work snapshot and memoize provider
 and Git verification within the pass. Reconciliation skips settled cohorts;
 prerequisite diagnostics use stable reason-code identities. Cross-repository prerequisites carry accepted context,
 never Git ancestry. Independent children remain eligible while others wait.
+
+An active delegating Run may request recovery of a member of its own unsettled
+cohort through `recoverDelegation`. A completed single-change child can receive a
+journaled `delegation-review-refresh-requested` fact with a provider-verified
+subject and the configured watch's pinned review definition and budget. This
+starts a separate read-only review without changing the ordinary watch gate or
+reopening the completed primary workflow. Accepted successful exact-head review
+Runs refresh output provenance; a later ordinary review gate supersedes that
+recovery evidence. Recovery invalidates old result selections. Explicit downstream
+recovery revalidates configured prerequisites and uses `refreshPrerequisites`;
+fresh receipts clear prior prerequisite blockers while retaining their history.

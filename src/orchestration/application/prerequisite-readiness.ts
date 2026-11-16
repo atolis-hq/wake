@@ -85,6 +85,8 @@ export class PrerequisiteReadiness {
         event.eventType === OrchestrationEventType.DelegationInputsRefreshed
       )
         this.receipts.set(event.payload.childWorkItemId, event.payload);
+      if (event.eventType === OrchestrationEventType.DelegationInputsRefreshed)
+        this.blockers.delete(event.payload.childWorkItemId);
       if (event.eventType === OrchestrationEventType.DelegationChildBlocked)
         this.blockers.set(event.payload.childWorkItemId, {
           code: Code.Failed,
@@ -185,6 +187,7 @@ export class PrerequisiteReadiness {
         this.children,
         this.artifacts,
         this.revisionEvidence.revisions,
+        this.revisionEvidence.reviewRefreshes,
       );
     return undefined;
   }
@@ -239,7 +242,7 @@ export class PrerequisiteReadiness {
     seen: Set<string>,
   ): Promise<DelegationInputs['consumed'][number] | PrerequisiteBlock> {
     const blocked = await this.block(upstream.workItemId, new Set(seen));
-    if (blocked !== undefined) return blocked;
+    if (blocked !== undefined) return inheritedBlock(blocked);
     const workflow = this.workflows.get(upstream.workflowInstanceId);
     if (workflow === undefined)
       return { code: Code.Waiting, reason: `Waiting for upstream ${upstream.assignmentId}` };

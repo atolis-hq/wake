@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, it, vi } from 'vitest';
+import type { ActivationId } from '../../../src/activities/index.js';
 import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
 import { isActiveRunStatus, RunStatus, type RunnerRequest } from '../../../src/execution/index.js';
 import {
@@ -35,11 +36,22 @@ const context = (commandId: string) => ({
 });
 const done = { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
 
-it.each(['recover', 'in-review', 'terminal', 'stale'])(
+it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head'])(
   'handles a pushed-change review stack safely (%s)',
+  // Each branch exercises a distinct durable recovery sequence.
+  // eslint-disable-next-line complexity
   async (scenario) => {
     const home = await mkdtemp(join(tmpdir(), 'wake-stack-review-'));
     let shutdown = async () => {};
+    let releaseParent = () => {};
+    const parentFinished = new Promise<void>((resolve) => {
+      releaseParent = resolve;
+    });
+    let recoveryCaller: {
+      workflowInstanceId: ReturnType<typeof workflowInstanceId>;
+      activationId: ActivationId;
+      runId: string;
+    };
     try {
       const repo = join(home, 'repo');
       await exec('git', ['init', '-b', 'main', repo]);
@@ -58,9 +70,13 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
       const revised = await commit('revision');
       await git(repo, 'cherry-pick', heads.get('three')!);
       const refreshed = await git(repo, 'rev-parse', 'HEAD');
+      const fourth = await commit('fourth');
       await git(repo, 'switch', 'main');
       await git(repo, 'reset', '--hard', source);
-      heads.set('independent', await commit('independent'));
+      heads.set(
+        'independent',
+        scenario === 'completed-head' ? fourth : await commit('independent'),
+      );
       await git(repo, 'reset', '--hard', source);
       const eventsFile = join(home, 'provider.json');
       const runner = new ScriptedDelegationRunner();
@@ -69,7 +85,14 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
       const parentWork = workId('review-stack');
       let children: DelegationReservation['children'] = [];
       const child = (id: string) => children.find((entry) => entry.assignmentId === id)!;
-      const upstream = (id: string) => (id === 'two' ? 'one' : id === 'three' ? 'two' : undefined);
+      const upstream = (id: string) =>
+        id === 'two'
+          ? 'one'
+          : id === 'three'
+            ? 'two'
+            : id === 'independent' && scenario === 'completed-head'
+              ? 'three'
+              : undefined;
       const publish = () =>
         writeFile(
           eventsFile,
@@ -107,6 +130,7 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
       const open = () =>
         createCompositionRoot(home, {
           config: parseRootConfig({
+            controlPlane: { maxConcurrentRuns: scenario === 'completed-head' ? 4 : 1 },
             execution: {
               agentRunners: { fake: { kind: 'fake' } },
               runnerPools: { standard: ['fake'] },
@@ -160,7 +184,9 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
                       activity: 'agent',
                       with: { prompt: 'Review' },
                       requiresApproval: false,
-                      execution: { workspace: 'none' },
+                      execution: {
+                        workspace: scenario === 'completed-head' ? 'read-only' : 'none',
+                      },
                       on: { done: { then: 'done' }, rejected: { then: 'done' } },
                     },
                   },
@@ -210,7 +236,9 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
             expect(
               (await root.execution.list()).every(
                 (run) =>
-                  !isActiveRunStatus(run.status) && !root.execution.isLocallyActive(run.runId),
+                  (scenario === 'completed-head' &&
+                    run.workflowInstanceId === parent.workflowInstanceId) ||
+                  (!isActiveRunStatus(run.status) && !root.execution.isLocallyActive(run.runId)),
               ),
             ).toBe(true),
           { timeout: 15_000 },
@@ -230,11 +258,13 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
                 assignmentId: id,
                 objective: id,
                 criteria: ['Publish tested change'],
-                workflowName: workflowName(id === 'independent' ? 'independent' : 'child'),
+                workflowName: workflowName(
+                  id === 'independent' && scenario !== 'completed-head' ? 'independent' : 'child',
+                ),
                 context: [],
                 repository: { resourceId: repository, sourceRef: 'main', pullRequestBase: 'main' },
                 outputs:
-                  id === 'independent'
+                  id === 'independent' && scenario !== 'completed-head'
                     ? [{ name: 'note', path: 'note.md' }]
                     : [
                         {
@@ -251,7 +281,10 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
                         {
                           assignmentId: upstream(id)!,
                           output: 'change',
-                          condition: 'pushed-change',
+                          condition:
+                            id === 'independent' && scenario === 'completed-head'
+                              ? 'delivery-ready'
+                              : 'pushed-change',
                           useAsBase: true,
                         },
                       ],
@@ -261,9 +294,17 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
           )
         ).children;
         await publish();
+        if (scenario === 'completed-head') {
+          recoveryCaller = {
+            workflowInstanceId: parent.workflowInstanceId,
+            activationId: parent.pendingActivation!.activationId,
+            runId: request.runId,
+          };
+          await parentFinished;
+        }
         return done;
       });
-      let rejectedTwo = false;
+      let rejectedTwo = scenario === 'completed-head';
       runner.scriptFor = (request) =>
         request.prompt.startsWith('Review')
           ? async (request) => {
@@ -298,6 +339,7 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
               }
             : undefined;
       await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+      await vi.waitFor(() => expect(children).toHaveLength(4));
       await idle();
       const implement = async (id: string, expectedBase: string, target: string) => {
         const entry = child(id);
@@ -351,6 +393,37 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
           .at(-1)!;
         expect(run.status, JSON.stringify(run.failure)).toBe('succeeded');
         const view = (await root.orchestration.get(entry.workflowInstanceId))!;
+        if (scenario === 'completed-head' && id === 'three' && target !== refreshed) {
+          heads.set('two', revised);
+          await git(repo, 'update-ref', 'refs/heads/' + child('two').workItemId, revised);
+          await publish();
+          const upstreamPr = (await root.resources.findByExternalKey({
+            adapter: 'fake',
+            key: 'org/repo#2',
+          }))!;
+          await root.pullRequests.observe(
+            {
+              resourceId: upstreamPr.resourceId,
+              workItemId: child('two').workItemId,
+              state: 'open',
+              headRevision: revised,
+              baseRevision: heads.get('one')!,
+              checks: 'passing',
+            },
+            context('external-head-change'),
+          );
+          await expect(
+            root.orchestration.acceptOutcome(
+              {
+                workflowInstanceId: entry.workflowInstanceId,
+                activationId: run.activationId,
+                outcome: run.outcome!,
+              },
+              context('fenced-old-result'),
+            ),
+          ).rejects.toThrow();
+          return;
+        }
         if (!view.acceptedOutcomes.includes(run.activationId))
           await root.orchestration.acceptOutcome(
             {
@@ -416,7 +489,119 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
       await implement('one', source, heads.get('one')!);
       await review('one');
       await implement('two', heads.get('one')!, heads.get('two')!);
+      if (scenario === 'completed-head') await review('two');
       await implement('three', heads.get('two')!, heads.get('three')!);
+      if (scenario === 'completed-head') {
+        const oldInputs = (await root.orchestration.deliveryTree(parentWork))[0]!.children.find(
+          (entry) => entry.assignmentId === 'three',
+        )!.consumedInputs!;
+        await expect(
+          root.orchestration.recoverDelegation(
+            recoveryCaller!,
+            {
+              action: 'refresh',
+              childWorkItemId: child('three').workItemId,
+              expectedRevision: JSON.stringify(oldInputs.consumed),
+            },
+            context('too-early'),
+          ),
+        ).rejects.toThrow();
+        const command = {
+          action: 'review' as const,
+          childWorkItemId: child('two').workItemId,
+          output: 'change',
+          expectedRevision: revised,
+        };
+        const requested = await root.orchestration.recoverDelegation(
+          recoveryCaller!,
+          command,
+          context('request-review'),
+        );
+        expect(
+          await root.orchestration.recoverDelegation(
+            recoveryCaller!,
+            command,
+            context('duplicate-review'),
+          ),
+        ).toEqual(requested);
+        releaseParent();
+        await vi.waitFor(async () =>
+          expect(
+            (await root.execution.list())
+              .filter((run) => run.workflowInstanceId === parent.workflowInstanceId)
+              .every(
+                (run) =>
+                  !isActiveRunStatus(run.status) && !root.execution.isLocallyActive(run.runId),
+              ),
+          ).toBe(true),
+        );
+        await root.execution.shutdown();
+        root = await open();
+        await root.orchestration.reconcileChildCompletions(context('start-fresh-review'));
+        const watch = (await root.orchestration.listAll()).find(
+          (view) =>
+            view.parentWorkflowInstanceId === child('two').workflowInstanceId &&
+            view.status === 'active',
+        )!;
+        expect(watch).toBeDefined();
+        await root.advanceOnce({ workItemId: child('two').workItemId, maxProgress: 1 });
+        await idle();
+        const reviewRun = (await root.execution.list()).find(
+          (run) => run.workflowInstanceId === watch.workflowInstanceId,
+        )!;
+        expect(reviewRun.workspaceRevision).toBe(revised);
+        await root.orchestration.acceptOutcome(
+          {
+            workflowInstanceId: watch.workflowInstanceId,
+            activationId: reviewRun.activationId,
+            outcome: reviewRun.outcome!,
+          },
+          context('accept-fresh-review'),
+        );
+        await root.orchestration.reconcileChildCompletions(context('refresh-dependent'));
+        expect(
+          (await root.orchestration.deliveryTree(parentWork))[0]!.children.find(
+            (entry) => entry.assignmentId === 'three',
+          )!.consumedInputs!.repository?.sourceRevision,
+        ).toBe(revised);
+        heads.set('three', refreshed);
+        await publish();
+        await implement('three', revised, refreshed);
+        await review('three');
+        await root.orchestration.reconcileChildCompletions(context('start-fourth'));
+        expect(
+          await root.orchestration.listPendingActivations(child('independent').workItemId),
+          JSON.stringify(await root.orchestration.deliveryTree(parentWork, { verify: true })),
+        ).toHaveLength(1);
+        expect(
+          (await journal.readAll(0)).filter(
+            ({ event }) =>
+              event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested,
+          ),
+        ).toHaveLength(1);
+        expect(
+          (await journal.readAll(0)).filter(
+            ({ event }) => event.eventType === OrchestrationEventType.DelegationInputsRefreshed,
+          ),
+        ).toHaveLength(1);
+        await implement('independent', refreshed, fourth);
+        await review('independent');
+        await root.orchestration.reconcileChildCompletions(context('join-refreshed-cohort'));
+        const results = await root.orchestration.joinedDelegationResults(
+          parent.workflowInstanceId,
+          'stack',
+        );
+        expect(results).toHaveLength(4);
+        expect(
+          results.find((result) => result.childWorkItemId === child('two').workItemId)!.outputs[0]!
+            .reference,
+        ).toMatchObject({ revision: revised });
+        expect(
+          results.find((result) => result.childWorkItemId === child('three').workItemId)!
+            .outputs[0]!.reference,
+        ).toMatchObject({ revision: refreshed });
+        return;
+      }
       // Layer three may even finish before layer two's review rejects.
       const oldReview = (await root.orchestration.listAll()).find(
         (view) => view.parentWorkflowInstanceId === child('three').workflowInstanceId,
@@ -574,6 +759,7 @@ it.each(['recover', 'in-review', 'terminal', 'stale'])(
         ),
       ).toHaveLength(2);
     } finally {
+      releaseParent();
       await shutdown();
       await rm(home, { recursive: true, force: true });
     }

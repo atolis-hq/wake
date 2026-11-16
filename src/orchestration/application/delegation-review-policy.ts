@@ -4,13 +4,15 @@ import {
   BuiltInActivityName,
   pullRequestMergeInputSchema,
 } from '../../activities/index.js';
+import type { DelegationReviewRefresh } from '../contracts/delegation.js';
 import {
   OrchestrationEventType as Event,
   WatchGateVerdictSignal,
+  type OrchestrationSignal,
   type WorkflowOrchestrationEvent,
 } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
+import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -37,21 +39,38 @@ export function createDelegationReviewPolicy(
         parsed.data.requireApproval,
     );
     const history = await repository.history(child.workflowInstanceId);
-    const accepted = acceptedReview(history.events);
+    const { accepted, refresh } = acceptedReview(history.events);
     const review =
       accepted === undefined ? undefined : ((await repository.load(accepted)).view ?? undefined);
-    return { requireApproval, review, allowTrustedReview: merges.length === 0 };
+    return {
+      requireApproval,
+      review:
+        refresh === undefined ||
+        (review?.status === WorkflowStatus.Completed &&
+          review.lastOutcome?.kind === ActivityOutcomeKind.Done)
+          ? review
+          : undefined,
+      refreshedSubject: refresh?.subject,
+      allowTrustedReview: merges.length === 0,
+    };
   };
 }
 
 function acceptedReview(events: readonly WorkflowOrchestrationEvent[]) {
+  let refresh: DelegationReviewRefresh | undefined;
   let watch: string | undefined;
   let accepted: string | undefined;
   for (const { event } of events) {
+    if (event.eventType === Event.DelegationReviewRefreshRequested) {
+      refresh = event.payload;
+      accepted = refresh.requestId;
+      watch = undefined;
+    }
     if (
       event.eventType === Event.SignalWaitStarted &&
       event.payload.signalKind === WatchGateVerdictSignal
     ) {
+      refresh = undefined;
       watch = event.payload.from?.find(
         (authority) => authority.kind === ApprovalAuthorityKind.Watch,
       )?.watch;
@@ -59,15 +78,18 @@ function acceptedReview(events: readonly WorkflowOrchestrationEvent[]) {
     }
     if (event.eventType === Event.SignalAccepted && event.payload.kind === WatchGateVerdictSignal) {
       const signal = event.payload;
-      accepted =
-        signal.outcome === ActivityOutcomeKind.Done &&
-        signal.authority?.kind === ApprovalAuthorityKind.Watch &&
-        signal.authority.watch === watch
-          ? signal.childWorkflowInstanceId
-          : undefined;
+      accepted = acceptedWatchReview(signal, watch) ? signal.childWorkflowInstanceId : undefined;
       watch = undefined;
     }
   }
 
-  return accepted;
+  return { accepted, refresh };
+}
+
+function acceptedWatchReview(signal: OrchestrationSignal, watch: string | undefined) {
+  return (
+    signal.outcome === ActivityOutcomeKind.Done &&
+    signal.authority?.kind === ApprovalAuthorityKind.Watch &&
+    signal.authority.watch === watch
+  );
 }

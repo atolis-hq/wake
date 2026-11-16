@@ -75,3 +75,43 @@ it.each(['done', 'rejected', 'wrong-watch', 'new-wait', 'missing-child'])(
     else expect(load).not.toHaveBeenCalled();
   },
 );
+
+it.each(['requested', 'done', 'failed', 'later-wait'])(
+  'selects recovery reviews only after successful completion and until a newer gate (%s)',
+  async (scenario) => {
+    const subject = { name: 'change', reference: { revision: 'new' } };
+    const events = [
+      {
+        event: {
+          eventType: Event.DelegationReviewRefreshRequested,
+          payload: { requestId: 'fresh-review', subject },
+        },
+      },
+      ...(scenario === 'later-wait'
+        ? [
+            {
+              event: {
+                eventType: Event.SignalWaitStarted,
+                payload: {
+                  signalKind: WatchGateVerdictSignal,
+                  from: [{ kind: 'watch', watch: 'review' }],
+                },
+              },
+            },
+          ]
+        : []),
+    ];
+    const review = {
+      workflowInstanceId: 'fresh-review',
+      status: scenario === 'requested' ? 'active' : 'completed',
+      lastOutcome: { kind: scenario === 'failed' ? 'failed' : 'done' },
+    };
+    const policy = createDelegationReviewPolicy(
+      { history: async () => ({ events }), load: async () => ({ view: review }) } as never,
+      { resolve: async () => ({ stages: { merge: merge(false) } }) } as never,
+    );
+    const result = await policy({ workflowInstanceId: 'child' } as never);
+    expect(result.review).toEqual(scenario === 'done' ? review : undefined);
+    expect(result.refreshedSubject).toEqual(scenario === 'later-wait' ? undefined : subject);
+  },
+);

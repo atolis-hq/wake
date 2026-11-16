@@ -15,6 +15,7 @@ export async function canRefreshInputs(
   children: ReadonlyMap<string, DelegationReservation['children'][number]>,
   artifacts: DelegationArtifacts,
   revisions: ReadonlyMap<string, ReadonlySet<string>>,
+  reviewRefreshes: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
 ) {
   if (stored.length !== current.length) return false;
   for (const [index, next] of current.entries()) {
@@ -29,7 +30,13 @@ export async function canRefreshInputs(
     if (
       upstream === undefined ||
       activation === undefined ||
-      !revisions.get(upstream.workflowInstanceId)?.has(activation)
+      !isVerifiedRevision(
+        upstream.workflowInstanceId,
+        activation,
+        fresh.revision,
+        revisions,
+        reviewRefreshes,
+      )
     )
       return false;
   }
@@ -81,4 +88,14 @@ function sameChange(oldName: string, name: string, old: ChangeReference, fresh: 
     old.branch === fresh.branch &&
     old.revision !== fresh.revision
   );
+}
+
+function isVerifiedRevision(
+  id: string,
+  activation: string,
+  revision: string,
+  revisions: ReadonlyMap<string, ReadonlySet<string>>,
+  refreshes: ReadonlyMap<string, ReadonlySet<string>>,
+) {
+  return revisions.get(id)?.has(activation) || refreshes.get(id)?.has(revision);
 }

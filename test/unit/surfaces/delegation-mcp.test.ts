@@ -232,3 +232,31 @@ it('accepts two named change outputs with independent source pins through the bo
   expect(submit).toHaveBeenCalledWith(caller, command, expect.anything());
   await client.close();
 });
+
+it('binds recovery to the parent Run and reports ineligibility without accepting caller arguments', async () => {
+  const recoverDelegation = vi.fn(async () => {
+    throw new Error('Child has unresolved runs');
+  });
+  const client = await connect({ recoverDelegation });
+  const command = {
+    action: 'review',
+    childWorkItemId: workId('2'),
+    output: 'change',
+    expectedRevision: 'head',
+  };
+  const forged = await client.callTool({
+    name: 'wake_delegation_recover',
+    arguments: { ...command, runId: 'forged' },
+  });
+  expect(forged.isError).toBe(true);
+  expect(recoverDelegation).not.toHaveBeenCalled();
+  const result = await client.callTool({ name: 'wake_delegation_recover', arguments: command });
+  expect(result.isError).toBe(true);
+  expect(recoverDelegation).toHaveBeenCalledWith(
+    caller,
+    command,
+    expect.objectContaining({ commandId: 'command' }),
+  );
+  expect(JSON.stringify(result)).toContain('Child has unresolved runs');
+  await client.close();
+});

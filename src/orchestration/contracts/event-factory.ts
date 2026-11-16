@@ -18,6 +18,8 @@ export function createOrchestrationEventData(
   input: OrchestrationEventDataInput,
 ): OrchestrationEventData {
   switch (input.eventType) {
+    case OrchestrationEventType.DelegationReviewRefreshRequested:
+      return createEventData(input);
     case OrchestrationEventType.DelegationInputsRefreshed:
     case OrchestrationEventType.DelegationInputsResolved:
       return createEventData(input);

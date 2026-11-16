@@ -37,3 +37,17 @@ export async function dispatchRepositoryContext(
     ...(changeOutputAssignments === undefined ? {} : { changeOutputAssignments }),
   };
 }
+
+export function reviewContext(
+  review: { name: string; reference: { revision?: string; branch?: string } } | undefined,
+) {
+  return review?.reference.revision === undefined || review.reference.branch === undefined
+    ? {}
+    : {
+        reviewSubject: {
+          name: review.name,
+          revision: review.reference.revision,
+          branch: review.reference.branch,
+        },
+      };
+}

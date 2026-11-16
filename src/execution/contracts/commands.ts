@@ -28,6 +28,11 @@ export interface ExecutionActivation {
 }
 
 export interface ExecutionAttemptContext {
+  readonly reviewSubject?: {
+    readonly name: string;
+    readonly revision: string;
+    readonly branch: string;
+  };
   readonly candidate?: ExecutionCandidate;
   readonly maintenance?: ExecutionMaintenance;
   readonly workItemId: WorkItemId;

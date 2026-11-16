@@ -126,3 +126,7 @@ export type {
 } from './contracts/delegation.js';
 
 export { createDelegationReviewPolicy } from './application/delegation-review-policy.js';
+
+export { delegationRecoverySchema } from './contracts/delegation.js';
+
+export type { DelegationRecovery, DelegationReviewRefresh } from './contracts/delegation.js';

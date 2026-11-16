@@ -18,6 +18,7 @@ import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabu
  * stages) belongs to it; the next wait closes it.
  */
 export function prerequisiteRevisions(events: readonly WorkflowOrchestrationEvent[]) {
+  const reviewRefreshes = new Map<string, Set<string>>();
   const waits = new Map<string, SignalExpectation>();
   const targets = new Map<string, string | null>();
   const open = new Set<string>();
@@ -25,6 +26,14 @@ export function prerequisiteRevisions(events: readonly WorkflowOrchestrationEven
   const pending = new Map<string, string | undefined>();
   for (const { stream, event } of events) {
     const id = stream.id;
+    if (
+      event.eventType === Event.DelegationReviewRefreshRequested &&
+      'revision' in event.payload.subject.reference
+    )
+      reviewRefreshes.set(
+        id,
+        new Set(reviewRefreshes.get(id)).add(event.payload.subject.reference.revision),
+      );
     if (event.eventType === Event.SignalWaitStarted) {
       waits.set(id, event.payload);
       open.delete(id);
@@ -48,7 +57,7 @@ export function prerequisiteRevisions(events: readonly WorkflowOrchestrationEven
     revisions.set(id, new Set(revisions.get(id)).add(activation));
     pending.set(id, activation);
   }
-  return { revisions, pending };
+  return { revisions, pending, reviewRefreshes };
 }
 
 /** The first branch request must hit the configured target; later ones follow the open episode. */

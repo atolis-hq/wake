@@ -229,3 +229,7 @@ export const BaseMovement = defineClosedVocabulary({
 } as const);
 
 export type BaseMovement = ValueOf<typeof BaseMovement>;
+
+export const DelegationRecoveryAction = { Review: 'review', Refresh: 'refresh' } as const;
+
+export const DelegationRecoveryStatus = { Unchanged: 'unchanged', Refreshed: 'refreshed' } as const;

@@ -9,6 +9,7 @@ import {
   delegationJoinSchema,
   delegationReservationSchema,
   delegationResultSchema,
+  delegationReviewRefreshSchema,
   delegationWaitSchema,
 } from './delegation.js';
 import {
@@ -307,6 +308,10 @@ const groupBudgetGrantedEnvelope = childGroupEnvelope(
     });
 });
 const eventSchemas = {
+  [OrchestrationEventType.DelegationReviewRefreshRequested]: workflowEnvelope(
+    OrchestrationEventType.DelegationReviewRefreshRequested,
+    delegationReviewRefreshSchema,
+  ),
   [OrchestrationEventType.DelegationChildBlocked]: workflowEnvelope(
     OrchestrationEventType.DelegationChildBlocked,
     z

@@ -3,15 +3,18 @@ import type { WorkService } from '../../work/index.js';
 import type { DelegationAuthority } from '../contracts/delegation-ports.js';
 import {
   delegationAttentionReplySchema,
+  delegationRecoverySchema,
   delegationSubmissionSchema,
   type DelegationAttentionReply,
   type DelegationCaller,
+  type DelegationRecovery,
   type DelegationSubmission,
 } from '../contracts/delegation.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { WorkflowStatus } from '../contracts/vocabulary.js';
+import { DelegationRecoveryAction, WorkflowStatus } from '../contracts/vocabulary.js';
 import type { DelegatedWork } from './delegated-work.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import { requestReviewRefresh } from './request-review-refresh.js';
 import type { StartWorkflow } from './start-workflow.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -102,6 +105,48 @@ export class DelegationCommands {
     if (availability.reason !== undefined) throw new Error(availability.reason);
     await this.delegated.attention.respond(caller, reply, context);
     return this.attentionView(caller.workflowInstanceId);
+  }
+
+  async recover(caller: DelegationCaller, input: DelegationRecovery, context: CommandContext) {
+    const command = delegationRecoverySchema.parse(input);
+    const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
+    await this.authority.assertCaller(caller, parent);
+    const availability = (await this.work.deliverySnapshot()).availability(parent.workItemId);
+    if (availability.reason !== undefined) throw new Error(availability.reason);
+    if (
+      (parent.pendingActivation?.activationId ?? parent.delegationFence?.activationId) !==
+      caller.activationId
+    )
+      throw new Error('Recovery requires the current parent activation');
+    const { reservation, child } = await this.delegated.recoverableChild(
+      parent,
+      command.childWorkItemId,
+    );
+    const policy = (await this.workflows.definitionFor(parent)).delegation;
+    if (policy === undefined) throw new Error('Workflow delegation is disabled');
+    const { permitted } = await this.scopeFor(parent, policy, context);
+    if (child.repository !== undefined && !permitted.includes(child.repository.resourceId))
+      throw new Error('Child repository is outside the current delegation authority');
+    if (command.action === DelegationRecoveryAction.Refresh)
+      return this.delegated.prerequisites.recover(
+        reservation,
+        child,
+        command.expectedRevision,
+        context,
+      );
+    const reason = await this.delegated.prerequisites.reason(child.workItemId);
+    if (reason !== undefined) throw new Error(reason);
+    return requestReviewRefresh(
+      {
+        repository: this.repository,
+        workflows: this.workflows,
+        definitions: this.definitions,
+        delegated: this.delegated,
+      },
+      child,
+      command,
+      context,
+    );
   }
 
   private async attentionView(id: DelegationCaller['workflowInstanceId']) {

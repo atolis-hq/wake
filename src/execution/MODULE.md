@@ -53,3 +53,8 @@ child identity order and releases partial acquisitions on failure. New workspace
 the selected output revision. A prior ambiguous child or maintenance writer must be
 reconciled before another writer acquires the branch. Run start records every target/path;
 maintenance never transfers branch or PR ownership to the parent.
+
+Explicit completed-child review recovery carries a journal-derived review subject
+through the dispatch port. Read-only acquisition pins that subject's commit rather
+than the previous implementation Run's HEAD. The resulting Run records the actual
+checkout revision, which must match the requested subject for output qualification.

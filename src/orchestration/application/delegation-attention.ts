@@ -26,7 +26,7 @@ import {
   type AttentionVerdict,
   type OpenAttention,
 } from './delegation-attention-state.js';
-import { isSettled, type DelegationLedger } from './delegation-ledger.js';
+import { currentChildBlockers, isSettled, type DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 export interface DelegationAttentionDependencies {
@@ -61,12 +61,7 @@ export class DelegationAttention {
   ): Promise<DelegationAttentionBlocker[]> {
     const blockers: DelegationAttentionBlocker[] = [];
     for (const child of reservation.children) {
-      const recorded = events.flatMap(({ event }) =>
-        event.eventType === OrchestrationEventType.DelegationChildBlocked &&
-        event.payload.childWorkItemId === child.workItemId
-          ? [event.payload.reason]
-          : [],
-      )[0];
+      const recorded = currentChildBlockers(events).get(child.workItemId);
       const view =
         recorded === undefined ? (await this.repository.load(child.workflowInstanceId)).view : null;
       const blocker = blockerOf(child, recorded, view);

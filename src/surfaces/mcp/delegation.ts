@@ -5,6 +5,7 @@ import {
   DelegationConflictError,
   DeliveryRejectionError,
   delegationAttentionReplySchema,
+  delegationRecoverySchema,
   delegationSubmissionSchema,
   deliveryCandidateCommandSchema,
   deliveryMaintenanceCommandSchema,
@@ -92,6 +93,42 @@ export function registerDelegationTools(
       };
     }
   };
+  server.registerTool(
+    'wake_delegation_recover',
+    {
+      description:
+        'Recover one child in this parent cohort. Use review with the output name and provider current head as expectedRevision to request a fresh configured read-only review of a completed child. Use refresh with JSON.stringify(consumedInputs.consumed) from inspection as expectedRevision to refresh stale downstream inputs and rerun the branch activity and configured gates. Unresolved runs, unavailable evidence, and blocked or superseded workflows are rejected. Review/check authority and exact-head requirements remain in force.',
+      inputSchema: delegationRecoverySchema,
+    },
+    async (command) => {
+      try {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                await input.orchestration.recoverDelegation(
+                  await input.caller(),
+                  command,
+                  input.commandContext(),
+                ),
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text' as const,
+              text: error instanceof Error ? error.message : 'Recovery unavailable',
+            },
+          ],
+        };
+      }
+    },
+  );
   server.registerTool(
     'wake_delivery_select',
     {

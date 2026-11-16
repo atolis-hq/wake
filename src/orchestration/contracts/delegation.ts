@@ -7,6 +7,7 @@ import {
   DelegationBlockerKind,
   DelegationOutputKind,
   DelegationPrerequisiteCondition,
+  DelegationRecoveryAction,
   type DelegationAttentionRejection,
   type DelegationConflictCode,
 } from './vocabulary.js';
@@ -299,3 +300,29 @@ export class DelegationPendingError extends Error {
     this.name = 'DelegationPendingError';
   }
 }
+
+export const delegationRecoverySchema = z
+  .object({
+    childWorkItemId: brandedStringSchema(workItemId),
+    action: z.enum(DelegationRecoveryAction),
+    output: z.string().min(1).optional(),
+    expectedRevision: z.string().min(1),
+  })
+  .strict();
+
+export type DelegationRecovery = z.infer<typeof delegationRecoverySchema>;
+
+export const delegationReviewRefreshSchema = z
+  .object({
+    workflowName: brandedStringSchema(workflowName),
+    workflowFingerprint: z.string().min(1),
+    maxPerGroup: z.number().int().positive(),
+    requestId: brandedStringSchema(workflowInstanceId),
+    watchId: z.string().min(1),
+    subject: delegationResultSchema.shape.outputs.element.extend({
+      reference: delegationResultSchema.shape.outputs.element.shape.reference.options[1],
+    }),
+  })
+  .strict();
+
+export type DelegationReviewRefresh = z.infer<typeof delegationReviewRefreshSchema>;
