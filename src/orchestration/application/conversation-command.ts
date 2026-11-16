@@ -141,7 +141,7 @@ export async function applyBuiltInConversationCommand(
 
 function changesDeniedReason(workAuthorized: boolean): string {
   return workAuthorized
-    ? 'No eligible blocked agent stage or authorized review wait. Use /retry for an eligible failed stage; watch gates require their configured authority.'
+    ? 'No eligible blocked agent stage, delegation wait, or authorized review wait. Use /retry for an eligible failed stage; watch gates require their configured authority.'
     : 'No review wait accepted this decision. Continuing blocked work requires verified repository write, maintain, or admin permission; watch gates retain their configured authority.';
 }
 

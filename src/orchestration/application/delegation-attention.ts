@@ -1,5 +1,5 @@
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
-import { activationId, type ActivityName } from '../../activities/index.js';
+import type { ActivityName } from '../../activities/index.js';
 import type { DelegationArtifacts, DelegationMessages } from '../contracts/delegation-ports.js';
 import type {
   DelegationAttentionBlocker,
@@ -11,7 +11,7 @@ import { OrchestrationEventType, type WorkflowOrchestrationEvent } from '../cont
 import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { DelegationAttentionRejection, DelegationBlockerKind } from '../contracts/vocabulary.js';
-import { nextOrdinal } from '../domain/decision-events.js';
+import { requestAssessment } from './delegation-attention-request.js';
 import {
   assertReplyAllowed,
   assessedBlockers,
@@ -26,7 +26,7 @@ import {
   type AttentionVerdict,
   type OpenAttention,
 } from './delegation-attention-state.js';
-import { delegationDraft, isSettled, type DelegationLedger } from './delegation-ledger.js';
+import { isSettled, type DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 
 export interface DelegationAttentionDependencies {
@@ -94,7 +94,20 @@ export class DelegationAttention {
     for (;;) {
       const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);
       if (!canRequestAssessment(loaded.view, reservation)) return;
-      if (await this.request(reservation, loaded, { attentionKey, blockers }, context)) return;
+      if (
+        await requestAssessment(
+          {
+            repository: this.repository,
+            ledger: this.ledger,
+            supportsAttention: this.dependencies.supportsAttention,
+          },
+          reservation,
+          loaded,
+          { attentionKey, blockers },
+          context,
+        )
+      )
+        return;
     }
   }
 
@@ -127,81 +140,52 @@ export class DelegationAttention {
     for (;;) {
       const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);
       if (!canRequestAssessment(loaded.view, reservation)) return;
-      if (await this.request(reservation, loaded, { attentionKey, blockers }, context)) return;
+      if (
+        await requestAssessment(
+          {
+            repository: this.repository,
+            ledger: this.ledger,
+            supportsAttention: this.dependencies.supportsAttention,
+          },
+          reservation,
+          loaded,
+          { attentionKey, blockers },
+          context,
+        )
+      )
+        return;
     }
   }
 
-  /** Returns false when a concurrent append won and the caller must re-read. */
-  private async request(
+  /** An operator request assesses the cohort without changing its membership. */
+  async raiseForOperator(
     reservation: DelegationReservation,
-    loaded: { readonly sequence: number; readonly view: WorkflowInstanceView },
-    input: {
-      readonly attentionKey: string;
-      readonly blockers: DelegationAttentionBlocker[];
-    },
     context: CommandContext,
   ): Promise<boolean> {
-    const id = reservation.parentWorkflowInstanceId;
-    const { events } = await this.repository.history(id);
-    const original = events.find(
-      (entry) =>
-        entry.event.eventType === OrchestrationEventType.ActivityRequested &&
-        entry.event.payload.activationId === reservation.activationId,
-    );
-    if (original?.event.eventType !== OrchestrationEventType.ActivityRequested)
-      throw new Error('Missing delegating activation');
-    const requested = original.event.payload;
-    const keyId = digest(input.attentionKey);
-    if (!this.dependencies.supportsAttention(requested.activity)) {
-      await this.ledger.appendOnce(id, context, `attention-unsupported:${keyId}`, {
-        eventType: OrchestrationEventType.DelegationReconciliationFailed,
-        payload: {
-          cohortId: reservation.cohortId,
-          reason:
-            'Child work needs attention but the delegating activity cannot assess it; ' +
-            'an operator must inspect the blockers',
-        },
-      });
-      return true;
-    }
-    const ordinal = nextOrdinal(loaded.view);
-    const attentionActivation = activationId(`${id}:activity:${ordinal}`);
-    try {
-      await this.repository.append(id, loaded.sequence, [
-        delegationDraft(
-          context,
-          `attention:${keyId}:${ordinal}`,
+    const attentionKey = `${attentionKeyOf(reservation, [])}:operator:${digest(context.commandId)}`;
+    if (!(await this.dependencies.canContinue(reservation))) return false;
+    for (;;) {
+      if (isSettled(await this.ledger.events(), reservation)) return false;
+      const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);
+      if (loaded.view.operatorRetryCommandIds.includes(context.commandId)) return true;
+      if (!canRequestAssessment(loaded.view, reservation)) return false;
+      const blockers = await this.blockers(reservation, await this.ledger.events());
+      if (
+        await requestAssessment(
           {
-            eventType: OrchestrationEventType.DelegationAttentionRequested,
-            payload: {
-              cohortId: reservation.cohortId,
-              attentionKey: input.attentionKey,
-              activationId: attentionActivation,
-              revision: reservation.planRevision ?? 1,
-              blockers: input.blockers,
-            },
+            repository: this.repository,
+            ledger: this.ledger,
+            supportsAttention: this.dependencies.supportsAttention,
           },
-          id,
-        ),
-        delegationDraft(
+          reservation,
+          loaded,
+          { attentionKey, blockers, operator: true },
           context,
-          `attention-activity:${keyId}:${ordinal}`,
-          {
-            eventType: OrchestrationEventType.ActivityRequested,
-            payload: {
-              ...requested,
-              activationId: attentionActivation,
-              ordinal,
-              sessionPolicy: 'fresh',
-            },
-          },
-          id,
-        ),
-      ]);
-      return true;
-    } catch (error) {
-      if (error instanceof WrongExpectedSequenceError) return false;
-      throw error;
+        )
+      )
+        return (
+          await this.repository.loadRequired(reservation.parentWorkflowInstanceId)
+        ).view.operatorRetryCommandIds.includes(context.commandId);
     }
   }
 

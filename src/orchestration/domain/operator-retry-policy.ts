@@ -105,7 +105,7 @@ export function selectChangesResumeTargets(
 ): readonly WorkflowInstanceView[] {
   const primary = workflows.find((workflow) => workflow.parentWorkflowInstanceId === undefined);
   if (primary === undefined) return [];
-  if (isChangesResumeEligible(primary)) return [primary];
+  if (isChangesResumeEligible(primary) || isDelegationChangesEligible(primary)) return [primary];
   if (
     primary.status !== WorkflowStatus.Waiting ||
     primary.waitingFor?.signalKind !== WatchGateVerdictSignal
@@ -124,6 +124,18 @@ export function selectChangesResumeTargets(
       workflow.watchId !== undefined &&
       watches.has(watchId(workflow.watchId)) &&
       isChangesResumeEligible(workflow),
+  );
+}
+
+/** Operator assessment reenters only the primary delegating agent. */
+export function isDelegationChangesEligible(view: WorkflowInstanceView): boolean {
+  return (
+    view.parentWorkflowInstanceId === undefined &&
+    view.status === WorkflowStatus.Waiting &&
+    view.delegationWait !== undefined &&
+    view.delegationAttention === undefined &&
+    view.delegationFence?.activationId === view.delegationWait.activationId &&
+    view.pendingActivation?.activity === BuiltInActivityName.Agent
   );
 }
 

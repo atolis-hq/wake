@@ -706,7 +706,10 @@ enforced, and operator workflow decisions do not create provider PR approval or 
 Plain comments can answer clarification or resume eligible blocked outcomes; they do not re-run a
 successful stage waiting for review.
 
-Use /changes followed by instructions to continue an eligible blocked agent stage. /retry and
+Use /changes followed by instructions to continue an eligible blocked agent stage or ask a parent
+waiting on delegation to re-assess its cohort. The UI Continue action supports the same delegation
+wait. An assessment leaves child runs and review requirements unchanged and restores the cohort
+wait when it ends; replacement work remains subject to the existing delegation rules. /retry and
 /restart remain failed-stage recovery (restart requests a fresh session); /extend explicitly
 extends an exhausted watch-group budget. Continuation does not revive deleted, closed, or frozen
 work, bypass watch authority, or reset retry/review budgets. Rejected and inapplicable commands

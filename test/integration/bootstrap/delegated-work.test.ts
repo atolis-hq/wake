@@ -1193,3 +1193,99 @@ it('settles a hard queued-child failure after independent work drains, and prese
   await root.orchestration.reconcileChildCompletions(context('duplicate-terminal'));
   expect((await f.journal.readAll(0)).length).toBe(before);
 });
+
+it('applies an external /changes during a child Run and restores the cohort wait without disturbing it', async () => {
+  const runner = new ScriptedDelegationRunner();
+  const f = await fixture(true, runner);
+  const parent = await complete(f.root, await start(f.root, 'operator-parent'));
+  const probe = await start(f.root, 'operator-probe', 'child');
+  const reservation = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'original-run',
+    },
+    'operator-cohort',
+    [assignment(probe.workflowDefinitionFingerprint!, [])],
+    context('operator-reserve'),
+    { maxDepth: 1, maxDescendants: 2 },
+  );
+  const child = reservation.children[0]!;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  runner.scripts.push(async () => {
+    await held;
+    return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+  });
+  const dispatched = await f.root.advanceOnce({ workItemId: child.workItemId, maxProgress: 1 });
+  expect(dispatched).toMatchObject({ kind: 'progressed' });
+  const childRun = (await f.root.execution.list()).find(
+    (run) => run.workflowInstanceId === child.workflowInstanceId,
+  )!;
+  try {
+    expect(isActiveRunStatus(childRun.status)).toBe(true);
+    const conversation = await f.root.conversations.createForWorkItem(
+      parent.workItemId,
+      context('operator-conversation'),
+    );
+    const body = '/changes Inspect the changed upstream head and report the precise blocker.';
+    await f.root.conversations.record(
+      {
+        conversationId: conversation.conversationId,
+        entryId: 'maintainer-changes',
+        body,
+        origin: {
+          kind: 'external',
+          adapter: 'github',
+          actorId: 'maintainer',
+          resourceId: 'parent-issue',
+          threadId: 'parent-thread',
+          messageId: 'changes-comment',
+          authorized: true,
+          reviewAuthorized: false,
+          capabilities: ['review-surface'],
+        },
+      },
+      context('record-operator-changes'),
+    );
+    await f.root.processorRuntime.catchUp('apply-operator-changes');
+    const attending = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+    expect(attending.delegationAttention).toBeDefined();
+    expect((await f.root.conversations.forWorkItem(parent.workItemId))!.entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ body: 'Command applied.' })]),
+    );
+    runner.scripts.push(async () => ({
+      transport: RunStatus.Succeeded,
+      runner: 'fake',
+      output: '{"status":"DONE"}',
+    }));
+    await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+    const run = (await f.root.execution.list()).find(
+      (entry) => entry.activationId === attending.pendingActivation!.activationId,
+    )!;
+    const ended = await terminalRun(f.root, run.runId);
+    expect(ended.failure).toBeUndefined();
+    await f.root.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: parent.workflowInstanceId,
+        activationId: run.activationId,
+        outcome: ended.outcome!,
+      },
+      context('accept-operator-assessment'),
+    );
+    const restored = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+    expect(restored.delegationAttention).toBeUndefined();
+    expect(restored.delegationWait?.cohortId).toBe('operator-cohort');
+    expect(
+      isActiveRunStatus(
+        (await f.root.execution.list()).find((entry) => entry.runId === childRun.runId)!.status,
+      ),
+    ).toBe(true);
+    expect((await f.root.orchestration.deliveryTree(parent.workItemId))[0]!.settled).toBe(false);
+  } finally {
+    release();
+    if (childRun !== undefined) await terminalRun(f.root, childRun.runId);
+  }
+});

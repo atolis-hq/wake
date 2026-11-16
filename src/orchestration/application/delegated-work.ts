@@ -606,6 +606,18 @@ export class DelegatedWork {
       await this.join(reservation, results, context);
   }
 
+  async assessOperator(parent: WorkflowInstanceView, context: CommandContext): Promise<boolean> {
+    const reservation = (await this.ledger.reservations()).find(
+      (entry) =>
+        entry.parentWorkflowInstanceId === parent.workflowInstanceId &&
+        entry.cohortId === parent.delegationWait?.cohortId &&
+        entry.activationId === parent.delegationWait?.activationId,
+    );
+    return reservation === undefined
+      ? false
+      : this.attention.raiseForOperator(reservation, context);
+  }
+
   /** A human reply on a parent: wake it to pass the answer to the children still waiting. */
   async assessReply(
     parent: WorkflowInstanceView,
