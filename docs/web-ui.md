@@ -17,6 +17,19 @@ The Board is the default view. It groups work items by their current condition,
 with columns for Ready, Active, Needs input, Error, and Finished. Cards
 summarize work and provide a route into its details.
 
+A work item whose workflow is waiting on delegated child work items is shown
+as Active with a "waiting on children: N/M finished" badge rather than as
+needing input. Its own delegating run outcome is not shown while it waits,
+because Wake holds that outcome until the children settle. It moves to Needs
+input only when a child is blocked (shown as a "child blocked" badge) or the
+parent has escalated a question about its children to a human. Once the
+children's results are joined, the card goes back to the normal conditions.
+
+Freezing a work item pauses its delegated children and their descendants too.
+A frozen item shows a "frozen" badge. Delegated work that is paused only
+because a parent or ancestor is frozen shows "parent frozen" or "ancestor
+frozen".
+
 ![Board with ready, active, needs-input, and finished work, including runs in progress](web-ui-screenshots/01-board.png)
 
 ## Work items

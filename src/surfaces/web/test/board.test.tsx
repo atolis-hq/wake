@@ -179,6 +179,109 @@ describe('board', () => {
     ).toBeNull();
   });
 
+  it('shows a delegating parent as waiting on its children instead of its held run outcome', async () => {
+    const card = (workItemKey: string, objective: string, extra: object) => ({
+      workItemKey,
+      workItemId: workItemKey,
+      objective,
+      condition: 'active',
+      dwellSince: asOf,
+      runCount: 1,
+      lastRunOutcome: 'blocked',
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      ...extra,
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App
+          client={boardClient(undefined, [
+            card('wk_waiting', 'Ship the stack', {
+              childCount: 5,
+              delegationWait: { total: 5, finished: 1, needsAttention: 0 },
+            }),
+            card('wk_attention', 'Ship the other stack', {
+              condition: 'needs-input',
+              childCount: 2,
+              delegationWait: { total: 2, finished: 0, needsAttention: 1, escalated: true },
+            }),
+          ])}
+        />
+      </MemoryRouter>,
+    );
+
+    const waiting = await screen.findByRole('listitem', { name: 'Ship the stack' });
+    expect(within(waiting).getByText('waiting on children: 1/5 finished')).toBeTruthy();
+    expect(within(waiting).queryByText('blocked')).toBeNull();
+    expect(within(waiting).queryByText(/children blocked|child blocked/)).toBeNull();
+    const attention = screen.getByRole('listitem', { name: 'Ship the other stack' });
+    expect(within(attention).getByText('waiting on children: 0/2 finished')).toBeTruthy();
+    expect(within(attention).getByText('1 child blocked').className).toContain('warning');
+    expect(within(attention).getByText('question for a human')).toBeTruthy();
+  });
+
+  it('shows delegated work held by a frozen parent or ancestor as frozen', async () => {
+    const card = (workItemKey: string, objective: string, extra: object) => ({
+      workItemKey,
+      workItemId: workItemKey,
+      objective,
+      condition: 'ready',
+      dwellSince: asOf,
+      runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      ...extra,
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App
+          client={boardClient(undefined, [
+            card('wk_root', 'Frozen root', { frozen: true, childCount: 1 }),
+            card('wk_mid', 'Held child', {
+              parentWorkItemKey: 'wk_root',
+              frozenAncestorWorkItemKey: 'wk_root',
+            }),
+            card('wk_leaf', 'Held grandchild', {
+              parentWorkItemKey: 'wk_mid',
+              frozenAncestorWorkItemKey: 'wk_root',
+            }),
+          ])}
+        />
+      </MemoryRouter>,
+    );
+
+    const child = await screen.findByRole('listitem', { name: 'Held child' });
+    expect(within(child).getByText('parent frozen').className).toContain('cold');
+    const grandchild = screen.getByRole('listitem', { name: 'Held grandchild' });
+    expect(within(grandchild).getByText('ancestor frozen')).toBeTruthy();
+    const root = screen.getByRole('listitem', { name: 'Frozen root' });
+    expect(within(root).getByText('frozen')).toBeTruthy();
+    expect(within(root).queryByText(/(parent|ancestor) frozen/)).toBeNull();
+  });
+
+  it('decodes the optional delegation wait on board cards', () => {
+    const base = {
+      workItemKey: 'wk_d',
+      workItemId: 'work-d',
+      objective: 'Delegating',
+      condition: 'active',
+      dwellSince: asOf,
+      runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      activeRuns: {},
+    };
+    expect(
+      decodeBoardCard({ ...base, delegationWait: { total: 3, finished: 2, needsAttention: 0 } })
+        .delegationWait,
+    ).toEqual({ total: 3, finished: 2, needsAttention: 0 });
+    expect(decodeBoardCard(base)).not.toHaveProperty('delegationWait');
+    expect(() => decodeBoardCard({ ...base, delegationWait: { total: 'x' } })).toThrow();
+  });
+
   it('renders each card as a link to its work item key route', async () => {
     render(
       <MemoryRouter initialEntries={['/board']}>

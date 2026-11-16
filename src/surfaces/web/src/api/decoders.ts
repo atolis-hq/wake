@@ -2,6 +2,7 @@ import type {
   AuditEventResponse,
   BoardActiveRunPhase,
   BoardCardActiveRun,
+  BoardCardDelegationWait,
   BoardCardResponse,
   CollectionResponse,
   ControlPlaneStatusResponse,
@@ -189,8 +190,27 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, 'repository', path),
     ...optionalStringProperty(record, 'parentWorkItemKey', path),
     ...optionalNumberProperty(record, 'childCount', path),
+    ...optionalStringProperty(record, 'frozenAncestorWorkItemKey', path),
+    ...(record.delegationWait === undefined
+      ? {}
+      : {
+          delegationWait: decodeBoardDelegationWait(
+            record.delegationWait,
+            child(path, 'delegationWait'),
+          ),
+        }),
   };
 };
+
+function decodeBoardDelegationWait(value: unknown, path: string): BoardCardDelegationWait {
+  const record = object(value, path);
+  return {
+    total: number(record.total, child(path, 'total')),
+    finished: number(record.finished, child(path, 'finished')),
+    needsAttention: number(record.needsAttention, child(path, 'needsAttention')),
+    ...optionalBooleanProperty(record, 'escalated', path),
+  };
+}
 
 function decodeArtifactSource(
   value: unknown,

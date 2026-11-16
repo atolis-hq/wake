@@ -168,6 +168,108 @@ it('exposes the repository on board cards only when the adapter resolves one', a
   expect(byKey.get('wk_other')).not.toHaveProperty('repository');
 });
 
+it('presents a waiting cohort as delegation progress and keeps its stored state internal', async () => {
+  const item = workId('board-api-delegating-parent');
+  const root = rootWithBoard({
+    cards: {
+      [item]: {
+        workItemKey: 'wk_board_api_delegating_parent',
+        workItemId: item,
+        objective: 'Ship the stack',
+        condition: 'active',
+        dwellSince: '2026-08-03T12:00:00.000Z',
+        runCount: 1,
+        childCount: 3,
+        lastRunOutcome: 'blocked',
+        delegatedCohort: {
+          cohortId: 'cohort-1',
+          children: { a: 'task-a', b: 'task-b', c: 'task-c' },
+          finished: { a: true },
+          needsAttention: { b: true },
+          waiting: true,
+        },
+        activeRuns: {},
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalCostUsd: 0,
+        totalDurationMs: 0,
+      },
+    },
+    workflows: {},
+    runs: {},
+    children: {},
+    childRuns: {},
+    delegatedChildren: {},
+  } as unknown as ReturnType<typeof boardProjection.initial>);
+
+  const result = await createSurfaceApiApplications(
+    root,
+    () => '2026-08-03T12:05:00.000Z',
+  ).board!.list({ limit: 10 });
+
+  expect(result.items[0]?.delegationWait).toEqual({ total: 3, finished: 1, needsAttention: 1 });
+  expect(result.items[0]).not.toHaveProperty('delegatedCohort');
+});
+
+it('marks delegated work held by a frozen ancestor with that ancestor', async () => {
+  const base = {
+    condition: 'ready',
+    dwellSince: '2026-08-03T12:00:00.000Z',
+    runCount: 0,
+    activeRuns: {},
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalCostUsd: 0,
+    totalDurationMs: 0,
+  };
+  const ids = {
+    root: workId('frozen-root'),
+    parent: workId('held-parent'),
+    child: workId('held-child'),
+    done: workId('finished-child'),
+    other: workId('unrelated'),
+  };
+  const card = (name: keyof typeof ids, extra: object) => ({
+    ...base,
+    workItemKey: `wk_${name}`,
+    workItemId: ids[name],
+    objective: name,
+    ...extra,
+  });
+  const root = rootWithBoard({
+    cards: {
+      [ids.root]: card('root', { frozen: true, childCount: 1 }),
+      [ids.parent]: card('parent', { parentWorkItemKey: 'wk_root', childCount: 1 }),
+      [ids.child]: card('child', { parentWorkItemKey: 'wk_parent' }),
+      [ids.other]: card('other', {}),
+      [ids.done]: card('done', { parentWorkItemKey: 'wk_parent', condition: 'finished' }),
+    },
+    workflows: {},
+    runs: {},
+    children: {},
+    childRuns: {},
+    delegatedChildren: {},
+  } as unknown as ReturnType<typeof boardProjection.initial>);
+
+  const result = await createSurfaceApiApplications(
+    root,
+    () => '2026-08-03T12:05:00.000Z',
+  ).board!.list({ limit: 10 });
+  const byId = Object.fromEntries(result.items.map((item) => [item.objective, item]));
+
+  expect(byId.parent?.frozenAncestorWorkItemKey).toBe('wk_root');
+  expect(byId.child?.frozenAncestorWorkItemKey).toBe('wk_root');
+  expect(byId.root).not.toHaveProperty('frozenAncestorWorkItemKey');
+  expect(byId.other).not.toHaveProperty('frozenAncestorWorkItemKey');
+  expect(byId.done).not.toHaveProperty('frozenAncestorWorkItemKey');
+});
+
 function rootWithBoard(view: ReturnType<typeof boardProjection.initial>): CompositionRoot {
   const event = eventEnvelope(
     WorkEventType.ItemCreated,

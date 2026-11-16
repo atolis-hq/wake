@@ -24,6 +24,8 @@ import { analyticsProjection, type AnalyticsProjectionView } from './analytics-p
 import { createAnalyticsReports } from './analytics-reports.js';
 import {
   boardConditionCounts,
+  boardDelegationWait,
+  boardFrozenAncestorLookup,
   boardProjection,
   normalizeBoardActiveRunPhase,
   type BoardProjectionView,
@@ -78,6 +80,7 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
       );
       const offset = query.cursor?.position ?? 0;
       const page = cards.slice(offset, offset + query.limit);
+      const frozenAncestor = boardFrozenAncestorLookup(board);
       const items = await Promise.all(
         page.map(async (card) => {
           const externalRef = await primaryExternalRef(root, card.workItemId);
@@ -85,11 +88,16 @@ function createBoardApplications(root: CompositionRoot, now: () => string) {
           const {
             activeRun: _legacyActiveRun,
             activeRuns: _activeRuns,
+            delegatedCohort: _delegatedCohort,
             ...withoutActiveRuns
           } = card;
           const activeRuns = activeBoardRuns(board, card);
+          const delegationWait = boardDelegationWait(card);
+          const frozenAncestorWorkItemKey = frozenAncestor(card);
           return presentBoardCard({
             ...withoutActiveRuns,
+            ...(delegationWait === undefined ? {} : { delegationWait }),
+            ...(frozenAncestorWorkItemKey === undefined ? {} : { frozenAncestorWorkItemKey }),
             totalDurationMs: card.totalDurationMs ?? 0,
             activeRuns: Object.fromEntries(
               Object.entries(activeRuns).map(([runId, activeRun]) => [

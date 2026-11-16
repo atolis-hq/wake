@@ -101,6 +101,7 @@ export function BoardCard({
               {item.childCount} {item.childCount === 1 ? 'child' : 'children'}
             </Chip>
           )}
+          {item.delegationWait !== undefined && <DelegationWaitChips wait={item.delegationWait} />}
           {item.frozen === true && (
             <Chip
               variant="outline"
@@ -111,9 +112,24 @@ export function BoardCard({
               frozen
             </Chip>
           )}
-          {item.lastRunOutcome !== undefined && item.lastRunOutcome !== 'done' && (
-            <OutcomeChip outcome={item.lastRunOutcome} title="Outcome of the most recent run" />
+          {item.frozen !== true && item.frozenAncestorWorkItemKey !== undefined && (
+            <Chip
+              variant="outline"
+              tone="cold"
+              title="Automatic progress is paused while a delegating ancestor is frozen"
+            >
+              <FrozenIcon />
+              {item.frozenAncestorWorkItemKey === item.parentWorkItemKey
+                ? 'parent frozen'
+                : 'ancestor frozen'}
+            </Chip>
           )}
+          {item.lastRunOutcome !== undefined &&
+            item.lastRunOutcome !== 'done' &&
+            // A delegating run's outcome is held while its cohort runs, so it is not shown as the card's state.
+            item.delegationWait === undefined && (
+              <OutcomeChip outcome={item.lastRunOutcome} title="Outcome of the most recent run" />
+            )}
           {isAmbiguousRunBlock(item.blockReason) && (
             <Chip
               variant="outline"
@@ -177,6 +193,39 @@ export function BoardCard({
         ))}
       </Link>
     </li>
+  );
+}
+
+function DelegationWaitChips({
+  wait,
+}: {
+  readonly wait: NonNullable<BoardCardResponse['delegationWait']>;
+}) {
+  return (
+    <>
+      <Chip
+        variant="outline"
+        tone="info"
+        title="The workflow resumes once its delegated children finish"
+      >
+        <LinkIcon className={styles.metaIcon} />
+        {`waiting on children: ${wait.finished}/${wait.total} finished`}
+      </Chip>
+      {wait.needsAttention > 0 && (
+        <Chip variant="outline" tone="warning" title="Delegated children that need attention">
+          {`${wait.needsAttention} ${wait.needsAttention === 1 ? 'child' : 'children'} blocked`}
+        </Chip>
+      )}
+      {wait.escalated === true && (
+        <Chip
+          variant="outline"
+          tone="warning"
+          title="A question about the delegated children is waiting on a human"
+        >
+          question for a human
+        </Chip>
+      )}
+    </>
   );
 }
 
