@@ -9,6 +9,7 @@ import {
   ActivityOutcomeKind,
   activityOrchestrationGroupId,
   activityWorkflowInstanceId,
+  selectActivityEvent,
 } from '../../../src/activities/index.js';
 import {
   createCompositionRoot,
@@ -17,10 +18,13 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { createOneShotRunnerAdvance } from '../../../src/bootstrap/runner-tick-adapter.js';
 import { createWorkCancellationPolicy } from '../../../src/control-plane/index.js';
+import { observePullRequest as translatePullRequest } from '../../../src/integrations/github/application/pull-request-translation.js';
 import {
   DurableFakeDeliveryProvider,
   ExternalWorkOutcome,
+  adapterId,
   concludeObservedWork,
+  integrationStream,
 } from '../../../src/integrations/index.js';
 import {
   OrchestrationEventType,
@@ -37,6 +41,7 @@ import {
 } from '../../../src/resources/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { WorkStatus } from '../../../src/work/index.js';
+import { githubCheckObservation } from '../../support/github-check-observation.js';
 import { resId, workId } from '../../support/identities.js';
 
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
@@ -118,7 +123,7 @@ const pr = resId('merge-recovery');
 const iid = workflowInstanceId('merge-recovery');
 const group = orchestrationGroupId('merge-recovery');
 
-async function setup(definition: unknown = workflow) {
+async function setup(definition: unknown = workflow, githubChecks = false) {
   const path = await mkdtemp(join(tmpdir(), 'wake-merge-recovery-'));
   roots.push(path);
   const provider = new DurableFakeDeliveryProvider();
@@ -144,7 +149,10 @@ async function setup(definition: unknown = workflow) {
       {
         resourceId,
         kind: resourceKind(kind),
-        externalKey: { adapter: 'fake', key: kind },
+        externalKey: {
+          adapter: 'fake',
+          key: githubChecks && kind === 'pull-request' ? 'test/repo#1' : kind,
+        },
         capabilities,
       },
       command(),
@@ -599,3 +607,143 @@ it('reconciles a merge wait using its pinned explicit await signal', async () =>
   await tick(root);
   expect((await root.orchestration.get(iid))?.blockReason).toContain('pr-closed-unmerged');
 });
+
+function checkRepairWorkflow(max = 2) {
+  const definition = repairWorkflow();
+  return {
+    ...definition,
+    stages: {
+      ...definition.stages,
+      merge: {
+        ...definition.stages.merge,
+        on: {
+          ...definition.stages.merge.on,
+          done: {
+            then: 'wait',
+            resourceTransitions: [
+              ...workflow.stages.merge.on.done.resourceTransitions,
+              {
+                events: ['pr.checks-changed'],
+                where: { checks: 'failing' },
+                then: 'repair',
+                retry: { max },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
+async function observeChecks(
+  root: Root,
+  checks: 'failing' | 'passing' | 'unknown',
+  head = 'head',
+  retainEvidence = true,
+  commitStatus = false,
+) {
+  const observed = await githubCheckObservation(checks, head, adapterId('fake'), commitStatus);
+  if (retainEvidence) {
+    const stream = integrationStream(adapterId('fake'));
+    const facts = await root.journal.readStream(stream);
+    await root.journal.appendToStream(stream, facts.length, [observed]);
+  }
+  await root.pullRequests.observe(translatePullRequest(pr, wid, observed.payload), command());
+}
+
+it.each([1, 2])(
+  'bounds current-head failing checks to %s repairs across restart and escalates once',
+  async (max) => {
+    const definition = checkRepairWorkflow(max);
+    const { root: initial, path, provider } = await setup(definition, true);
+    await until(initial, () => waiting(initial));
+    await observeChecks(initial, 'failing', 'head', max === 1, max === 2);
+    await tick(initial);
+    expect((await initial.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+    const root = await createCompositionRoot(path, {
+      config: config(),
+      fakeDeliveryProvider: provider,
+    });
+    await until(
+      root,
+      async () =>
+        (await root.orchestration.get(iid))?.blockReason?.startsWith(
+          'merge.checks-retry-exhausted:',
+        ) === true,
+    );
+    const view = (await root.orchestration.get(iid))!;
+    expect(view.retryCounts['pr.merge:failing']).toBe(max);
+    expect(view.retryCounts['pr.merge:conflicting']).toBeUndefined();
+    expect(view.waitingFor?.signalKind).toBe('blocked');
+    expect(view.blockReason).toContain(
+      max === 1 ? 'failing checks: integration' : 'current failing check-name evidence unavailable',
+    );
+    const repairs = (await root.journal.readAll(0))
+      .map(selectWorkflowOrchestrationEvent)
+      .filter(
+        (fact) =>
+          fact?.event.eventType === OrchestrationEventType.StageEntered &&
+          fact.event.payload.stage === 'repair',
+      );
+    expect(repairs).toHaveLength(max);
+    const before = (await root.journal.readAll(0)).filter(
+      (fact) => fact.event.eventType === OrchestrationEventType.InstanceBlocked,
+    ).length;
+    await tick(root);
+    expect(
+      (await root.journal.readAll(0)).filter(
+        (fact) => fact.event.eventType === OrchestrationEventType.InstanceBlocked,
+      ),
+    ).toHaveLength(before);
+  },
+  60_000,
+);
+
+it('ignores superseded failures and unknown checks without spending a repair', async () => {
+  const { root } = await setup(checkRepairWorkflow(), true);
+  await until(root, () => waiting(root));
+  await observeChecks(root, 'failing', 'old');
+  await observeChecks(root, 'unknown', 'new');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBeUndefined();
+  await observeChecks(root, 'failing', 'new');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+});
+
+it('repairs red checks, observes the pushed green head, and requests merge through production composition', async () => {
+  const definition = checkRepairWorkflow();
+  definition.stages.merge.with.blockedPaths = [];
+  const { root } = await setup(definition, true);
+  await until(root, () => waiting(root));
+  await observeChecks(root, 'failing');
+  await tick(root);
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+  await observeChecks(root, 'passing', 'fixed-head');
+  await until(root, async () =>
+    (await root.journal.readAll(0))
+      .map(selectActivityEvent)
+      .some(
+        (fact) =>
+          fact?.event.eventType === ActivityEventType.PrMergeRequested &&
+          fact.event.payload.revision === 'fixed-head',
+      ),
+  );
+  await root.pullRequests.observe(
+    {
+      resourceId: pr,
+      workItemId: wid,
+      state: 'merged',
+      headRevision: 'fixed-head',
+      baseRevision: 'base',
+      checks: 'passing',
+    },
+    command(),
+  );
+  await until(
+    root,
+    async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Completed,
+  );
+  expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
+}, 60_000);

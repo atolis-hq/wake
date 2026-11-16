@@ -59,6 +59,7 @@ import {
   DeliveryService,
   IntegrationStreamKind,
   ProviderRegistry,
+  createFailingCheckNamesReader,
   deliveryProjectionDefinitions,
   fakeProviderDefinition,
   publishConversationCommandFeedback,
@@ -361,7 +362,10 @@ export async function composeIntegrationRuntime(
           BuiltInResourceCapability.Reviewable,
           BuiltInResourceCapability.Approvable,
         ],
-        policy: createPullRequestTransitionEvidence(input.pullRequests),
+        policy: createPullRequestTransitionEvidence(
+          input.pullRequests,
+          createFailingCheckNamesReader(input.journal, input.resources),
+        ),
       },
     ],
   });

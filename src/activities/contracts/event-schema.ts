@@ -243,7 +243,11 @@ export function createResourceFactDraftSchemas(eventTypes: ActivityEventTypes) {
     resourceFactDraft(
       eventTypes.PrChecksChanged,
       z
-        .object({ checks: checksSchema, checkEvidence: pullRequestCheckEvidenceSchema.optional() })
+        .object({
+          checks: checksSchema,
+          headRevision: z.string().min(1).optional(),
+          checkEvidence: pullRequestCheckEvidenceSchema.optional(),
+        })
         .strict(),
     ),
     resourceFactDraft(eventTypes.PrReviewAccepted, reviewSchema),

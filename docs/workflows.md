@@ -689,6 +689,38 @@ authorized independent reviewers. Waits gated by a watch keep the generic
 agent-review hint. Those commands retain their eligibility rules for agent
 review and conversation stages.
 
+### Bounded failing-check repair during merge waits
+
+A merge stage can declare a bounded check repair route alongside its merged
+completion transition:
+
+```yaml
+- events: [pr.checks-changed]
+  where: { checks: failing }
+  then: revise
+  retry: { max: 2 }
+```
+
+`retry.max` accepts 1 or 2. Wake reconciles this route during the merge wait,
+including after restart, only when failing check evidence identifies the primary
+PR's current head revision. `pr.checks-changed` records the observed head separately
+from verified passing execution evidence (`checkEvidence`); failing check runs and
+commit statuses can therefore qualify for repair without authorizing a merge.
+Legacy facts without an observed head and superseded head evidence do not consume
+an attempt. The durable per-workflow check repair counter is independent of
+conflict repair and stage `repeat` limits. The configured repair stage should
+push a fix to the existing PR and return through review and merge.
+
+After the last allowed repair, another eligible failure records
+`merge.checks-retry-exhausted` and follows the merge stage's configured `blocked`
+route (for example `await-human`). The diagnostic includes failing check names
+from current provider evidence when available, or explicitly reports that
+current check-name evidence is unavailable. Without a `blocked` route the
+workflow remains blocked. Without `retry`, failing-check transitions retain
+their existing unbounded behavior. `requireChecks` still prevents merging with
+failing or unknown checks; passing checks permit merging when all other policy
+requirements are satisfied.
+
 ## Delegated delivery controls
 
 A named workflow can opt into independent child WorkItems:

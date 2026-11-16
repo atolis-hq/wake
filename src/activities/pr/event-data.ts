@@ -63,6 +63,7 @@ export const checksChanged = (
     ...metadata(ActivityEventType.PrChecksChanged, context),
     payload: {
       checks: command.checks,
+      ...(command.headRevision.length === 0 ? {} : { headRevision: command.headRevision }),
       ...(command.checkEvidence === undefined ? {} : { checkEvidence: command.checkEvidence }),
     },
   });

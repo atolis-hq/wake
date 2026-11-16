@@ -40,7 +40,8 @@ export function createResourceTransitionReactor(
     for (const match of await orchestration.listResourceTransitionMatches(event)) {
       const resolved = await evidence.resolve({
         workItemId: match.workItemId,
-        transitions: match.transitions,
+        // Bounded repair reconciles the current merge wait and PR head.
+        transitions: match.transitions.filter((transition) => transition.retry === undefined),
         ...(fact === undefined ? {} : { fact }),
       });
       if (resolved === null) continue;

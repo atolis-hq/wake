@@ -3,6 +3,7 @@ import {
   ActivityEventType,
   ActivityOutcomeKind,
   BuiltInActivityName,
+  PullRequestCheckState,
   PullRequestMergeability,
   PullRequestState,
   readMergePolicyDenial,
@@ -21,6 +22,7 @@ import {
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { TransitionTargetKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import { stateDraft } from '../domain/decision-events.js';
+import { finishRoute } from '../domain/transition.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { ResourceTransitionEvidence } from './resource-transition-evidence.js';
 import { acceptResourceTransition } from './resource-transition-matching.js';
@@ -40,6 +42,8 @@ export async function recoverPolicyBlockedMerges(
     const stage = definition.stages[view.currentStage];
     if (stage === undefined || !isConfiguredMergeWait(stage, view)) continue;
     if (await reconcileMergeProblem(repository, workflows, evidence, loaded, definition, context))
+      continue;
+    if (await recoverFailingChecks(repository, workflows, evidence, loaded, definition, context))
       continue;
     await recoverMergedPolicyWait(repository, workflows, evidence, loaded, stage, context);
   }
@@ -230,4 +234,81 @@ async function recoverMergedPolicyWait(
     resolved.evidenceId,
     { ...context, expectedSequence: loaded.sequence },
   );
+}
+
+async function recoverFailingChecks(
+  repository: OrchestrationRepository,
+  workflows: StartWorkflow,
+  evidence: ResourceTransitionEvidence,
+  loaded: Awaited<ReturnType<OrchestrationRepository['load']>>,
+  definition: CompiledWorkflow,
+  context: CommandContext,
+): Promise<boolean> {
+  const view = loaded.view!;
+  const stage = definition.stages[view.currentStage]!;
+  if (view.blockReason?.startsWith('merge.checks-retry-exhausted:')) return false;
+  const transitions = stage.on[ActivityOutcomeKind.Done]?.resourceTransitions?.filter(
+    (route) => route.event === ActivityEventType.PrChecksChanged && route.retry !== undefined,
+  );
+  if (transitions === undefined || transitions.length === 0) return false;
+  const resolved = await evidence.resolve({ workItemId: view.workItemId, transitions });
+  if (resolved === null) return false;
+  const key = `${BuiltInActivityName.PullRequestMerge}:${PullRequestCheckState.Failing}`;
+  if ((view.retryCounts[key] ?? 0) >= resolved.transition.retry!.max) {
+    const reason = checksExhaustedReason(resolved.failingCheckNames);
+    const decisionContext = {
+      occurredAt: context.occurredAt,
+      causationId: `${context.commandId}:${view.workflowInstanceId}`,
+    };
+    const events = [
+      stateDraft(
+        view,
+        decisionContext,
+        {
+          eventType: OrchestrationEventType.InstanceBlocked,
+          payload: { reason },
+        },
+        1,
+      ),
+    ];
+    const route = stage.on[ActivityOutcomeKind.Blocked];
+    if (route !== undefined)
+      finishRoute(
+        events,
+        definition,
+        view,
+        {
+          ...decisionContext,
+          outcome: { kind: ActivityOutcomeKind.Blocked, data: { reason } },
+        },
+        route,
+      );
+    await repository.append(view.workflowInstanceId, loaded.sequence, events);
+  } else {
+    await acceptResourceTransition(
+      repository,
+      workflows,
+      view.workflowInstanceId,
+      resolved.transition.target,
+      `${resolved.evidenceId}:${view.pendingActivation?.activationId}`,
+      {
+        ...context,
+        expectedSequence: loaded.sequence,
+        retry: {
+          key,
+          max: resolved.transition.retry!.max,
+          exhaustedReason: 'merge.checks-retry-exhausted',
+        },
+      },
+    );
+  }
+  return true;
+}
+
+function checksExhaustedReason(names: readonly string[] | undefined): string {
+  const detail =
+    names === undefined || names.length === 0
+      ? 'current failing check-name evidence unavailable'
+      : `failing checks: ${names.join(', ')}`;
+  return `merge.checks-retry-exhausted: bounded check repair exhausted; ${detail}`;
 }

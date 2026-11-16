@@ -19,6 +19,7 @@ export interface ResourceTransitionEvidenceInput {
 export interface ResourceTransitionEvidenceResolution {
   readonly transition: CompiledResourceTransition;
   readonly evidenceId: string;
+  readonly failingCheckNames?: readonly string[];
 }
 
 export interface ResourceTransitionEvidence {
