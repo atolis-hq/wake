@@ -22,7 +22,8 @@ export async function deliveryReadyRequirements(
   if (!policy.requireApproval) {
     const reason = await reviewedHead(input.runs, child, policy.review, revision);
     if (reason !== undefined) {
-      if (policy.allowTrustedReview) return { requireReview: true, requireChecks: true };
+      if (policy.allowTrustedReview)
+        return { requireReview: true, requireChecks: true, reviewFallbackReason: reason };
       input.blocked?.(reason);
       return null;
     }
@@ -57,7 +58,13 @@ async function reviewedHead(
     : 'No accepted review attesting exact head ' + revision;
 }
 
-export function outputAuthorityReason(reason: PullRequestDenialCode, requireApproval: boolean) {
+export function outputAuthorityReason(
+  reason: PullRequestDenialCode,
+  requireApproval: boolean,
+  reviewFallbackReason?: string,
+) {
+  if (reviewFallbackReason !== undefined)
+    return reviewFallbackReason + '; Trusted PR review fallback: ' + reason;
   const trustedReview =
     requireApproval &&
     (reason === PullRequestDenialCode.StaleApproval ||

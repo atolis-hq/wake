@@ -50,7 +50,7 @@ export function createDelegationOutputs(input: OutputDependencies): DelegationAr
     async runActivation(runId) {
       return (await input.runs()).find((run) => run.runId === runId)?.activationId;
     },
-    async prerequisiteOutput(child, output, condition) {
+    async prerequisiteOutput(child, output, condition, blocked) {
       if (
         'path' in output &&
         (condition === Condition.AcceptedOutput || condition === Condition.DeliveryReady)
@@ -58,23 +58,12 @@ export function createDelegationOutputs(input: OutputDependencies): DelegationAr
         return (await input.artifacts.qualifyingOutputs(child, [output]))?.[0] ?? null;
       }
       if (!('kind' in output)) return null;
-      return qualifyingChange(input, child, output, condition);
-    },
-    async prerequisiteOutputBlocker(child, output, condition) {
-      if (!('kind' in output)) return undefined;
-      let reason: string | undefined;
-      await qualifyingChange(
-        {
-          ...input,
-          blocked: (value) => {
-            reason = value;
-          },
-        },
+      return qualifyingChange(
+        blocked === undefined ? input : { ...input, blocked },
         child,
         output,
         condition,
       );
-      return reason ?? 'No provider-verified accepted output';
     },
     async qualifyingOutputs(child, outputs) {
       const references: NonNullable<Awaited<ReturnType<DelegationArtifacts['qualifyingOutputs']>>> =
@@ -230,7 +219,7 @@ async function qualifyingObservation(
 async function hasOutputAuthority(
   input: OutputDependencies,
   child: WorkflowInstanceView,
-  output: ChangeOutput,
+  output: ChangeOutput & { readonly reviewFallbackReason?: string },
   id: Parameters<ResourceService['get']>[0],
   revision: string,
 ): Promise<boolean> {
@@ -249,11 +238,21 @@ async function hasOutputAuthority(
         )
       : await input.pullRequests.decideAuthority(child.workItemId, options);
   if (!authority.allowed) {
-    input.blocked?.(outputAuthorityReason(authority.reason, options.requireAcceptedReview));
+    input.blocked?.(
+      outputAuthorityReason(
+        authority.reason,
+        options.requireAcceptedReview,
+        output.reviewFallbackReason,
+      ),
+    );
     return false;
   }
   if (authority.revision !== revision) {
-    input.blocked?.('Output authority does not attest exact head ' + revision);
+    input.blocked?.(
+      [output.reviewFallbackReason, 'Output authority does not attest exact head ' + revision]
+        .filter((reason) => reason !== undefined)
+        .join('; '),
+    );
     return false;
   }
   return true;

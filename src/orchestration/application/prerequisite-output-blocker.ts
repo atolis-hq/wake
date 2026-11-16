@@ -1,5 +1,4 @@
-import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
-import type { DelegatedAssignment, DelegationPrerequisite } from '../contracts/delegation.js';
+import type { DelegationPrerequisite } from '../contracts/delegation.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
   DelegationPrerequisiteCondition as Condition,
@@ -7,21 +6,9 @@ import {
 } from '../contracts/vocabulary.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
 
-export async function outputBlocker(
-  artifacts: DelegationArtifacts,
-  workflow: WorkflowInstanceView,
-  output: DelegatedAssignment['outputs'][number],
-  edge: DelegationPrerequisite,
-  assignment: string,
-) {
+export function outputBlocker(edge: DelegationPrerequisite, assignment: string, reason?: string) {
   const prefix = `Waiting for ${edge.condition} output ${assignment}/${edge.output}`;
-  if (artifacts.prerequisiteOutputBlocker === undefined) return prefix;
-  return (
-    prefix +
-    ': ' +
-    ((await artifacts.prerequisiteOutputBlocker(workflow, output, edge.condition)) ??
-      'qualifying evidence unavailable')
-  );
+  return reason === undefined ? prefix : prefix + ': ' + reason;
 }
 
 export function workflowReason(workflow: WorkflowInstanceView, edge: DelegationPrerequisite) {

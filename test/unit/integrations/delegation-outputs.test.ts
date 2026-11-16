@@ -311,70 +311,124 @@ it('does not let a missing optional change waive a required change', async () =>
 });
 
 describe('delivery-ready review policy', () => {
-  it.each([
-    {
-      approval: false,
-      reviewHead: 'head-1',
-      reviewOutcome: 'done',
-      checks: false,
-      accepted: false,
-      qualifies: false,
-      denial: 'checks-could-not-be-read',
-    },
-    {
-      approval: false,
-      reviewHead: 'head-1',
-      reviewOutcome: 'done',
-      checks: true,
-      accepted: false,
-      qualifies: true,
-    },
-    {
-      approval: false,
-      reviewHead: 'old-head',
-      reviewOutcome: 'done',
-      checks: true,
-      accepted: false,
-      qualifies: false,
-    },
-    {
-      approval: false,
-      reviewHead: 'head-1',
-      reviewOutcome: 'rejected',
-      checks: true,
-      accepted: false,
-      qualifies: false,
-    },
-    {
-      approval: false,
-      reviewHead: 'head-1',
-      reviewOutcome: 'done',
-      checks: false,
-      accepted: false,
-      qualifies: false,
-    },
-    {
-      approval: true,
-      reviewHead: 'head-1',
-      reviewOutcome: 'done',
-      checks: true,
-      accepted: false,
-      qualifies: false,
-    },
-    {
-      approval: true,
-      reviewHead: 'old-head',
-      reviewOutcome: 'rejected',
-      checks: true,
-      accepted: true,
-      qualifies: true,
-    },
-  ])('enforces exact-head review, merge approval policy and checks: %j', async (scenario) => {
+  it.each(
+    [
+      {
+        approval: false,
+        allowTrustedReview: true,
+        authorityHead: 'old-head',
+        reviewHead: 'old-head',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: true,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        allowTrustedReview: true,
+        missingReview: true,
+        reviewHead: 'head-1',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        allowTrustedReview: true,
+        reviewHead: 'head-1',
+        reviewOutcome: 'rejected',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        allowTrustedReview: true,
+        reviewHead: 'old-head',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        allowTrustedReview: true,
+        reviewHead: 'old-head',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: true,
+        qualifies: true,
+      },
+      {
+        approval: false,
+        reviewHead: 'head-1',
+        reviewOutcome: 'done',
+        checks: false,
+        accepted: false,
+        qualifies: false,
+        denial: 'checks-could-not-be-read',
+      },
+      {
+        approval: false,
+        reviewHead: 'head-1',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: false,
+        qualifies: true,
+      },
+      {
+        approval: false,
+        reviewHead: 'old-head',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        reviewHead: 'head-1',
+        reviewOutcome: 'rejected',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: false,
+        reviewHead: 'head-1',
+        reviewOutcome: 'done',
+        checks: false,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: true,
+        reviewHead: 'head-1',
+        reviewOutcome: 'done',
+        checks: true,
+        accepted: false,
+        qualifies: false,
+      },
+      {
+        approval: true,
+        reviewHead: 'old-head',
+        reviewOutcome: 'rejected',
+        checks: true,
+        accepted: true,
+        qualifies: true,
+      },
+    ].map((scenario) => ({
+      allowTrustedReview: false,
+      missingReview: false,
+      authorityHead: 'head-1',
+      ...scenario,
+    })),
+  )('enforces exact-head review, merge approval policy and checks: %j', async (scenario) => {
     const authority = vi.fn(async (_work, options) => ({
       allowed:
         (!options.requireAcceptedReview || scenario.accepted) &&
         (!options.requireChecks || scenario.checks),
-      revision: 'head-1',
+      revision: scenario.authorityHead,
       reason:
         'denial' in scenario
           ? scenario.denial
@@ -382,15 +436,22 @@ describe('delivery-ready review policy', () => {
             ? 'stale-approval'
             : 'checks-failing',
     }));
+    const verifyArtifact = vi.fn(async () => ({
+      externalKey: pullRequest.externalKey,
+      revision: 'head-1',
+    }));
     const service = createDelegationOutputs({
       artifacts: { qualifyingOutputs: async () => [] },
       reviewPolicy: async () => ({
         requireApproval: scenario.approval,
-        review: {
-          workflowInstanceId: 'review',
-          parentWorkflowInstanceId: 'wf',
-          acceptedOutcomes: ['review-activation'],
-        },
+        allowTrustedReview: scenario.allowTrustedReview,
+        review: scenario.missingReview
+          ? undefined
+          : {
+              workflowInstanceId: 'review',
+              parentWorkflowInstanceId: 'wf',
+              acceptedOutcomes: ['review-activation'],
+            },
       }),
       resources: {
         get: async () => repository,
@@ -420,41 +481,53 @@ describe('delivery-ready review policy', () => {
       providers: async () => [
         {
           adapter: 'fake',
-          verifyArtifact: async () => ({
-            externalKey: pullRequest.externalKey,
-            revision: 'head-1',
-          }),
+          verifyArtifact,
         },
       ],
     } as never);
+    let reason: string | undefined;
     const selected = await service.prerequisiteOutput!(
       child as never,
       output as never,
       'delivery-ready',
+      (value) => {
+        reason = value;
+      },
     );
+    expect(verifyArtifact).toHaveBeenCalledTimes(1);
     expect(selected !== null).toBe(scenario.qualifies);
     if (!scenario.qualifies) {
-      const reason = await service.prerequisiteOutputBlocker!(
-        child as never,
-        output as never,
-        'delivery-ready',
-      );
       expect(reason).toContain(
-        scenario.approval
-          ? 'trusted review'
-          : scenario.reviewOutcome !== 'done'
-            ? 'No accepted'
-            : scenario.reviewHead !== 'head-1'
-              ? 'exact head head-1'
-              : 'denial' in scenario
-                ? scenario.denial
-                : 'checks-failing',
+        scenario.missingReview
+          ? 'No accepted review verdict'
+          : scenario.approval
+            ? 'trusted review'
+            : scenario.reviewOutcome !== 'done'
+              ? 'No accepted'
+              : scenario.reviewHead !== 'head-1'
+                ? 'exact head head-1'
+                : 'denial' in scenario
+                  ? scenario.denial
+                  : 'checks-failing',
       );
     }
-    if (scenario.qualifies)
+    if (scenario.allowTrustedReview && !scenario.qualifies) {
+      expect(reason).toContain(
+        scenario.authorityHead === 'head-1'
+          ? 'Trusted PR review fallback: stale-approval'
+          : 'Output authority does not attest exact head head-1',
+      );
+      expect(reason).not.toContain('policy requires');
+    }
+    if (scenario.qualifies) {
+      expect(reason).toBeUndefined();
       expect(authority).toHaveBeenCalledWith(
         'child',
-        expect.objectContaining({ requireAcceptedReview: scenario.approval, requireChecks: true }),
+        expect.objectContaining({
+          requireAcceptedReview: scenario.approval || scenario.allowTrustedReview,
+          requireChecks: true,
+        }),
       );
+    }
   });
 });

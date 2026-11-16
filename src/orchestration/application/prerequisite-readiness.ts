@@ -199,7 +199,7 @@ export class PrerequisiteReadiness {
       if (upstream === undefined)
         return {
           code: Code.Unavailable,
-          reason: 'Upstream in another cohort not found: ' + edge.assignmentId + '/' + edge.output,
+          reason: 'Upstream prerequisite not found: ' + edge.assignmentId + '/' + edge.output,
         };
       const key = JSON.stringify([upstream.workItemId, edge.output, edge.condition]);
       let pending = this.selected.get(key);
@@ -260,7 +260,15 @@ export class PrerequisiteReadiness {
     const evidence = this.revisionEvidence;
     if (revisionPending(workflow, evidence.pending))
       return { code: Code.Waiting, reason: 'Waiting for upstream review revision' };
-    const selected = await this.artifacts.prerequisiteOutput?.(workflow, output, edge.condition);
+    let reason: string | undefined;
+    const selected = await this.artifacts.prerequisiteOutput?.(
+      workflow,
+      output,
+      edge.condition,
+      (value) => {
+        reason = value;
+      },
+    );
     if (
       selected == null ||
       selected.name !== edge.output ||
@@ -268,7 +276,7 @@ export class PrerequisiteReadiness {
     )
       return {
         code: Code.Waiting,
-        reason: await outputBlocker(this.artifacts, workflow, output, edge, upstream.assignmentId),
+        reason: outputBlocker(edge, upstream.assignmentId, reason),
       };
     if (await revisionOutputPending(workflow, selected.reference, this.artifacts, evidence))
       return { code: Code.Waiting, reason: 'Waiting for verified upstream review revision' };
