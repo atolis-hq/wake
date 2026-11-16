@@ -260,8 +260,8 @@ export class PrerequisiteReadiness {
         reason: statusReason,
       };
     const output = upstream.outputs.find((entry) => entry.name === edge.output)!;
-    const evidence = this.revisionEvidence.pending;
-    if (revisionPending(workflow, evidence))
+    const evidence = this.revisionEvidence;
+    if (revisionPending(workflow, evidence.pending))
       return { code: Code.Waiting, reason: 'Waiting for upstream review revision' };
     const selected = await this.artifacts.prerequisiteOutput?.(workflow, output, edge.condition);
     if (

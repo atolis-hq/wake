@@ -67,7 +67,11 @@ Unavailable prerequisites remain retryable. Hard child failures and unexplained 
 consumed inputs retain durable blockers while independent siblings finish. Verified
 review-revision paths can instead record fresh input receipts and re-enter the
 dependent branch agent after its runs end. Old selections are invalidated; the
-agent refreshes Git and repeats the configured gates. Original receipts remain history. A
+agent refreshes Git and repeats the configured gates. A revision covers every branch
+activation the upstream requests after the accepted rejection until its next wait, so
+retries stay inside it. Refresh may re-enter a child whose workflow had already
+completed (new `StageEntered` and `ActivityRequested`); this is the one sanctioned
+reopening and exists only through `refreshPrerequisites`. Original receipts remain history. A
 queued cohort then settles as failed and atomically requests a fresh parent
 assessment activation after the reserving Run ends. Affected unfinished child
 workflows are superseded. The agent may explicitly submit a replacement batch

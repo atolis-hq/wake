@@ -1024,7 +1024,9 @@ Transient verification failures remain retryable and use bounded diagnostics.
 Review-driven revisions have a narrower automatic recovery path. A verified
 watch rejection must follow its configured rejection route into a branch agent
 stage, and that stage must publish a provider-verified current named output.
-While the revision runs or its evidence is unavailable, dependents wait. Once
+The revision covers every branch activation the upstream requests until it
+returns to a wait, so quota and configured retries stay part of it. While the
+revision runs or its evidence is unavailable, dependents wait. Once
 Wake verifies the new head and same-repository base, it retains the original
 receipt and records a new consumption basis with a fresh branch-agent activation
 for each affected dependent. Existing runs must finish first. The agent receives
@@ -1048,8 +1050,9 @@ The parent agent inspects the failure and explicitly submits replacement work
 under a new cohort and assignment identity, using the current plan revision.
 Normal Run authority, workflow/repository policy and delivery limits still
 apply. Replacement assignments pin current verified inputs and require fresh
-outputs; old receipts, results and grants remain in the journal. Wake schedules verified review-revision assessments but never performs Git
-repairs or chooses a replacement stack. Parent attention can be requested while
+outputs; old receipts, results and grants remain in the journal. Wake
+schedules verified review-revision assessments but never performs Git repairs
+or chooses a replacement stack. Parent attention can be requested while
 independent work is still running.
 
 Successful joins are historical consumption boundaries, not permanent holds on

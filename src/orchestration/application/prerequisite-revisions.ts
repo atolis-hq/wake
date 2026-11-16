@@ -2,7 +2,7 @@ import { ActivityOutcomeKind } from '../../activities/index.js';
 import { WorkspaceMode } from '../../execution/index.js';
 import type { DelegationArtifacts } from '../contracts/delegation-ports.js';
 import type { DelegationInputs } from '../contracts/delegation.js';
-import type { OrchestrationSignal } from '../contracts/events.js';
+import type { ActivityRequestedPayload, OrchestrationSignal } from '../contracts/events.js';
 import {
   OrchestrationEventType as Event,
   WatchGateVerdictSignal,
@@ -12,39 +12,59 @@ import {
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import { ApprovalAuthorityKind, TransitionTargetKind } from '../contracts/vocabulary.js';
 
-/** Only an accepted watch rejection with an explicit configured stage route grants recovery. */
+/**
+ * Only an accepted watch rejection with an explicit configured stage route opens a revision
+ * episode. Every branch activation requested while it is open (retries, quota retries, follow-on
+ * stages) belongs to it; the next wait closes it.
+ */
 export function prerequisiteRevisions(events: readonly WorkflowOrchestrationEvent[]) {
   const waits = new Map<string, SignalExpectation>();
   const targets = new Map<string, string | null>();
+  const open = new Set<string>();
   const revisions = new Map<string, Set<string>>();
   const pending = new Map<string, string | undefined>();
   for (const { stream, event } of events) {
     const id = stream.id;
-    if (event.eventType === Event.SignalWaitStarted) waits.set(id, event.payload);
+    if (event.eventType === Event.SignalWaitStarted) {
+      waits.set(id, event.payload);
+      open.delete(id);
+    }
     if (event.eventType === Event.SignalAccepted) {
       const target = rejectedRoute(waits.get(id), event.payload);
       if (target !== undefined) {
         targets.set(id, target);
+        open.delete(id);
         pending.set(id, undefined);
       }
       waits.delete(id);
     }
-    if (event.eventType === Event.DelegationInputsRefreshed) targets.set(id, null);
-    if (event.eventType !== Event.ActivityRequested || !targets.has(id)) continue;
-    const target = targets.get(id);
-    targets.delete(id);
-    if (
-      (target === null || event.payload.stage === target) &&
-      event.payload.execution?.workspace === WorkspaceMode.Branch
-    ) {
-      const activation = event.payload.activationId;
-      const known = new Set(revisions.get(id));
-      known.add(activation);
-      revisions.set(id, known);
-      pending.set(id, activation);
+    if (event.eventType === Event.DelegationInputsRefreshed) {
+      targets.set(id, null);
+      open.delete(id);
     }
+    if (event.eventType !== Event.ActivityRequested) continue;
+    if (!inEpisode(id, event.payload, targets, open)) continue;
+    const activation = event.payload.activationId;
+    revisions.set(id, new Set(revisions.get(id)).add(activation));
+    pending.set(id, activation);
   }
   return { revisions, pending };
+}
+
+/** The first branch request must hit the configured target; later ones follow the open episode. */
+function inEpisode(
+  id: string,
+  request: ActivityRequestedPayload,
+  targets: Map<string, string | null>,
+  open: Set<string>,
+) {
+  const branch = request.execution?.workspace === WorkspaceMode.Branch;
+  if (!targets.has(id)) return open.has(id) && branch;
+  const target = targets.get(id);
+  targets.delete(id);
+  if (!branch || (target !== null && request.stage !== target)) return false;
+  open.add(id);
+  return true;
 }
 
 function rejectedRoute(wait: SignalExpectation | undefined, signal: OrchestrationSignal) {
@@ -79,10 +99,9 @@ export async function revisionOutputPending(
   workflow: WorkflowInstanceView,
   reference: DelegationInputs['consumed'][number]['reference'],
   artifacts: DelegationArtifacts,
-  pending: ReadonlyMap<string, string | undefined>,
+  { pending, revisions }: ReturnType<typeof prerequisiteRevisions>,
 ) {
   if (!('runId' in reference) || !pending.has(workflow.workflowInstanceId)) return false;
-  return (
-    (await artifacts.runActivation?.(reference.runId)) !== pending.get(workflow.workflowInstanceId)
-  );
+  const activation = await artifacts.runActivation?.(reference.runId);
+  return activation === undefined || !revisions.get(workflow.workflowInstanceId)?.has(activation);
 }
