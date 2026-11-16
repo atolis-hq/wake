@@ -1,10 +1,6 @@
 import { WrongExpectedSequenceError, type CommandContext } from '@atolis-hq/eventing';
 import type { ParentActionRequest } from '../../activities/index.js';
-import {
-  DelegationConflictError,
-  delegationSubmissionSchema,
-  type DelegationCaller,
-} from '../contracts/delegation.js';
+import { delegationSubmissionSchema, type DelegationCaller } from '../contracts/delegation.js';
 import type { DeliveryDependencies } from '../contracts/delivery-ports.js';
 import {
   DeliveryRejectionError,
@@ -23,7 +19,6 @@ import { OrchestrationEventType } from '../contracts/events.js';
 import { stageName } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
-  DelegationConflictCode,
   DeliveryCompletion,
   DeliveryRejection,
   QaVerdict,
@@ -32,9 +27,10 @@ import {
 import { planCandidate } from '../domain/delivery-candidate.js';
 import { currentSelection, requirements, type DeliveryFacts } from '../domain/delivery-facts.js';
 import { assertQa, completionDecision, deliveryState } from '../domain/delivery-qa.js';
+import { assertReplacementState } from '../domain/delivery-replacement-state.js';
 import { originalOf } from '../domain/delivery-replacement.js';
 import { reviseSelection } from '../domain/delivery-selection.js';
-import { delegationDraft } from './delegation-ledger.js';
+import { delegationDraft, isJoined, isSettled } from './delegation-ledger.js';
 import { readDeliveryFacts } from './delivery-facts-reader.js';
 import { DeliveryIntegrationService } from './delivery-integration-service.js';
 import { DeliveryPreparation } from './delivery-preparation.js';
@@ -223,8 +219,8 @@ export class DeliveryCoordinator {
   }
 
   /**
-   * Replacement children keep the original acceptance criteria and repository; a terminal original
-   * is replaced by a new child, while correcting a still-running one is not supported.
+   * Replacements preserve the original requirements. Missing instances need durable failed
+   * settlement; live workflows and unresolved runs remain ineligible.
    */
   async assertReplacements(caller: DelegationCaller, input: unknown): Promise<void> {
     const parent = (await this.repository.loadRequired(caller.workflowInstanceId)).view;
@@ -236,14 +232,18 @@ export class DeliveryCoordinator {
     if (replacements.length === 0) return;
     await this.dependencies.authority.assertCaller(caller, parent);
     const facts = await this.facts(parent);
+    const { events } = await this.repository.history(parent.workflowInstanceId);
     for (const assignment of replacements) {
       const original = originalOf(facts, assignment.replaces!);
       const view = (await this.repository.load(original.workflowInstanceId)).view;
-      if (view?.status !== WorkflowStatus.Completed && view?.status !== WorkflowStatus.Superseded)
-        throw new DelegationConflictError(
-          DelegationConflictCode.ReplacementUnsupported,
-          'Correcting a child that is still running is not supported; replace it once it is complete or superseded',
-        );
+      const cohort = facts.reservations.find(
+        (entry) => entry.cohortId === assignment.replaces!.cohortId,
+      )!;
+      assertReplacementState(
+        view?.status,
+        isSettled(events, cohort) && !isJoined(events, cohort),
+        (await this.dependencies.hasUnresolvedRuns?.(original.workflowInstanceId)) ?? false,
+      );
     }
   }
 

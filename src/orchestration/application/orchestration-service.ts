@@ -1001,6 +1001,7 @@ type DelegationDependenciesFactory = (queries: {
   integration?: DeliveryIntegration;
   runHasEnded: (runId: string) => Promise<boolean>;
   childRunsEnded?: (id: string) => Promise<boolean>;
+  hasUnresolvedRuns?: DeliveryDependencies['hasUnresolvedRuns'];
 };
 
 /** The delegation dependencies Orchestration hands to DelegatedWork, with safe unavailable stubs. */
@@ -1035,6 +1036,7 @@ function deliveryDependencies(
     authority: dependencies?.authority ?? unavailableDelegationAuthority,
     repositories: dependencies?.repositories,
     integration: dependencies?.integration,
+    hasUnresolvedRuns: dependencies?.hasUnresolvedRuns,
     // A finished producing workflow (a Closed child) is deliberately not a hold.
     unavailable: async (ids) => {
       const snapshot = await work.deliverySnapshot();

@@ -44,6 +44,8 @@ export interface DeliveryIntegration {
 
 export interface DeliveryDependencies {
   readonly authority: DelegationAuthority;
+  /** Execution authority includes active, ambiguous and locally running work. */
+  readonly hasUnresolvedRuns?: ((workflowInstanceId: string) => Promise<boolean>) | undefined;
   /** Resolves a repository source through the parent's own repository authority. */
   readonly repositories?: DelegationRepositories | undefined;
   readonly integration?: DeliveryIntegration | undefined;

@@ -2,6 +2,7 @@ import { correlationId, type CommandContext } from '@atolis-hq/eventing';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
+import { orchestrationActivityOutcome } from '../../../src/orchestration/contracts/activity-outcome.js';
 import type {
   DelegatedAssignment,
   DelegationReservation,
@@ -78,6 +79,7 @@ function build(
     completion?: 'qa-approved' | 'merge-required';
     descendants?: number;
     repeats?: number;
+    hasUnresolvedRuns?: (id: string) => Promise<boolean>;
   } = {},
 ) {
   const journal = new FaultInjectingJournal(new FakeClock());
@@ -152,6 +154,7 @@ function build(
       },
       repositories: { resolve: remote.resolve },
       runHasEnded: async () => true,
+      hasUnresolvedRuns: options.hasUnresolvedRuns,
     }),
   );
   const limits = { maxDepth: 1, maxDescendants: options.descendants ?? 8 };
@@ -930,36 +933,70 @@ it('finishes a QA-approved parent without merge but keeps a merge-required paren
   }
 });
 
-it('does not support correcting a child that has not finished and says so explicitly', async () => {
-  const fixture = build();
-  const fingerprint = await startParent(fixture);
-  const caller = await callerOf(fixture);
-  fixture.remote.refs.set('repo-a:main', sha('0'));
-  await fixture.service['delegatedWork'].reserve(
-    caller,
-    'c1',
-    [assignmentFor(fingerprint, 'a', 'repo-a')],
-    context('reserve'),
-    fixture.limits,
-  );
-  const error = await fixture.service
-    .submitDelegation(
+it.each(['active', 'waiting'] as const)(
+  'rejects replacement of an %s child with a running-child diagnostic',
+  async (status) => {
+    const fixture = build();
+    const fingerprint = await startParent(fixture);
+    const caller = await callerOf(fixture);
+    fixture.remote.refs.set('repo-a:main', sha('0'));
+    const reservation = await fixture.service['delegatedWork'].reserve(
       caller,
-      {
-        cohortId: 'fix',
-        assignments: [
-          submitted(
-            assignmentFor(fingerprint, 'a2', 'repo-a', {
-              replaces: { cohortId: 'c1', assignmentId: 'a' },
-            }),
-          ),
+      'c1',
+      [assignmentFor(fingerprint, 'a', 'repo-a')],
+      context('reserve'),
+      fixture.limits,
+    );
+    if (status === 'waiting') {
+      const child = reservation.children[0]!;
+      const view = (await fixture.service.get(child.workflowInstanceId))!;
+      const stream = workflowInstanceStream(child.workflowInstanceId);
+      await fixture.journal.appendToStream(
+        stream,
+        (await fixture.journal.readStream(stream)).length,
+        [
+          createOrchestrationEventData({
+            eventType: OrchestrationEventType.ActivityWaiting,
+            eventId: 'child-wait',
+            occurredAt: context('wait').occurredAt,
+            correlationId: correlationId('delivery-1'),
+            causationId: 'child-wait',
+            actor: { kind: 'system', id: 'test' },
+            source: { kind: 'internal', id: 'test' },
+            payload: {
+              activationId: view.pendingActivation!.activationId,
+              outcome: orchestrationActivityOutcome({
+                kind: 'waiting',
+                data: { intentEventId: 'intent', signalKind: 'approval' },
+              }),
+            },
+          }),
         ],
-      } as never,
-      context('fix'),
-    )
-    .catch((reason: unknown) => reason);
-  expect(error).toMatchObject({ code: 'replacement-unsupported' });
-});
+      );
+      expect((await fixture.service.get(child.workflowInstanceId))!.status).toBe('waiting');
+    }
+    const error = await fixture.service
+      .submitDelegation(
+        caller,
+        {
+          cohortId: 'fix',
+          assignments: [
+            submitted(
+              assignmentFor(fingerprint, 'a2', 'repo-a', {
+                replaces: { cohortId: 'c1', assignmentId: 'a' },
+              }),
+            ),
+          ],
+        } as never,
+        context('fix'),
+      )
+      .catch((reason: unknown) => reason);
+    expect(error).toMatchObject({
+      code: 'replacement-unsupported',
+      message: expect.stringContaining('still running'),
+    });
+  },
+);
 
 it.each(['missing', 'fail', 'blocked', 'stale'] as const)(
   'refuses real parent completion with %s QA',
@@ -1091,4 +1128,38 @@ it('refuses delivery changes outside the parent current activation', async () =>
       context('wrong-activation'),
     ),
   ).rejects.toThrow('current active activation');
+});
+
+it('rejects a terminal child with an unresolved Execution run', async () => {
+  const fixture = build({ hasUnresolvedRuns: async () => true });
+  const fingerprint = await startParent(fixture);
+  const caller = await callerOf(fixture);
+  fixture.remote.refs.set('repo-a:main', sha('0'));
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'c1',
+    [assignmentFor(fingerprint, 'a', 'repo-a')],
+    context('reserve'),
+    fixture.limits,
+  );
+  await finish(fixture, reservation.children[0]!.workflowInstanceId);
+  await expect(
+    fixture.service.submitDelegation(
+      caller,
+      {
+        cohortId: 'repair',
+        assignments: [
+          submitted(
+            assignmentFor(fingerprint, 'repair-a', 'repo-a', {
+              replaces: { cohortId: 'c1', assignmentId: 'a' },
+            }),
+          ),
+        ],
+      } as never,
+      context('repair'),
+    ),
+  ).rejects.toMatchObject({
+    code: 'replacement-unsupported',
+    message: expect.stringContaining('unresolved run'),
+  });
 });
