@@ -109,6 +109,12 @@ on:
 | `maxFilesChanged` | unset | Blocks when the provider reports more changed files than this positive limit. |
 | `blockedPaths` | `[]` | Blocks when a changed path exactly equals one of these protected paths. |
 
+When the selected PR is already merged (for example native auto-merge completed
+first), `pr.merge` returns `done` immediately with
+`data: { resourceId, revision }` and skips the review, check, and file gates,
+which only protect an open PR. A PR closed without merging still returns
+`blocked` with reason `closed`.
+
 ```yaml
 activity: pr.merge
 with:

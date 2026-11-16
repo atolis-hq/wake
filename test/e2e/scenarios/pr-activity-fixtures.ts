@@ -47,6 +47,7 @@ export type MergeScenario =
   | 'ambiguous'
   | 'conflict'
   | 'closed'
+  | 'merged'
   | 'stale'
   | 'unauthorized'
   | 'pending'
@@ -259,6 +260,10 @@ export async function setupApprovalScenario(
   return { workItemId: work.workItemId, primaryResourceId: primary, revision: 'revision-a' };
 }
 
+function pullRequestState(scenario: MergeScenario): 'open' | 'closed' | 'merged' {
+  return scenario === 'closed' || scenario === 'merged' ? scenario : 'open';
+}
+
 export async function setupMergeScenario(
   world: TestWorld,
   scenario: MergeScenario,
@@ -280,7 +285,7 @@ export async function setupMergeScenario(
     work: work.workItemId,
     suffix: 'primary',
     capabilities: primaryCapabilities,
-    state: scenario === 'closed' ? 'closed' : 'open',
+    state: pullRequestState(scenario),
     checks: scenario === 'pending' ? 'pending' : scenario === 'failing' ? 'failing' : 'passing',
   });
   if (scenario === 'capability-missing' || scenario === 'safe') {
@@ -378,7 +383,7 @@ async function addObservedPullRequest(
     readonly work: WorkItemId;
     readonly suffix: string;
     readonly capabilities: readonly ResourceCapability[];
-    readonly state?: 'open' | 'closed';
+    readonly state?: 'open' | 'closed' | 'merged';
     readonly checks?: 'pending' | 'passing' | 'failing';
   },
 ) {

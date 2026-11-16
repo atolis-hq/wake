@@ -376,6 +376,7 @@ it('reconciles target workflow markers to correlated GitHub resources without re
             workflowName: 'review',
             orchestrationGroupId: 'group-1',
             status: 'waiting',
+            waitingFor: { signalKind: 'approved' },
             currentStage: 'await-review',
           },
         ] as never;
@@ -482,6 +483,7 @@ it('reflects only the primary workflow in labels, adding a watching marker while
             workflowName: 'dark-factory',
             orchestrationGroupId: 'group-1',
             status: 'waiting',
+            waitingFor: { signalKind: 'approved' },
             currentStage: 'refine',
           },
           {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ActivityOutcomeKind } from '../contracts/vocabulary.js';
 import { readMergePolicyDenial } from './merge-policy-denial.js';
-import { MergeMethod, PullRequestDenialCode } from './vocabulary.js';
+import { MergeMethod, PullRequestDenialCode, PullRequestState } from './vocabulary.js';
 
 import type { CommandContext, EventJournal } from '@atolis-hq/eventing';
 import {
@@ -151,6 +151,31 @@ async function denyByAuthority(
   });
 }
 
+function mergePolicyOf(input: PullRequestMergeInput) {
+  return {
+    ...(input.maxFilesChanged === undefined ? {} : { maxFilesChanged: input.maxFilesChanged }),
+    blockedPaths: input.blockedPaths,
+  };
+}
+
+function mergedOutcome(
+  authority: PullRequestAuthorityInput,
+  resourceId: ResourceId,
+): PullRequestActivityOutcome | null {
+  const merged = authority.pullRequests.find(
+    (view) =>
+      view.resourceId === resourceId &&
+      view.workItemId === authority.work?.workItemId &&
+      view.state === PullRequestState.Merged,
+  );
+  return merged === undefined
+    ? null
+    : {
+        kind: ActivityOutcomeKind.Done,
+        data: { resourceId: merged.resourceId, revision: merged.headRevision },
+      };
+}
+
 async function executeMerge(
   journal: EventJournal,
   pullRequests: PullRequestService,
@@ -200,17 +225,16 @@ async function executeMerge(
       factStream,
     });
   }
+  // A merge that landed outside Wake (e.g. GitHub auto-merge) leaves nothing to
+  // deliver, so the review/check/file gates that guard Wake's own merge do not apply.
+  const alreadyMerged = mergedOutcome(authority, resource.resourceId);
+  if (alreadyMerged !== null) return alreadyMerged;
   const decision = decidePullRequestAuthority(authority, {
     target: { resourceId: resource.resourceId },
     requireAcceptedReview: requireApproval,
     requireChecks: invocation.input.requireChecks,
     allowPendingChecks: autoMerge,
-    mergePolicy: {
-      ...(invocation.input.maxFilesChanged === undefined
-        ? {}
-        : { maxFilesChanged: invocation.input.maxFilesChanged }),
-      blockedPaths: invocation.input.blockedPaths,
-    },
+    mergePolicy: mergePolicyOf(invocation.input),
   });
   if (!decision.allowed)
     return denyByAuthority(

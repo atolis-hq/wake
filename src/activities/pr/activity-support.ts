@@ -47,7 +47,10 @@ export const pullRequestOutcomeSchema: z.ZodType<PullRequestActivityOutcome> = z
   z
     .object({
       kind: z.literal(ActivityOutcomeKind.Done),
-      data: z.object({ deliveryEventId: z.string() }).strict(),
+      data: z.union([
+        z.object({ deliveryEventId: z.string() }).strict(),
+        z.object({ resourceId: z.string(), revision: z.string() }).strict(),
+      ]),
     })
     .strict(),
   z

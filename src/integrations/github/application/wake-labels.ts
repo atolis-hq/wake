@@ -1,4 +1,10 @@
-import { WorkflowStatus, type OrchestrationService } from '../../../orchestration/index.js';
+import { ActivityOutcomeKind } from '../../../activities/index.js';
+import {
+  isApprovalAwaitingSignalKind,
+  WorkflowStatus,
+  type OrchestrationService,
+  type WorkflowInstanceView,
+} from '../../../orchestration/index.js';
 import type { ResourceService } from '../../../resources/index.js';
 import { WorkStatus, type WorkItemId, type WorkService } from '../../../work/index.js';
 import {
@@ -141,23 +147,27 @@ function desiredWakeLabels(
     readonly status: WorkflowStatus;
     readonly currentStage: string;
     readonly workflowName: string;
+    readonly waitingFor?: WorkflowInstanceView['waitingFor'];
   },
   watching: boolean,
 ): readonly string[] {
   return [
-    `wake:status.${statusLabel(workflow.status)}`,
+    `wake:status.${statusLabel(workflow)}`,
     `wake:stage.${workflow.currentStage}`,
     `wake:workflow.${workflow.workflowName}`,
     ...(watching ? ['wake:watching'] : []),
   ];
 }
 
-function statusLabel(status: WorkflowStatus): GitHubWakeStatusLabelValue {
-  switch (status) {
+function statusLabel(workflow: {
+  readonly status: WorkflowStatus;
+  readonly waitingFor?: WorkflowInstanceView['waitingFor'];
+}): GitHubWakeStatusLabelValue {
+  switch (workflow.status) {
     case WorkflowStatus.Active:
       return GitHubWakeStatusLabel.Working;
     case WorkflowStatus.Waiting:
-      return GitHubWakeStatusLabel.AwaitingApproval;
+      return waitStatusLabel(workflow.waitingFor);
     case WorkflowStatus.Blocked:
       return GitHubWakeStatusLabel.Blocked;
     case WorkflowStatus.Completed:
@@ -165,6 +175,16 @@ function statusLabel(status: WorkflowStatus): GitHubWakeStatusLabelValue {
     case WorkflowStatus.Superseded:
       return GitHubWakeStatusLabel.Failed;
   }
+}
+
+// Only approval-style waits are "awaiting approval"; other waits (delivery
+// results, resource transitions) are Wake-side progress.
+function waitStatusLabel(wait: WorkflowInstanceView['waitingFor']): GitHubWakeStatusLabelValue {
+  if (wait === undefined) return GitHubWakeStatusLabel.Working;
+  if (isApprovalAwaitingSignalKind(wait.signalKind)) return GitHubWakeStatusLabel.AwaitingApproval;
+  if (wait.signalKind === ActivityOutcomeKind.Blocked) return GitHubWakeStatusLabel.Blocked;
+  if (wait.signalKind === ActivityOutcomeKind.Failed) return GitHubWakeStatusLabel.Failed;
+  return GitHubWakeStatusLabel.Working;
 }
 
 function parseGitHubIssueKey(

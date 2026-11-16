@@ -731,6 +731,10 @@ reconciles its own labels on the issue or pull request:
 
 - `wake:status.working`, `wake:status.awaiting-approval`,
   `wake:status.blocked`, `wake:status.completed`, or `wake:status.failed`
+  A waiting instance is labelled by its wait's signal kind: approval signals
+  (`approved`, watch-gate verdict) are `awaiting-approval`, `blocked` is
+  `blocked`, `failed` is `failed`, and any other wait (delivery result,
+  resource transition) is `working`.
 - `wake:stage.<current-stage>`
 - `wake:workflow.<workflow-name>`
 - `wake:watching` while an active child workflow is running for a watch
