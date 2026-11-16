@@ -64,7 +64,7 @@ function acceptedReview(events: readonly WorkflowOrchestrationEvent[]) {
         signal.outcome === ActivityOutcomeKind.Done &&
         signal.authority?.kind === ApprovalAuthorityKind.Watch &&
         signal.authority.watch === watch
-          ? signal.providerEventId
+          ? signal.childWorkflowInstanceId
           : undefined;
       watch = undefined;
     }

@@ -995,7 +995,8 @@ The conditions are:
   Review follows the producing workflow's pinned merge-stage approval policy:
   `requireApproval: false` permits a passing configured Wake watch review whose
   accepted read-only Run attests that head; otherwise trusted accepted-review
-  authority is required. Missing or ambiguous merge policy keeps approval required.
+  authority is required, even if the assignment sets `requireReview: false`. Missing
+  or ambiguous merge policy keeps approval required.
   Explicit `cohortId` references can reuse a prior cohort's producing child;
   replacement never transfers output ownership. The API reports a verified
   prerequisite reason even when a completed Run's outcome is still fenced.

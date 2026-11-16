@@ -37,7 +37,7 @@ it.each([
   expect(resolve).toHaveBeenCalledWith(child, { journalFallback: true });
 });
 
-it.each(['done', 'rejected', 'wrong-watch', 'new-wait'])(
+it.each(['done', 'rejected', 'wrong-watch', 'new-wait', 'missing-child'])(
   'selects only an accepted configured watch verdict (%s)',
   async (scenario) => {
     const wait = {
@@ -55,7 +55,8 @@ it.each(['done', 'rejected', 'wrong-watch', 'new-wait'])(
             kind: WatchGateVerdictSignal,
             outcome: scenario === 'rejected' ? 'rejected' : 'done',
             authority: { kind: 'watch', watch: scenario === 'wrong-watch' ? 'other' : 'review' },
-            providerEventId: 'review-instance',
+            providerEventId: 'github:comment:review-verdict',
+            ...(scenario === 'missing-child' ? {} : { childWorkflowInstanceId: 'review-instance' }),
           },
         },
       },
@@ -70,5 +71,7 @@ it.each(['done', 'rejected', 'wrong-watch', 'new-wait'])(
     expect((await policy({ workflowInstanceId: 'child' } as never)).review).toEqual(
       scenario === 'done' ? review : undefined,
     );
+    if (scenario === 'done') expect(load).toHaveBeenCalledWith('review-instance');
+    else expect(load).not.toHaveBeenCalled();
   },
 );

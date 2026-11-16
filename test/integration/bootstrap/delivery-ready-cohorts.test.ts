@@ -1,5 +1,6 @@
-import { correlationId } from '@atolis-hq/eventing';
+import { correlationId, createEventData, EventProcessorHost } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
   InMemoryProjectionStore,
@@ -15,9 +16,22 @@ import {
   createSurfaceApplications,
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
-import { isActiveRunStatus, RunStatus, type RunnerRequest } from '../../../src/execution/index.js';
 import {
+  isActiveRunStatus,
+  RunRepository,
+  RunStatus,
+  type RunnerRequest,
+} from '../../../src/execution/index.js';
+import {
+  BuiltInAdapterId,
+  GitHubEventType,
+  InboundTranslator,
+  integrationStream,
+} from '../../../src/integrations/github/index.js';
+import {
+  OrchestrationEventType,
   orchestrationGroupId,
+  selectWorkflowOrchestrationEvent,
   workflowInstanceId,
   workflowName,
   type DelegationReservation,
@@ -403,6 +417,57 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
       )!;
       expect(run.status, JSON.stringify(run.failure)).toBe('succeeded');
       expect(run.workspaceRevision).toBe(heads.get(id));
+      if (id === 'three') {
+        // Let the observed comment win the race against internal child completion.
+        const stream = integrationStream(BuiltInAdapterId.GitHub);
+        const eventId = 'github:comment:review-three';
+        await journal.appendToStream(stream, (await journal.readStream(stream)).length, [
+          createEventData({
+            eventId,
+            eventType: GitHubEventType.CommentObserved,
+            occurredAt: new Date().toISOString(),
+            correlationId: eventId,
+            causationId: eventId,
+            actor: { kind: 'integration', id: 'github' },
+            source: { kind: 'adapter', id: 'github' },
+            payload: {
+              reviewKind: 'issue',
+              externalKey: 'org/repo#5',
+              body:
+                '\x60\x60\x60json\n' +
+                JSON.stringify({
+                  wake: { watchGateVerdict: { runId: run.runId, outcome: 'DONE' } },
+                }) +
+                '\n\x60\x60\x60',
+              revision: new Date().toISOString(),
+              actor: { id: 'wake-bot', kind: 'bot' },
+              raw: { id: 5 },
+            },
+          }),
+        ]);
+        const translator = new InboundTranslator(journal, root.work, root.resources, {
+          orchestration: root.orchestration,
+          runs: new RunRepository(journal),
+        });
+        await new EventProcessorHost(
+          journal,
+          new InMemoryCheckpointStore(),
+          createInMemoryProcessorRunSerialiser(),
+          { now: () => new Date() },
+        ).runThrough(translator.processor, await journal.latestGlobalPosition());
+        const accepted = (await journal.readAll(0))
+          .map(selectWorkflowOrchestrationEvent)
+          .find(
+            (event) =>
+              event?.stream.id === entry.workflowInstanceId &&
+              event.event.eventType === OrchestrationEventType.SignalAccepted,
+          );
+        expect(accepted?.event.payload).toMatchObject({
+          providerEventId: eventId,
+          childWorkflowInstanceId: watch.workflowInstanceId,
+        });
+        expect((await root.orchestration.get(entry.workflowInstanceId))!.status).toBe('completed');
+      }
       await root.orchestration.acceptOutcome(
         {
           workflowInstanceId: watch.workflowInstanceId,

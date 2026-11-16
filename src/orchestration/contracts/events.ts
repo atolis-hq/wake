@@ -402,6 +402,7 @@ export interface SignalExpectation {
 }
 
 export interface OrchestrationSignal {
+  readonly childWorkflowInstanceId?: WorkflowInstanceId | undefined;
   readonly kind: SignalName;
   readonly resourceId?: string | undefined;
   readonly revision?: string | undefined;
