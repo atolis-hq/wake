@@ -102,6 +102,28 @@ export function BoardCard({
             </Chip>
           )}
           {item.delegationWait !== undefined && <DelegationWaitChips wait={item.delegationWait} />}
+          {item.superseded === true && (
+            <Chip variant="outline" tone="cold" title="This work was replaced by newer work">
+              superseded
+            </Chip>
+          )}
+          {item.prerequisiteWait !== undefined && (
+            <Chip
+              variant="outline"
+              tone="info"
+              title={
+                item.prerequisiteWait.reason === undefined
+                  ? 'Queued until it can start'
+                  : `Blocked: ${item.prerequisiteWait.reason}`
+              }
+            >
+              {item.prerequisiteWait.prerequisites.length === 0
+                ? 'queued'
+                : `queued, waiting on ${item.prerequisiteWait.prerequisites
+                    .map((prerequisite) => `${prerequisite.assignmentId}/${prerequisite.output}`)
+                    .join(', ')}`}
+            </Chip>
+          )}
           {item.frozen === true && (
             <Chip
               variant="outline"

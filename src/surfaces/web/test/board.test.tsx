@@ -157,8 +157,16 @@ describe('board', () => {
         <App
           client={boardClient(undefined, [
             card('wk_parent', 'Ship the stack', { childCount: 2 }),
-            card('wk_child', 'Add a.txt', { parentWorkItemKey: 'wk_parent' }),
-            card('wk_orphan', 'Add b.txt', { parentWorkItemKey: 'wk_elsewhere' }),
+            card('wk_child', 'Add a.txt', {
+              parentWorkItemKey: 'wk_parent',
+              prerequisiteWait: {
+                reason: 'Prerequisite inputs have not been pinned',
+                prerequisites: [
+                  { assignmentId: 'base', output: 'change', condition: 'delivery-ready' },
+                ],
+              },
+            }),
+            card('wk_orphan', 'Add b.txt', { parentWorkItemKey: 'wk_elsewhere', superseded: true }),
           ])}
         />
       </MemoryRouter>,
@@ -170,6 +178,8 @@ describe('board', () => {
     const child = screen.getByRole('listitem', { name: 'Add a.txt' });
     expect(within(child).getByText('Child of Ship the stack')).toBeTruthy();
     expect(child.className).toContain('cardChild');
+    expect(within(child).getByText('queued, waiting on base/change')).toBeTruthy();
+    expect(screen.getByText('superseded')).toBeTruthy();
     // A parent outside the loaded page still marks the card as delegated work.
     expect(
       within(screen.getByRole('listitem', { name: 'Add b.txt' })).getByText('Delegated child'),

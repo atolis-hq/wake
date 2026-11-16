@@ -82,6 +82,7 @@ interface StoredDelegatedCohort {
   readonly children: Readonly<Record<string, string>>;
   readonly finished: Readonly<Record<string, true>>;
   readonly needsAttention: Readonly<Record<string, true>>;
+  readonly prerequisiteWaits?: Readonly<Record<string, BoardPrerequisiteWait>>;
   readonly waiting?: true;
   /** The parent's assessment handed a question about its children to a human. */
   readonly escalated?: true;
@@ -95,12 +96,27 @@ export interface BoardDelegationWait {
   readonly escalated?: true;
 }
 
+/** A reserved delegated child that has not started: what it was declared to wait on. */
+export interface BoardPrerequisiteWait {
+  /** The journal's reason once prerequisite readiness blocked the child. */
+  readonly reason?: string;
+  readonly prerequisites: readonly {
+    readonly assignmentId: string;
+    readonly output: string;
+    readonly condition: string;
+  }[];
+}
+
 interface StoredCard {
   readonly workItemKey: string;
   readonly workItemId: string;
   readonly objective: string;
   readonly condition: BoardConditionValue;
   readonly frozen?: boolean;
+  /** The workflow instance was replaced; the card sits in Finished, not Error. */
+  readonly superseded?: true;
+  /** Present on a queued delegated child until its workflow starts. */
+  readonly prerequisiteWait?: BoardPrerequisiteWait;
   readonly awaitingApproval?: boolean;
   /** Present only while the primary workflow can accept a gate-budget extension. */
   readonly extendEligible?: boolean;
@@ -204,6 +220,9 @@ function projectItemCreated(
     workItemId: id,
     objective: payload.objective,
     condition: BoardCondition.Ready,
+    ...(parent?.delegatedCohort?.prerequisiteWaits?.[id] === undefined
+      ? {}
+      : { prerequisiteWait: parent.delegatedCohort.prerequisiteWaits[id] }),
     dwellSince: occurredAt,
     runCount: 0,
     activeRuns: {},
@@ -259,7 +278,9 @@ function projectWork(
       cards: {
         ...view.cards,
         [id]: {
-          ...withoutDelegatedCohort(withoutExtendEligible(withoutAwaitingApproval(current))),
+          ...withoutPrerequisiteWait(
+            withoutDelegatedCohort(withoutExtendEligible(withoutAwaitingApproval(current))),
+          ),
           condition: BoardCondition.Finished,
         },
       },
@@ -281,6 +302,8 @@ function projectWorkflow(
 ): BoardProjectionView {
   if (isWorkflowEventType(event, OrchestrationEventType.InstanceStarted))
     return projectWorkflowStarted(view, event, occurredAt);
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationPrerequisiteBlocked))
+    return projectPrerequisiteBlocked(view, event);
   return projectDelegation(view, event) ?? projectWorkflowUpdate(view, event, occurredAt);
 }
 
@@ -364,6 +387,16 @@ function projectDelegationReserved(
   const cohort = reservation.children.reduce<StoredDelegatedCohort>(
     (current, child) => ({
       ...withoutReplacedChild(current, child.replaces),
+      prerequisiteWaits: {
+        ...withoutReplacedChild(current, child.replaces).prerequisiteWaits,
+        [child.workItemId]: {
+          prerequisites: (child.prerequisites ?? []).map(({ assignmentId, output, condition }) => ({
+            assignmentId,
+            output,
+            condition,
+          })),
+        },
+      },
       children: {
         ...withoutReplacedChild(current, child.replaces).children,
         [child.workItemId]: child.assignmentId,
@@ -371,14 +404,74 @@ function projectDelegationReserved(
     }),
     previous,
   );
+  const cards = queuedReservationCards(view, event, previous, cohort);
   return {
     ...view,
     delegatedChildren: {
       ...view.delegatedChildren,
       ...Object.fromEntries(reservation.children.map((child) => [child.workItemId, parentId])),
     },
-    cards: { ...view.cards, [parentId]: { ...card, delegatedCohort: cohort } },
+    cards: { ...cards, [parentId]: { ...card, delegatedCohort: cohort } },
   };
+}
+
+function queuedReservationCards(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<typeof OrchestrationEventType.DelegationReserved>,
+  previous: StoredDelegatedCohort,
+  cohort: StoredDelegatedCohort,
+): Readonly<Record<string, StoredCard>> {
+  const cards = { ...view.cards };
+  // Children dropped by a replacement are no longer queued.
+  for (const droppedId of Object.keys(previous.children)) {
+    const dropped = cards[droppedId];
+    if (cohort.children[droppedId] === undefined && dropped !== undefined)
+      cards[droppedId] = withoutPrerequisiteWait(dropped);
+  }
+  for (const child of event.event.payload.children) {
+    const queued = cards[child.workItemId];
+    if (
+      queued === undefined ||
+      queued.stage !== undefined ||
+      queued.condition === BoardCondition.Finished
+    )
+      continue;
+    cards[child.workItemId] = {
+      ...queued,
+      prerequisiteWait: {
+        ...(queued.prerequisiteWait?.reason === undefined
+          ? {}
+          : { reason: queued.prerequisiteWait.reason }),
+        prerequisites: (child.prerequisites ?? []).map((prerequisite) => ({
+          assignmentId: prerequisite.assignmentId,
+          output: prerequisite.output,
+          condition: prerequisite.condition,
+        })),
+      },
+    };
+  }
+  return cards;
+}
+
+function projectPrerequisiteBlocked(
+  view: BoardProjectionView,
+  event: WorkflowEventOf<typeof OrchestrationEventType.DelegationPrerequisiteBlocked>,
+): BoardProjectionView {
+  const { childWorkItemId, reason } = event.event.payload;
+  const child = view.cards[childWorkItemId];
+  if (child?.prerequisiteWait === undefined) return view;
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [childWorkItemId]: { ...child, prerequisiteWait: { ...child.prerequisiteWait, reason } },
+    },
+  };
+}
+
+function withoutPrerequisiteWait(card: StoredCard): StoredCard {
+  const { prerequisiteWait: _prerequisiteWait, ...rest } = card;
+  return rest;
 }
 
 function withoutReplacedChild(
@@ -393,6 +486,7 @@ function withoutReplacedChild(
   return {
     ...cohort,
     children: withoutKey(cohort.children, replaced),
+    prerequisiteWaits: withoutKey(cohort.prerequisiteWaits ?? {}, replaced),
     finished: withoutKey(cohort.finished, replaced),
     needsAttention: withoutKey(cohort.needsAttention, replaced),
   };
@@ -448,6 +542,12 @@ function projectDelegationSettled(
   )
     return view;
   const settled = withoutDelegatedCohort(card);
+  // A child that never started will not now; stop presenting it as queued.
+  const cards = { ...view.cards };
+  for (const childId of Object.keys(card.delegatedCohort.children)) {
+    const child = cards[childId];
+    if (child?.prerequisiteWait !== undefined) cards[childId] = withoutPrerequisiteWait(child);
+  }
   // A failed cohort is followed by InstanceBlocked, which decides the condition;
   // a joined one resumes ordinary advancement, so it reads Ready until a Run starts.
   const condition =
@@ -457,7 +557,7 @@ function projectDelegationSettled(
       : hasPrimaryActiveRun(view, activeRunsFor(view, card, workId))
         ? BoardCondition.Active
         : BoardCondition.Ready;
-  return { ...view, cards: { ...view.cards, [workId]: { ...settled, condition } } };
+  return { ...view, cards: { ...cards, [workId]: { ...settled, condition } } };
 }
 
 /** Applies `update` to the parent's cohort when it matches, then re-derives a waiting card's condition. */
@@ -567,6 +667,11 @@ function withoutEscalation(cohort: StoredDelegatedCohort): StoredDelegatedCohort
   return rest;
 }
 
+function withoutSuperseded(card: StoredCard): StoredCard {
+  const { superseded: _superseded, ...rest } = card;
+  return rest;
+}
+
 function withoutDelegatedCohort(card: StoredCard): StoredCard {
   const { delegatedCohort: _delegatedCohort, ...rest } = card;
   return rest;
@@ -600,7 +705,7 @@ function projectWorkflowStarted(
     cards: {
       ...view.cards,
       [workId]: {
-        ...withoutDelegatedCohort(card),
+        ...withoutSuperseded(withoutPrerequisiteWait(withoutDelegatedCohort(card))),
         workflowName: event.event.payload.workflowName,
         stage: event.event.payload.entry,
         dwellSince: occurredAt,
@@ -608,6 +713,19 @@ function projectWorkflowStarted(
       },
     },
     workflows,
+  };
+}
+
+function projectFinishedCard(
+  view: BoardProjectionView,
+  workId: string,
+  card: StoredCard,
+  event: WorkflowEvent,
+): BoardProjectionView {
+  if (event.event.eventType !== OrchestrationEventType.InstanceSuperseded) return view;
+  return {
+    ...view,
+    cards: { ...view.cards, [workId]: { ...withoutPrerequisiteWait(card), superseded: true } },
   };
 }
 
@@ -624,7 +742,9 @@ function projectWorkflowUpdate(
   // (see work-item.spec.md) — so a workflow status event that arrives after
   // closure (e.g. InstanceBlocked from the now-orphaned instance halting)
   // must not resurrect the card out of Finished.
-  if (card.condition === BoardCondition.Finished) return view;
+  if (card.condition === BoardCondition.Finished)
+    return projectFinishedCard(view, workId, card, event);
+
   // A new stage is always Ready regardless of the condition it inherits —
   // Error from the prior stage's failed run, or whatever it held before the
   // SignalAccepted that unblocked it — until a Run actually starts (Active)
@@ -693,6 +813,7 @@ function cardForWorkflowStatus(
     return {
       ...withoutExtendEligible(withoutBlockReason(cardForCohortStatus(card, status))),
       condition: boardConditionForStatus(status, card),
+      ...(status === WorkflowStatus.Superseded ? { superseded: true as const } : {}),
     };
   const extensionEligible = isExtendEligibleBlock(event.event.payload.reason);
   const unblocked = withoutDelegatedCohort(card);
@@ -709,7 +830,7 @@ function cardForCohortStatus(card: StoredCard, status: WorkflowStatus): StoredCa
   return status === WorkflowStatus.Completed ||
     status === WorkflowStatus.Blocked ||
     status === WorkflowStatus.Superseded
-    ? withoutDelegatedCohort(card)
+    ? withoutPrerequisiteWait(withoutDelegatedCohort(card))
     : card;
 }
 
@@ -727,8 +848,9 @@ function boardConditionForStatus(status: WorkflowStatus, card: StoredCard): Boar
         : BoardCondition.NeedsInput;
     case WorkflowStatus.Completed:
       return BoardCondition.Finished;
+    // A replaced instance is retired work, not a current failure.
     case WorkflowStatus.Superseded:
-      return BoardCondition.Error;
+      return BoardCondition.Finished;
   }
 }
 

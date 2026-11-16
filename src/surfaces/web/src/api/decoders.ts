@@ -3,6 +3,7 @@ import type {
   BoardActiveRunPhase,
   BoardCardActiveRun,
   BoardCardDelegationWait,
+  BoardCardPrerequisiteWait,
   BoardCardResponse,
   CollectionResponse,
   ControlPlaneStatusResponse,
@@ -191,6 +192,17 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, 'parentWorkItemKey', path),
     ...optionalNumberProperty(record, 'childCount', path),
     ...optionalStringProperty(record, 'frozenAncestorWorkItemKey', path),
+    ...(record.superseded === undefined
+      ? {}
+      : { superseded: boolean(record.superseded, `${path}.superseded`) }),
+    ...(record.prerequisiteWait === undefined
+      ? {}
+      : {
+          prerequisiteWait: decodePrerequisiteWait(
+            record.prerequisiteWait,
+            child(path, 'prerequisiteWait'),
+          ),
+        }),
     ...(record.delegationWait === undefined
       ? {}
       : {
@@ -201,6 +213,24 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
         }),
   };
 };
+
+function decodePrerequisiteWait(value: unknown, path: string): BoardCardPrerequisiteWait {
+  const record = object(value, path);
+  const prerequisites = record.prerequisites;
+  if (!Array.isArray(prerequisites))
+    throw new Error(`${child(path, 'prerequisites')} must be an array`);
+  return {
+    ...optionalStringProperty(record, 'reason', path),
+    prerequisites: prerequisites.map((entry: unknown, index) => {
+      const item = object(entry, child(path, `prerequisites[${index}]`));
+      return {
+        assignmentId: string(item.assignmentId, child(path, 'assignmentId')),
+        output: string(item.output, `${path}.prerequisites[${index}].output`),
+        condition: string(item.condition, child(path, 'condition')),
+      };
+    }),
+  };
+}
 
 function decodeBoardDelegationWait(value: unknown, path: string): BoardCardDelegationWait {
   const record = object(value, path);

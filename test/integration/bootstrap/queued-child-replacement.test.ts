@@ -8,11 +8,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { createCompositionRoot, parseRootConfig } from '../../../src/bootstrap/index.js';
+import {
+  boardProjection,
+  createCompositionRoot,
+  parseRootConfig,
+  type BoardProjectionView,
+} from '../../../src/bootstrap/index.js';
 import { isActiveRunStatus, RunStatus } from '../../../src/execution/index.js';
 import {
+  createOrchestrationEventData,
+  OrchestrationEventType,
   orchestrationGroupId,
   workflowInstanceId,
+  workflowInstanceStream,
   workflowName,
   type DelegationReservation,
 } from '../../../src/orchestration/index.js';
@@ -181,6 +189,21 @@ it('replaces all three children after a failed stack settles, including two that
     await root.orchestration.reconcileChildCompletions(context('settle'));
     for (const child of original.children.slice(1))
       expect(await root.orchestration.get(child.workflowInstanceId)).toBeNull();
+    const retiredStream = workflowInstanceStream(original.children[0]!.workflowInstanceId);
+    await root.journal.appendToStream(
+      retiredStream,
+      (await root.journal.readStream(retiredStream)).length,
+      [
+        createOrchestrationEventData({
+          ...context('supersede'),
+          eventId: 'superseded-original',
+          causationId: 'test',
+          source: { kind: 'internal', id: 'test' },
+          eventType: OrchestrationEventType.InstanceSuperseded,
+          payload: {},
+        }),
+      ],
+    );
     runner.scripts.push(async (request) => {
       const resumed = (await root.orchestration.get(parent.workflowInstanceId))!;
       repaired = await root.orchestration.submitDelegation(
@@ -197,6 +220,31 @@ it('replaces all three children after a failed stack settles, including two that
     await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
     await awaitRuns();
     expect(repaired?.children).toHaveLength(3);
+    await root.projectionSubscriptions.catchUpOnce();
+    const board = (await root.projections.read<BoardProjectionView>(
+      boardProjection.name,
+      'global',
+    ))!.value;
+    for (const child of original.children) {
+      expect(board.cards[child.workItemId]!.prerequisiteWait).toBeUndefined();
+    }
+    expect(board.cards[original.children[0]!.workItemId]).toMatchObject({
+      condition: 'finished',
+      superseded: true,
+    });
+    for (const child of repaired!.children.slice(1)) {
+      expect(board.cards[child.workItemId]).toMatchObject({
+        condition: 'ready',
+        prerequisiteWait: {
+          reason: expect.stringContaining('Waiting for upstream'),
+          prerequisites: child.prerequisites!.map(({ assignmentId, output, condition }) => ({
+            assignmentId,
+            output,
+            condition,
+          })),
+        },
+      });
+    }
     expect(repaired!.children.map((child) => child.criteria)).toEqual(
       original.children.map((child) => child.criteria),
     );

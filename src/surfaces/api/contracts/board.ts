@@ -30,6 +30,18 @@ export interface BoardCardDelegationWait {
   readonly escalated?: boolean;
 }
 
+/** What a queued delegated child (reserved, not yet started) was declared to wait on. */
+export interface BoardCardPrerequisiteWait {
+  /** The orchestration reason, once prerequisite readiness blocked the child. */
+  readonly reason?: string;
+  /** Declared prerequisites; the journal does not say which one is unmet. */
+  readonly prerequisites: readonly {
+    readonly assignmentId: string;
+    readonly output: string;
+    readonly condition: string;
+  }[];
+}
+
 export interface BoardCardResponse {
   readonly workItemKey: string;
   readonly workItemId: string;
@@ -44,6 +56,10 @@ export interface BoardCardResponse {
    * is Active unless a child is blocked or the parent escalated (Needs input).
    */
   readonly delegationWait?: BoardCardDelegationWait;
+  /** Present on a queued delegated child that has not started its workflow. */
+  readonly prerequisiteWait?: BoardCardPrerequisiteWait;
+  /** The card's workflow instance was superseded; it is shown as finished. */
+  readonly superseded?: boolean;
   readonly frozen?: boolean;
   /**
    * Present on delegated work held because an ancestor is frozen: the key of the
