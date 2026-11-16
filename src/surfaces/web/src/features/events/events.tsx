@@ -34,6 +34,7 @@ function EventsCollection({
 }) {
   const live = navigation.cursor === undefined;
   const newestKnown = useRef(-1);
+  const initialPage = useRef<Awaited<ReturnType<typeof client.events.list>>['page'] | null>(null);
   const [records, setRecords] = useState<AuditEventResponse[]>([]);
   const query = useQuery({
     queryKey: queryKeys.events.list(navigation.cursor),
@@ -55,7 +56,9 @@ function EventsCollection({
         page = older.page;
         if (older.items.length === 0) break;
       }
-      return { ...first, items };
+      // Keep the first-load cursor so "Next page" stays a stable boundary to older history.
+      initialPage.current ??= first.page;
+      return { ...first, items, page: initialPage.current };
     },
     refetchInterval: live ? refreshPolicy.events : false,
   });
