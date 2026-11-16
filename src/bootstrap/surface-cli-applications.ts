@@ -1400,6 +1400,19 @@ function createSandboxSetupDependencies(home: string) {
       if ((await isReadable(sourceAuth)) && !(await isReadable(targetAuth)))
         await copyFile(sourceAuth, targetAuth);
     },
+    configureGitIdentity: async (): Promise<void> => {
+      const { stdout } = await execFile('gh', ['api', 'user', '--jq', '[.login, .id] | @tsv']);
+      const [login, id] = stdout.trim().split('\t');
+      if (!login || !id || !/^\d+$/.test(id))
+        throw new Error('Could not resolve the GitHub account for the git identity');
+      await execFile('git', ['config', '--global', 'user.name', login]);
+      await execFile('git', [
+        'config',
+        '--global',
+        'user.email',
+        `${id}+${login}@users.noreply.github.com`,
+      ]);
+    },
     log: (message: string) => process.stdout.write(`${message}\n`),
   };
 }

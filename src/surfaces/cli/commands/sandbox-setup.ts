@@ -7,6 +7,8 @@ export interface SandboxSetupDependencies {
   readonly runInteractive: (command: string, arguments_: readonly string[]) => Promise<void>;
   readonly ensureSshKey: () => Promise<void>;
   readonly prepareCodexHome: () => Promise<void>;
+  /** Sets the global git author from the authenticated GitHub account. */
+  readonly configureGitIdentity: () => Promise<void>;
   readonly log: (message: string) => void;
 }
 
@@ -22,6 +24,8 @@ export async function runSandboxSetup(deps: SandboxSetupDependencies): Promise<v
     );
     await deps.runInteractive('gh', ['auth', 'login']);
     await deps.runInteractive('gh', ['auth', 'setup-git']);
+    // Without an identity the first agent commit fails and each agent improvises its own.
+    await deps.configureGitIdentity();
   } else {
     deps.log('Skipping GitHub auth setup.');
   }
