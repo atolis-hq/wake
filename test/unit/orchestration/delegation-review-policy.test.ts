@@ -20,7 +20,7 @@ const merge = (requireApproval: boolean) => ({
 it.each([
   { stages: { merge: merge(false) }, approval: false },
   { stages: { merge: merge(true) }, approval: true },
-  { stages: {}, approval: true },
+  { stages: {}, approval: false },
   { stages: { first: merge(false), second: merge(true) }, approval: true },
 ])('uses the pinned merge policy conservatively: %j', async ({ stages, approval }) => {
   const child = {

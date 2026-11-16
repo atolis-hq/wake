@@ -52,7 +52,7 @@ const context = (commandId: string) => ({
 });
 const done = { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
 
-it('accepts delivery-ready outputs across cohorts and releases the next reviewed child', async () => {
+async function exerciseDeliveryReadyCohort(includeMerge: boolean) {
   const home = await mkdtemp(join(tmpdir(), 'wake-stack-review-'));
   let shutdown = async () => {};
   try {
@@ -109,7 +109,7 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
       requiresApproval: false,
       on: {
         failed: { then: 'done' },
-        blocked: { then: 'merge' },
+        blocked: { then: includeMerge ? 'merge' : 'done' },
         done: { then: 'done', watchGates: [{ watch: 'review', onReject: { then: 'revise' } }] },
       },
     });
@@ -145,17 +145,21 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
                 stages: {
                   implement: stage('branch'),
                   revise: stage('branch'),
-                  merge: {
-                    activity: 'pr.merge',
-                    with: {
-                      target: 'primary',
-                      method: 'squash',
-                      requireChecks: true,
-                      requireApproval: false,
-                      autoMerge: true,
-                    },
-                    on: { done: { then: 'done' } },
-                  },
+                  ...(includeMerge
+                    ? {
+                        merge: {
+                          activity: 'pr.merge',
+                          with: {
+                            target: 'primary',
+                            method: 'squash',
+                            requireChecks: true,
+                            requireApproval: false,
+                            autoMerge: true,
+                          },
+                          on: { done: { then: 'done' } },
+                        },
+                      }
+                    : {}),
                 },
                 watches: [
                   {
@@ -368,6 +372,7 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
           (row) => row.workItemId === entry.workItemId,
         )!;
         expect(row.prerequisiteBlocker).toContain('delivery-ready output two/change');
+        expect(row.prerequisiteBlocker).toContain('checks-failing');
         expect(row.blockReason).toBe(row.prerequisiteBlocker);
         await root.pullRequests.observe(
           { ...observed, checks: 'passing' },
@@ -558,8 +563,17 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
         (entry) => entry.assignmentId === 'three',
       )!.prerequisiteBlocker,
     ).toBeUndefined();
+    return (await root.orchestration.get(child('four').workflowInstanceId))?.status;
   } finally {
     await shutdown();
     await rm(home, { recursive: true, force: true });
   }
-}, 120_000);
+}
+
+it.each([false, true])(
+  'accepts delivery-ready outputs across cohorts (approval-disabled merge: %s)',
+  async (includeMerge) => {
+    expect(await exerciseDeliveryReadyCohort(includeMerge)).toBe('waiting');
+  },
+  120_000,
+);

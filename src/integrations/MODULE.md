@@ -84,3 +84,8 @@ Git objects are cached; mutable workflow-run attempts are conditionally revalida
 Delivery-ready change prerequisites always require exact-head checks. Bootstrap supplies
 the pinned upstream merge approval policy and accepted configured watch review;
 when approval is disabled, the accepted read-only review Run must attest the exact head.
+
+A producing workflow without merge activities can qualify through trusted PR
+review or an accepted read-only watch review attesting the exact output head.
+Prerequisite diagnostics expose missing reviews, head mismatches and provider
+authority denials through the live work-detail query.
