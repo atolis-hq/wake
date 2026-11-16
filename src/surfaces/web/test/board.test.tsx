@@ -721,7 +721,7 @@ describe('board', () => {
               card('none'),
               card('z', 'org/zeta'),
               card('a1', 'org/alpha'),
-              card('a2', 'org/alpha'),
+              { ...card('child', 'org/alpha'), parentWorkItemKey: 'wk_a1', runCount: 0 },
             ],
             conditionCounts: { ready: 4 },
             page: { nextCursor: null, hasMore: false },
@@ -746,6 +746,9 @@ describe('board', () => {
       .map((node) => node.textContent?.replace(/[▸▾]/g, ''))
       .filter((text) => /\(\d+\)$/.test(text ?? '') && /org\/|No repository/.test(text ?? ''));
     expect(lanes).toEqual(['org/alpha (2)', 'org/zeta (1)', 'No repository (1)']);
+    const parent = screen.getByRole('listitem', { name: 'a1 work' });
+    const child = screen.getByRole('listitem', { name: 'child work' });
+    expect(parent.closest('section')).toBe(child.closest('section'));
     expect(window.localStorage.getItem('wake:board:group-by')).toBe('repository');
     window.localStorage.clear();
   });
