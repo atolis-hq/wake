@@ -109,7 +109,9 @@ export type PullRequestActivityOutcome =
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Done;
-      readonly data: { readonly deliveryEventId: string };
+      readonly data:
+        | { readonly deliveryEventId: string }
+        | { readonly resourceId: string; readonly revision: string };
     }
   | {
       readonly kind: typeof ActivityOutcomeKind.Integrated;

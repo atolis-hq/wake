@@ -110,6 +110,20 @@ it('attributes an invalid explicit target denial to the WorkItem', async () => {
   expect(await world.events('pr.merge-requested')).toHaveLength(0);
 });
 
+it('completes the merge stage as done when the primary PR is already merged', async () => {
+  const world = new TestWorld();
+  const setup = await setupMergeScenario(world, 'merged');
+  const workflowId = await executeMerge(world, setup.workItemId);
+
+  expect((await world.viewRuns())[0]?.outcome).toEqual({
+    kind: 'done',
+    data: { resourceId: setup.primaryResourceId, revision: 'revision-a' },
+  });
+  expect((await world.viewWorkflow(workflowId))?.status).toBe('completed');
+  expect(await world.events('pr.merge-requested')).toHaveLength(0);
+  expect(await world.events('pr.merge-denied')).toHaveLength(0);
+});
+
 const deniedMergeScenario = { id: 'E2E-PR-MERGE-002' } as const;
 
 it.each([

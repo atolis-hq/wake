@@ -49,6 +49,39 @@ describe('pr.merge Activity', () => {
     ]);
   });
 
+  it.each([
+    ['merged', 'done'],
+    ['closed', 'blocked'],
+  ] as const)('handles a %s PR as %s without a merge intent', async (state, kind) => {
+    const world = new TestWorld();
+    const work = await world.createWork({ objective: 'merge', workItemId: workId('1') });
+    const resource = await setupApprovedPullRequest(world, work.workItemId, 'failing', false);
+    await world.pullRequests.observe(
+      {
+        resourceId: resource,
+        workItemId: work.workItemId,
+        state,
+        headRevision: 'head-a',
+        baseRevision: 'base-a',
+        checks: 'failing',
+      },
+      command(world, 'observe-final'),
+    );
+    const activity = createPullRequestMergeActivity(world.journal, world.pullRequests);
+
+    const outcome = await activity.handler.execute(
+      invocation(work.workItemId, { target: 'primary', method: 'merge', requireChecks: true }),
+      context(),
+    );
+
+    expect(outcome).toEqual(
+      kind === 'done'
+        ? { kind, data: { resourceId: resource, revision: 'head-a' } }
+        : { kind, data: { reason: 'closed' } },
+    );
+    expect(await world.events('pr.merge-requested')).toHaveLength(0);
+  });
+
   it.each(['unknown', 'pending', 'failing'] as const)(
     'blocks without a merge intent when checks are %s',
     async (checks) => {

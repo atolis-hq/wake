@@ -62,6 +62,43 @@ function openWorkItem(): WorkItemView {
 }
 
 describe('createGitHubWakeLabelReconciler', () => {
+  it.each([
+    ['approved', 'awaiting-approval'],
+    ['orchestration.watch-gate-verdict', 'awaiting-approval'],
+    ['blocked', 'blocked'],
+    ['failed', 'failed'],
+    ['delivery-result', 'working'],
+    ['orchestration.resource-transition', 'working'],
+  ] as const)('labels a wait on %s as %s', async (signalKind, status) => {
+    const item = workItemId(`work-${ulid('5')}`);
+    const resource = resourceId(`resource-${ulid('5')}`);
+    const published: Array<readonly string[]> = [];
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: {
+        listAll: async () => [
+          {
+            ...openWorkflow({ workItemId: item, issue: 550 }),
+            status: WorkflowStatus.Waiting,
+            waitingFor: { signalKind },
+          } as unknown as WorkflowInstanceView,
+        ],
+      },
+      resources: {
+        correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
+        get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
+      },
+      work: { get: async () => openWorkItem() },
+      getLabels: async () => [],
+      setLabels: async (_owner, _repo, _number, labels) => {
+        published.push(labels);
+      },
+    });
+
+    await reconciler.runOnce();
+
+    expect(published[0]).toContain(`wake:status.${status}`);
+  });
+
   it('uses an in-memory desired-label cache for an unchanged resource', async () => {
     const item = workItemId(`work-${ulid('9')}`);
     const resource = resourceId(`resource-${ulid('9')}`);
