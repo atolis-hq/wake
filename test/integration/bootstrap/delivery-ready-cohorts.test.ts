@@ -462,10 +462,13 @@ it('accepts delivery-ready outputs across cohorts and releases the next reviewed
               event?.stream.id === entry.workflowInstanceId &&
               event.event.eventType === OrchestrationEventType.SignalAccepted,
           );
+        // Either the observed comment or internal completion may be accepted first.
         expect(accepted?.event.payload).toMatchObject({
-          providerEventId: eventId,
           childWorkflowInstanceId: watch.workflowInstanceId,
         });
+        expect([eventId, watch.workflowInstanceId]).toContain(
+          accepted?.event.payload.providerEventId,
+        );
         expect((await root.orchestration.get(entry.workflowInstanceId))!.status).toBe('completed');
       }
       await root.orchestration.acceptOutcome(
