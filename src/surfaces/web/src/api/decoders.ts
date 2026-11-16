@@ -222,11 +222,12 @@ function decodePrerequisiteWait(value: unknown, path: string): BoardCardPrerequi
   return {
     ...optionalStringProperty(record, 'reason', path),
     prerequisites: prerequisites.map((entry: unknown, index) => {
-      const item = object(entry, child(path, `prerequisites[${index}]`));
+      const itemPath = child(path, `prerequisites[${index}]`);
+      const item = object(entry, itemPath);
       return {
-        assignmentId: string(item.assignmentId, child(path, 'assignmentId')),
-        output: string(item.output, `${path}.prerequisites[${index}].output`),
-        condition: string(item.condition, child(path, 'condition')),
+        assignmentId: string(item.assignmentId, child(itemPath, 'assignmentId')),
+        output: string(item.output, `${itemPath}.output`),
+        condition: string(item.condition, child(itemPath, 'condition')),
       };
     }),
   };

@@ -290,6 +290,17 @@ describe('board', () => {
     ).toEqual({ total: 3, finished: 2, needsAttention: 0 });
     expect(decodeBoardCard(base)).not.toHaveProperty('delegationWait');
     expect(() => decodeBoardCard({ ...base, delegationWait: { total: 'x' } })).toThrow();
+    const prerequisite = { assignmentId: 'base', output: 'change', condition: 'delivery-ready' };
+    for (const field of ['assignmentId', 'output', 'condition']) {
+      expect(() =>
+        decodeBoardCard({
+          ...base,
+          prerequisiteWait: {
+            prerequisites: [prerequisite, { ...prerequisite, [field]: 42 }],
+          },
+        }),
+      ).toThrow(`prerequisiteWait.prerequisites[1].${field}`);
+    }
   });
 
   it('renders each card as a link to its work item key route', async () => {
