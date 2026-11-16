@@ -221,6 +221,46 @@ describe('board', () => {
     expect(within(attention).getByText('question for a human')).toBeTruthy();
   });
 
+  it('shows delegated work held by a frozen parent or ancestor as frozen', async () => {
+    const card = (workItemKey: string, objective: string, extra: object) => ({
+      workItemKey,
+      workItemId: workItemKey,
+      objective,
+      condition: 'ready',
+      dwellSince: asOf,
+      runCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      ...extra,
+    });
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <App
+          client={boardClient(undefined, [
+            card('wk_root', 'Frozen root', { frozen: true, childCount: 1 }),
+            card('wk_mid', 'Held child', {
+              parentWorkItemKey: 'wk_root',
+              frozenAncestorWorkItemKey: 'wk_root',
+            }),
+            card('wk_leaf', 'Held grandchild', {
+              parentWorkItemKey: 'wk_mid',
+              frozenAncestorWorkItemKey: 'wk_root',
+            }),
+          ])}
+        />
+      </MemoryRouter>,
+    );
+
+    const child = await screen.findByRole('listitem', { name: 'Held child' });
+    expect(within(child).getByText('parent frozen').className).toContain('cold');
+    const grandchild = screen.getByRole('listitem', { name: 'Held grandchild' });
+    expect(within(grandchild).getByText('ancestor frozen')).toBeTruthy();
+    const root = screen.getByRole('listitem', { name: 'Frozen root' });
+    expect(within(root).getByText('frozen')).toBeTruthy();
+    expect(within(root).queryByText(/(parent|ancestor) frozen/)).toBeNull();
+  });
+
   it('decodes the optional delegation wait on board cards', () => {
     const base = {
       workItemKey: 'wk_d',

@@ -190,6 +190,7 @@ export const decodeBoardCard: Decoder<BoardCardResponse> = (value, path = '') =>
     ...optionalStringProperty(record, 'repository', path),
     ...optionalStringProperty(record, 'parentWorkItemKey', path),
     ...optionalNumberProperty(record, 'childCount', path),
+    ...optionalStringProperty(record, 'frozenAncestorWorkItemKey', path),
     ...(record.delegationWait === undefined
       ? {}
       : {

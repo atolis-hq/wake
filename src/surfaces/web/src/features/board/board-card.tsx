@@ -112,6 +112,18 @@ export function BoardCard({
               frozen
             </Chip>
           )}
+          {item.frozen !== true && item.frozenAncestorWorkItemKey !== undefined && (
+            <Chip
+              variant="outline"
+              tone="cold"
+              title="Automatic progress is paused while a delegating ancestor is frozen"
+            >
+              <FrozenIcon />
+              {item.frozenAncestorWorkItemKey === item.parentWorkItemKey
+                ? 'parent frozen'
+                : 'ancestor frozen'}
+            </Chip>
+          )}
           {item.lastRunOutcome !== undefined &&
             item.lastRunOutcome !== 'done' &&
             // A delegating run's outcome is held while its cohort runs, so it is not shown as the card's state.

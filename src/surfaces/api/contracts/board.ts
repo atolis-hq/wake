@@ -45,6 +45,11 @@ export interface BoardCardResponse {
    */
   readonly delegationWait?: BoardCardDelegationWait;
   readonly frozen?: boolean;
+  /**
+   * Present on delegated work held because an ancestor is frozen: the key of the
+   * nearest frozen ancestor. Such work records no freeze of its own.
+   */
+  readonly frozenAncestorWorkItemKey?: string;
   readonly awaitingApproval?: boolean;
   /** Whether the primary workflow needs a gate-budget extension to continue. */
   readonly extendEligible?: boolean;

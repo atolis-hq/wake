@@ -25,6 +25,11 @@ input only when a child is blocked (shown as a "child blocked" badge) or the
 parent has escalated a question about its children to a human. Once the
 children's results are joined, the card goes back to the normal conditions.
 
+Freezing a work item pauses its delegated children and their descendants too.
+A frozen item shows a "frozen" badge. Delegated work that is paused only
+because a parent or ancestor is frozen shows "parent frozen" or "ancestor
+frozen".
+
 ![Board with ready, active, needs-input, and finished work, including runs in progress](web-ui-screenshots/01-board.png)
 
 ## Work items

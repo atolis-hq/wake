@@ -527,6 +527,36 @@ export function boardDelegationWait(card: {
   };
 }
 
+/**
+ * Freezing a work item holds its whole delegated subtree (see Work's delivery
+ * availability), but descendants record no freeze of their own. Returns the
+ * key of the nearest frozen ancestor on the board, if any.
+ */
+export function boardFrozenAncestorLookup(
+  view: BoardProjectionView,
+): (card: {
+  readonly parentWorkItemKey?: string;
+  readonly condition: BoardConditionValue;
+}) => string | undefined {
+  const byKey = new Map(Object.values(view.cards).map((card) => [card.workItemKey, card]));
+  return (card) => {
+    // Finished work has nothing left to pause.
+    if (card.condition === BoardCondition.Finished) return undefined;
+    const seen = new Set<string>();
+    for (
+      let parent =
+        card.parentWorkItemKey === undefined ? undefined : byKey.get(card.parentWorkItemKey);
+      parent !== undefined && !seen.has(parent.workItemKey);
+      parent =
+        parent.parentWorkItemKey === undefined ? undefined : byKey.get(parent.parentWorkItemKey)
+    ) {
+      if (parent.frozen === true) return parent.workItemKey;
+      seen.add(parent.workItemKey);
+    }
+    return undefined;
+  };
+}
+
 /** The card a primary (non-watch-child) workflow stream drives. */
 function primaryWorkId(view: BoardProjectionView, streamId: string): string | undefined {
   return view.children?.[streamId] === undefined ? view.workflows[streamId] : undefined;
