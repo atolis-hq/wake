@@ -1,8 +1,9 @@
 import { ActivityOutcomeKind, PullRequestDenialCode } from '../../activities/index.js';
 import { RunStatus, WorkspaceMode, type RunView } from '../../execution/index.js';
-import type { WorkflowInstanceView } from '../../orchestration/index.js';
+import type { DelegationResult, WorkflowInstanceView } from '../../orchestration/index.js';
 
 export type DelegationReviewPolicy = (child: WorkflowInstanceView) => Promise<{
+  readonly refreshedSubject?: DelegationResult['outputs'][number] | undefined;
   readonly requireApproval: boolean;
   readonly allowTrustedReview?: boolean;
   readonly review?: WorkflowInstanceView | undefined;
@@ -29,6 +30,22 @@ export async function deliveryReadyRequirements(
     }
   }
   return { requireReview: policy.requireApproval, requireChecks: true };
+}
+
+export async function refreshedReviewSubject(
+  input: {
+    readonly reviewPolicy?: DelegationReviewPolicy;
+    readonly runs: () => Promise<readonly RunView[]>;
+  },
+  child: WorkflowInstanceView,
+) {
+  const policy = await input.reviewPolicy?.(child);
+  const subject = policy?.refreshedSubject;
+  if (subject === undefined || !('revision' in subject.reference)) return undefined;
+  return (await reviewedHead(input.runs, child, policy?.review, subject.reference.revision)) ===
+    undefined
+    ? subject
+    : undefined;
 }
 
 async function reviewedHead(

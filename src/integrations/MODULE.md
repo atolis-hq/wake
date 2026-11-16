@@ -89,3 +89,10 @@ A producing workflow without merge activities can qualify through trusted PR
 review or an accepted read-only watch review attesting the exact output head.
 Prerequisite diagnostics expose missing reviews, head mismatches and provider
 authority denials through the live work-detail query.
+
+Completed-child recovery verifies the current provider head against the original
+child-owned repository, branch and logical base before requesting review. Only an
+accepted successful configured recovery review attesting that exact head can
+refresh the original output's revision. Ownership and provider verification remain
+required, as do the producing workflow's approval policy and exact-head checks for
+`delivery-ready`.

@@ -14,6 +14,10 @@ import type { WorkflowInstanceView } from './views.js';
 
 /** Trusted Bootstrap adapters; no provider, Run or session authority is supplied by assignments. */
 export interface DelegationArtifacts {
+  reviewSubject?(
+    child: WorkflowInstanceView,
+    output: DelegatedAssignment['outputs'][number],
+  ): Promise<DelegationResult['outputs'][number] | null>;
   runActivation?(runId: string): Promise<ActivationId | undefined>;
   /** Reports a wait reason from the same evaluation, without repeating provider verification. */
   prerequisiteOutput?(

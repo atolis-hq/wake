@@ -58,10 +58,7 @@ export async function acquireChangeOutputWorkspaces(
         mode: request.mode,
         repositoryResource: repository,
         assignment: output.repository,
-        checkoutRevision:
-          request.mode === WorkspaceMode.ReadOnly
-            ? (previous?.revision ?? output.repository.sourceRevision)
-            : output.repository.sourceRevision,
+        checkoutRevision: reviewCheckoutRevision(request, output, previous),
       });
       leases.push(lease);
       snapshots.push(
@@ -176,4 +173,15 @@ async function releaseAll(leases: readonly WorkspaceLease[]): Promise<void> {
     }
   }
   if (failures.length > 0) throw new AggregateError(failures, 'Change output lease cleanup failed');
+}
+
+function reviewCheckoutRevision(
+  request: ChangeOutputRequest,
+  output: OutputAssignment,
+  previous: ChangeOutputWorkspace | undefined,
+) {
+  if (request.mode !== WorkspaceMode.ReadOnly) return output.repository.sourceRevision;
+  return request.context.reviewSubject?.name === output.name
+    ? request.context.reviewSubject.revision
+    : (previous?.revision ?? output.repository.sourceRevision);
 }

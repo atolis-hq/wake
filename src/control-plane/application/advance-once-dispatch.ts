@@ -1,5 +1,5 @@
 import { deliveryCapacity } from '../domain/delivery-capacity.js';
-import { dispatchRepositoryContext } from './dispatch-resources.js';
+import { dispatchRepositoryContext, reviewContext } from './dispatch-resources.js';
 import {
   isRunnerQuotaOutcome,
   reportUnappliedRunnerQuotaRetry,
@@ -198,6 +198,7 @@ export async function runDispatchLoop(
         workItemId,
       );
       const instanceId = selected.workflow.workflowInstanceId;
+      const review = await ctx.orchestration.reviewPreparation?.(instanceId);
       const candidate = await ctx.orchestration.deliveryQaPreparation?.(instanceId);
       const maintenance = await ctx.orchestration.deliveryMaintenancePreparation?.(instanceId);
       const run = await ctx.execution.attempt(selected.activation, {
@@ -205,6 +206,7 @@ export async function runDispatchLoop(
         workflowInstanceId: instanceId,
         orchestrationGroupId: selected.workflow.orchestrationGroupId,
         ...repositoryContext,
+        ...reviewContext(review),
         ...(candidate === undefined ? {} : { candidate }),
         ...(maintenance === undefined ? {} : { maintenance }),
         sessionPolicy:

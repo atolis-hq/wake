@@ -154,7 +154,28 @@ const deliverySamples = [
   ),
 ];
 
+const recoveryPayload = {
+  requestId: workflowInstanceId('recovery-review'),
+  watchId: 'review',
+  workflowName: workflowName('review'),
+  workflowFingerprint: 'a'.repeat(64),
+  maxPerGroup: 5,
+  subject: {
+    name: 'change',
+    reference: {
+      workItemId: workId('2'),
+      resourceId: 'pr',
+      repositoryResourceId: 'repo',
+      revision: 'b'.repeat(40),
+      branch: 'child',
+      pullRequestBase: 'main',
+      runId: 'original',
+    },
+  },
+};
+
 const delegationSamples = [
+  eventEnvelope(OrchestrationEventType.DelegationReviewRefreshRequested, recoveryPayload, workflow),
   ...deliverySamples,
   eventEnvelope(
     OrchestrationEventType.DelegationChildBlocked,
@@ -700,4 +721,22 @@ it('owns the exact delegation-reference wire shape independently of Artifacts', 
     workflow,
   );
   expect(() => decodeOrchestrationEvent(invalid)).toThrow();
+});
+
+it('rejects recovery requests without an exact change subject', () => {
+  expect(() =>
+    decodeOrchestrationEvent(
+      eventEnvelope(
+        OrchestrationEventType.DelegationReviewRefreshRequested,
+        {
+          ...recoveryPayload,
+          subject: {
+            name: 'change',
+            reference: { workItemId: workId('2'), revisionId: 'artifact' },
+          },
+        },
+        workflow,
+      ),
+    ),
+  ).toThrow();
 });

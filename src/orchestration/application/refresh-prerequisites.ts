@@ -30,7 +30,7 @@ export async function refreshPrerequisites(
 ): Promise<void> {
   const loaded = await repository.loadRequired(child.workflowInstanceId);
   const view = loaded.view;
-  if (!(await canRefresh(view, dependencies))) return;
+  if (await prerequisiteRefreshInapplicability(view, dependencies)) return;
   const history = await repository.history(child.workflowInstanceId);
   if (
     history.events.some(
@@ -102,16 +102,17 @@ export function prerequisiteRefreshPrompt(inputs: DelegationInputs): string {
   return `An upstream review revision changed your consumed inputs. Assess and refresh your existing work onto the exact verified inputs below. You own all Git operations, including rebase, push and PR updates. Preserve your assignment and run its checks again. Report BLOCKED if you cannot safely refresh. Completion requires a new successful branch run and the configured review gates.\n\n${JSON.stringify(inputs, null, 2)}`;
 }
 
-async function canRefresh(
+export async function prerequisiteRefreshInapplicability(
   view: WorkflowInstanceView,
   dependencies: PrerequisiteRefreshDependencies,
 ) {
-  return (
-    view.status !== WorkflowStatus.Superseded &&
-    view.status !== WorkflowStatus.Blocked &&
-    view.delegationFence === undefined &&
-    (await dependencies.childRunsEnded?.(view.workflowInstanceId)) === true
-  );
+  if (view.status === WorkflowStatus.Superseded) return 'Child workflow is superseded';
+  if (view.status === WorkflowStatus.Blocked) return 'Child workflow is blocked';
+  if (view.delegationFence !== undefined) return 'Child has an unresolved delegation cohort';
+  if (dependencies.childRunsEnded === undefined) return 'Child Run verification is unavailable';
+  if (!(await dependencies.childRunsEnded(view.workflowInstanceId)))
+    return 'Child has unresolved Runs';
+  return undefined;
 }
 
 function branchStage(events: readonly WorkflowOrchestrationEvent[]) {

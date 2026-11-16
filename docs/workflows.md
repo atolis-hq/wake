@@ -1183,3 +1183,29 @@ reinterpreted.
 The `delivery-activity` report and the `acceptedChildResults` / `correctiveActivations` summary
 fields keep three populations separate; see [analytics](analytics-api.md). A delegated child's
 primary completion is a child result and never a delivered root.
+
+### Recovering changed child heads
+
+A parent can use `wake_delegation_recover` within its active delegation Run to
+recover a member of its own unsettled cohort. With `action: review`, name the
+child, its change `output`, and the provider's current head in `expectedRevision`.
+Wake verifies the child-owned PR and journals a fresh request for the configured
+review watch. The review uses that exact commit in a read-only workspace. Requests
+for the same output and head share one durable review; watch budgets still apply.
+This currently requires one change output and an existing, unambiguous watch
+review gate. Unavailable verification, unresolved Runs, and ineligible children
+return an explicit error.
+
+Only an accepted successful review of the requested head refreshes the output.
+The producing workflow's merge approval policy and exact-head checks still apply;
+an old, failed, or mismatched review does not qualify. Verified upstream review
+refreshes use the existing downstream input-refresh path, which reruns the branch
+activity and configured gates. A stale finished outcome remains fenced.
+
+For an already stuck downstream member, use `action: refresh`, the child ID, and
+`JSON.stringify(consumedInputs.consumed)` from inspection as `expectedRevision`.
+Wake reselects and verifies the configured prerequisites, records new inputs, and
+re-enters the child's branch activity after its Runs end. The receipt clears prior
+prerequisite blockers without changing journal history. Blocked, superseded, or
+unavailable work and missing agent refresh support remain ineligible. `/retry`
+and ordinary watch activation gates retain their existing behavior.

@@ -1,5 +1,4 @@
 import type { CommandContext } from '@atolis-hq/eventing';
-import { ActivityOutcomeKind } from '../../activities/index.js';
 import type { WorkItemId } from '../../work/index.js';
 import type {
   ChildCompletionSignal,
@@ -20,10 +19,13 @@ import { coordinationDraft } from '../domain/coordination-events.js';
 import { stateDraft } from '../domain/decision-events.js';
 import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import type { AdvanceWorkflow } from './advance-workflow.js';
+import { parentWaitsForWatch, watchGateVerdictOutcome, watchIdsFor } from './child-review-gate.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import type { GroupBudgetRecorder } from './group-budget-recorder.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import { watchPredatesPrerequisiteRefresh } from './prerequisite-review-freshness.js';
+import { currentReviewRefreshes } from './review-refresh-facts.js';
+import { reconcileReviewRefreshes } from './review-refresh-reconciliation.js';
 import type { StartWorkflow } from './start-workflow.js';
 
 export class RequestChild {
@@ -57,9 +59,17 @@ export class RequestChild {
       );
       return { kind: 'group-budget-exhausted', requestId: request.requestId };
     }
+    const recovery = (await this.repository.history(parent.view.workflowInstanceId)).events.find(
+      ({ event }) =>
+        event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested &&
+        event.payload.requestId === id,
+    )?.event;
     return this.workflows.execute(
       {
         workflowInstanceId: id,
+        ...(recovery?.eventType === OrchestrationEventType.DelegationReviewRefreshRequested
+          ? { workflowDefinitionFingerprint: recovery.payload.workflowFingerprint }
+          : {}),
         workItemId: parent.view.workItemId,
         workflowName: request.workflowName,
         orchestrationGroupId: parent.view.orchestrationGroupId,
@@ -101,6 +111,11 @@ export class RequestChild {
   }
 
   async reconcileChildCompletions(context: CommandContext): Promise<void> {
+    await reconcileReviewRefreshes(
+      this.repository,
+      (request, requestContext) => this.execute(request, requestContext),
+      context,
+    );
     for (const child of await this.advance.listAll()) {
       if (child.parentWorkflowInstanceId !== undefined && child.status === WorkflowStatus.Completed)
         await this.complete(child, {
@@ -151,6 +166,11 @@ export class RequestChild {
     const child = await this.repository.loadRequired(childWorkflowInstanceId);
     if (child.view.parentWorkflowInstanceId === undefined) return true;
     const parent = await this.repository.loadRequired(child.view.parentWorkflowInstanceId);
+    const recovery =
+      currentReviewRefreshes(
+        (await this.repository.history(parent.view.workflowInstanceId)).events,
+      ).get(parent.view.workflowInstanceId)?.request.requestId === childWorkflowInstanceId;
+    if (recovery && parent.view.status === WorkflowStatus.Completed) return true;
     if (
       child.view.watchId !== undefined &&
       parentWaitsForWatch(parent.view, child.view.watchId) &&
@@ -204,6 +224,14 @@ export class RequestChild {
         ),
       ]);
     const parent = await this.repository.loadRequired(metadata.parentWorkflowInstanceId);
+    if (
+      (await this.repository.history(parent.view.workflowInstanceId)).events.some(
+        ({ event }) =>
+          event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested &&
+          event.payload.requestId === child.workflowInstanceId,
+      )
+    )
+      return;
     if (parent.view.acceptedChildCompletionIds.includes(child.workflowInstanceId)) return;
     if (await watchPredatesPrerequisiteRefresh(this.repository, child)) return;
     const watchGateOutcome = watchGateVerdictOutcome(parent.view, child);
@@ -266,27 +294,4 @@ export class RequestChild {
       ordinal,
     );
   }
-}
-
-function parentWaitsForWatch(parent: WorkflowInstanceView, watchId: string): boolean {
-  if (parent.status !== WorkflowStatus.Waiting) return false;
-  const watchIds = watchIdsFor(parent.waitingFor);
-  return watchIds.includes(watchId);
-}
-
-function watchIdsFor(wait: SignalExpectationView | undefined): readonly string[] {
-  if (wait?.from === undefined) return [];
-  return (wait.from ?? []).flatMap((authority) =>
-    authority.kind === ApprovalAuthorityKind.Watch ? [authority.watch] : [],
-  );
-}
-
-function watchGateVerdictOutcome(
-  parent: WorkflowInstanceView,
-  child: WorkflowInstanceView,
-): typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected | undefined {
-  if (parent.waitingFor?.signalKind !== WatchGateVerdictSignal) return undefined;
-  return child.lastOutcome?.kind === ActivityOutcomeKind.Done
-    ? ActivityOutcomeKind.Done
-    : ActivityOutcomeKind.Rejected;
 }

@@ -118,6 +118,8 @@ export function selectedResults(
   const children = new Set(reservation.children.map((child) => child.workItemId));
   const selected = new Map<string, DelegationResult>();
   for (const { event } of events) {
+    if (event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested)
+      selected.delete(event.payload.subject.reference.workItemId);
     if (event.eventType === OrchestrationEventType.DelegationInputsRefreshed)
       selected.delete(event.payload.childWorkItemId);
     if (
@@ -160,4 +162,16 @@ export function unsettledReservations(
     (reservation) =>
       !settled.has(JSON.stringify([reservation.parentWorkflowInstanceId, reservation.cohortId])),
   );
+}
+
+/** A successful input refresh resolves prior prerequisite blockers without erasing history. */
+export function currentChildBlockers(events: readonly WorkflowOrchestrationEvent[]) {
+  const blockers = new Map<string, string>();
+  for (const { event } of events) {
+    if (event.eventType === OrchestrationEventType.DelegationChildBlocked)
+      blockers.set(event.payload.childWorkItemId, event.payload.reason);
+    if (event.eventType === OrchestrationEventType.DelegationInputsRefreshed)
+      blockers.delete(event.payload.childWorkItemId);
+  }
+  return blockers;
 }

@@ -32,6 +32,7 @@ import {
 } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import {
+  ApprovalAuthorityKind,
   DelegationConflictCode,
   DelegationPrerequisiteCondition,
   WorkflowStatus,
@@ -47,6 +48,7 @@ import {
   type DelegationAttentionDependencies,
 } from './delegation-attention.js';
 import {
+  currentChildBlockers,
   delegationDraft,
   delegationEventId,
   DelegationLedger,
@@ -170,6 +172,39 @@ export class DelegatedWork {
         ),
       })),
     );
+  }
+
+  async recoverableChild(parent: WorkflowInstanceView, id: string) {
+    const events = await this.ledger.events();
+    const reservation = reservationsOf(events).find(
+      (entry) =>
+        entry.parentWorkflowInstanceId === parent.workflowInstanceId &&
+        entry.children.some((child) => child.workItemId === id),
+    );
+    if (reservation === undefined) throw new Error('Child is outside this parent delegation');
+    if (isSettled(events, reservation)) throw new Error('Delegation cohort is already settled');
+    const child = reservation.children.find((entry) => entry.workItemId === id)!;
+    const view = (await this.repository.loadRequired(child.workflowInstanceId)).view;
+    if (
+      new Set<WorkflowStatus>([WorkflowStatus.Blocked, WorkflowStatus.Superseded]).has(
+        view.status,
+      ) ||
+      (view.status === WorkflowStatus.Completed && !isSuccessfulWorkflowCompletion(view))
+    )
+      throw new Error('Child workflow is blocked, superseded, or completed unsuccessfully');
+    if (view.waitingFor?.from?.some((authority) => authority.kind !== ApprovalAuthorityKind.Watch))
+      throw new Error('Child is waiting on external approval authority');
+    if ((await this.work.deliverySnapshot()).availability(child.workItemId).reason !== undefined)
+      throw new Error('Child work is unavailable');
+    if ((await this.dependencies.childRunsEnded?.(child.workflowInstanceId)) !== true)
+      throw new Error('Child has unresolved runs or run verification is unavailable');
+    return { reservation, child };
+  }
+
+  async reviewSubject(view: WorkflowInstanceView, output: DelegatedAssignment['outputs'][number]) {
+    if (this.artifacts.reviewSubject === undefined)
+      throw new Error('Provider review subject verification unavailable');
+    return this.artifacts.reviewSubject(view, output);
   }
 
   async runLimit(id: WorkItemId): Promise<number | undefined> {
@@ -970,7 +1005,7 @@ export class DelegatedWork {
     await this.ledger.appendOnce(
       root,
       context,
-      `result:${child.grantId}:${workflow.acceptedOutcomes.at(-1)}`,
+      `result:${child.grantId}:${workflow.acceptedOutcomes.at(-1)}:${outputs.map(({ reference }) => ('revision' in reference ? reference.revision : reference.revisionId)).join(':')}`,
       {
         eventType: OrchestrationEventType.DelegationResultSelected,
         payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
@@ -1114,15 +1149,8 @@ function failedChildren(
   events: Awaited<ReturnType<DelegationLedger['events']>>,
   reservation: DelegationReservation,
 ): Set<string> {
-  const members = new Set(reservation.children.map((child) => child.workItemId));
-  const failed = new Set(
-    events.flatMap(({ event }) =>
-      event.eventType === OrchestrationEventType.DelegationChildBlocked &&
-      members.has(event.payload.childWorkItemId)
-        ? [event.payload.childWorkItemId]
-        : [],
-    ),
-  );
+  const members = new Set<string>(reservation.children.map((child) => child.workItemId));
+  const failed = new Set([...currentChildBlockers(events).keys()].filter((id) => members.has(id)));
   if (failed.size === 0) return failed;
   for (let pass = 0; pass < reservation.children.length; pass++)
     for (const child of reservation.children)
@@ -1163,12 +1191,7 @@ function childBlocker(
   events: Awaited<ReturnType<DelegationLedger['events']>>,
   id: string,
 ): string | undefined {
-  return events.flatMap(({ event }) =>
-    event.eventType === OrchestrationEventType.DelegationChildBlocked &&
-    event.payload.childWorkItemId === id
-      ? [event.payload.reason]
-      : [],
-  )[0];
+  return currentChildBlockers(events).get(id);
 }
 
 function settlementDraft(

@@ -43,3 +43,40 @@ it.each(['missing-verdict', 'unaccepted-run', 'wrong-head', 'base-assignment'])(
     }
   },
 );
+
+it.each(['done', 'wrong-head', 'failed', 'rejected', 'unaccepted', 'missing'])(
+  'refreshes provenance only for a successful exact-head recovery review (%s)',
+  async (scenario) => {
+    const { refreshedReviewSubject } =
+      await import('../../../src/integrations/application/delegation-output-review.js');
+    const subject = { name: 'change', reference: { revision: 'new' } };
+    const result = await refreshedReviewSubject(
+      {
+        reviewPolicy: async () => ({
+          requireApproval: true,
+          refreshedSubject: subject,
+          review:
+            scenario === 'missing'
+              ? undefined
+              : {
+                  workflowInstanceId: 'review',
+                  parentWorkflowInstanceId: 'child',
+                  acceptedOutcomes: scenario === 'unaccepted' ? [] : ['activation'],
+                },
+        }),
+        runs: async () => [
+          {
+            workflowInstanceId: 'review',
+            activationId: 'activation',
+            status: scenario === 'failed' ? 'failed' : 'succeeded',
+            workspace: { mode: 'read-only' },
+            workspaceRevision: scenario === 'wrong-head' ? 'old' : 'new',
+            outcome: { kind: scenario === 'rejected' ? 'rejected' : 'done' },
+          },
+        ],
+      } as never,
+      { workflowInstanceId: 'child' } as never,
+    );
+    expect(result).toEqual(scenario === 'done' ? subject : undefined);
+  },
+);

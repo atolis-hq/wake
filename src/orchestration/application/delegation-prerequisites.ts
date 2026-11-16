@@ -3,12 +3,13 @@ import type { DeliverySnapshot, WorkService } from '../../work/index.js';
 import type { DelegationArtifacts, DelegationRepositories } from '../contracts/delegation-ports.js';
 import type { DelegationInputs, DelegationReservation } from '../contracts/delegation.js';
 import { OrchestrationEventType } from '../contracts/events.js';
-import { PrerequisiteBlockCode } from '../contracts/vocabulary.js';
+import { DelegationRecoveryStatus, PrerequisiteBlockCode } from '../contracts/vocabulary.js';
 import type { DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import { PrerequisiteReadiness, type PrerequisiteAdmission } from './prerequisite-readiness.js';
 
 import {
+  prerequisiteRefreshInapplicability,
   refreshPrerequisites,
   type PrerequisiteRefreshDependencies,
 } from './refresh-prerequisites.js';
@@ -109,6 +110,49 @@ export class DelegationPrerequisites {
     if (pinned === undefined) throw new Error('Missing committed prerequisite inputs');
     await this.grant(reservation, child, pinned, context);
     return true;
+  }
+
+  async recover(
+    reservation: DelegationReservation,
+    child: Child,
+    expected: string,
+    context: CommandContext,
+  ) {
+    if (this.refresh === undefined) throw new Error('Prerequisite refresh unavailable');
+    const inapplicable = await prerequisiteRefreshInapplicability(
+      (await this.repository.loadRequired(child.workflowInstanceId)).view,
+      this.refresh,
+    );
+    if (inapplicable !== undefined) throw new Error(inapplicable);
+    const read = await this.read();
+    const stored = read.inputs(child.workItemId);
+    if (stored === undefined) throw new Error('Child has no consumed prerequisite inputs');
+    if (JSON.stringify(stored.consumed) !== expected)
+      throw new Error('Consumed inputs changed; inspect again');
+    for (const id of child.prerequisiteWorkItemIds ?? []) {
+      const reason = await read.reason(id);
+      if (reason !== undefined) throw new Error(reason);
+    }
+    const consumed = await read.select(child, new Set([child.workItemId]));
+    if (!Array.isArray(consumed)) throw new Error(consumed.reason);
+    if (JSON.stringify(consumed) === JSON.stringify(stored.consumed))
+      return { status: DelegationRecoveryStatus.Unchanged };
+    const repository = await this.resolveBase(reservation, child, consumed);
+    await refreshPrerequisites(
+      this.repository,
+      this.refresh,
+      child,
+      {
+        childWorkItemId: child.workItemId,
+        consumed,
+        repository,
+      },
+      context,
+    );
+    const current = await this.inputs(child.workItemId);
+    if (JSON.stringify(current?.consumed) !== JSON.stringify(consumed))
+      throw new Error('Child is ineligible for refresh or changed concurrently');
+    return { status: DelegationRecoveryStatus.Refreshed, inputs: current };
   }
 
   private async resolveBase(

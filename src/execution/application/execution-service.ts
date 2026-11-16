@@ -980,7 +980,7 @@ async function acquireAttemptWorkspace(
     {
       signal,
       assignment: context.repositoryAssignment,
-      reviewRevision: previous?.workspaceRevision,
+      reviewRevision: reviewCheckoutRevision(context, previous),
     },
   );
 }
@@ -1027,4 +1027,8 @@ function activityWorkspace(lease: WorkspaceLease | undefined, context: Execution
           },
         }),
   };
+}
+
+function reviewCheckoutRevision(context: ExecutionAttemptContext, previous: RunView | undefined) {
+  return context.reviewSubject?.revision ?? previous?.workspaceRevision;
 }
