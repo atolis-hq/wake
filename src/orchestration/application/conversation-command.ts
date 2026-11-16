@@ -55,7 +55,7 @@ interface BuiltInConversationCommandInput {
   readonly retry: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly restart: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly extend: (id: WorkflowInstanceId) => Promise<unknown>;
-  readonly resumeChanges: (id: WorkflowInstanceId) => Promise<boolean>;
+  readonly resumeChanges: (id: WorkflowInstanceId) => Promise<boolean | ConversationCommandResult>;
   readonly workAuthorized: boolean;
   readonly continuation: boolean;
 }
@@ -75,21 +75,7 @@ export async function applyBuiltInConversationCommand(
     !input.capabilities.includes(ConversationSurfaceCapability.Operator)
   )
     return denied('This conversation surface does not permit work-control or review commands.');
-  if (input.command === ConversationBuiltInCommand.Changes) {
-    let applied = false;
-    const continuationTargets = new Set(selectChangesResumeTargets(input.workflows));
-    for (const workflow of input.workflows) {
-      if (isOperatorRetryEligible(workflow) || isGroupBudgetExtensionEligible(workflow)) continue;
-      const reviewed =
-        !input.continuation && input.reviewAuthorized && workflow.waitingFor !== undefined
-          ? await input.acceptSignal(workflow.workflowInstanceId, ActivityOutcomeKind.Rejected)
-          : false;
-      if (reviewed) applied = true;
-      else if (input.workAuthorized && continuationTargets.has(workflow))
-        applied = (await input.resumeChanges(workflow.workflowInstanceId)) || applied;
-    }
-    return applied ? { applied: true } : denied(changesDeniedReason(input.workAuthorized));
-  }
+  if (input.command === ConversationBuiltInCommand.Changes) return applyChangesCommand(input);
   if (
     input.command === ConversationBuiltInCommand.Approved ||
     input.command === ConversationBuiltInCommand.Accepted
@@ -137,6 +123,48 @@ export async function applyBuiltInConversationCommand(
   return denied(
     'Command is inapplicable: restart requires a failed stage; extend requires an exhausted watch-group budget.',
   );
+}
+
+async function applyChangesCommand(
+  input: BuiltInConversationCommandInput,
+): Promise<ConversationCommandResult> {
+  const denied = (reason: string): ConversationCommandResult => ({ applied: false, reason });
+  let applied = false;
+  let rejection: string | undefined;
+  const continuationTargets = new Set(selectChangesResumeTargets(input.workflows));
+  for (const workflow of input.workflows) {
+    if (isOperatorRetryEligible(workflow) || isGroupBudgetExtensionEligible(workflow)) continue;
+    const reviewed = await applyChangesReview(input, workflow);
+    if (reviewed) applied = true;
+    else if (input.workAuthorized && continuationTargets.has(workflow)) {
+      const result = changesContinuationResult(
+        await input.resumeChanges(workflow.workflowInstanceId),
+        input.workAuthorized,
+      );
+      if (result.applied) applied = true;
+      else rejection ??= result.reason;
+    }
+  }
+  return applied
+    ? { applied: true }
+    : denied(rejection ?? changesDeniedReason(input.workAuthorized));
+}
+
+function applyChangesReview(
+  input: BuiltInConversationCommandInput,
+  workflow: WorkflowInstanceView,
+) {
+  return !input.continuation && input.reviewAuthorized && workflow.waitingFor !== undefined
+    ? input.acceptSignal(workflow.workflowInstanceId, ActivityOutcomeKind.Rejected)
+    : false;
+}
+
+function changesContinuationResult(
+  result: boolean | ConversationCommandResult,
+  authorized: boolean,
+): ConversationCommandResult {
+  if (typeof result !== 'boolean') return result;
+  return result ? { applied: true } : { applied: false, reason: changesDeniedReason(authorized) };
 }
 
 function changesDeniedReason(workAuthorized: boolean): string {

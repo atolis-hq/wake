@@ -163,7 +163,7 @@ export class DelegationAttention {
     context: CommandContext,
   ): Promise<boolean> {
     const attentionKey = `${attentionKeyOf(reservation, [])}:operator:${digest(context.commandId)}`;
-    if (!(await this.dependencies.canContinue(reservation))) return false;
+    // The operator application checks Run end and delivery availability with explicit feedback.
     for (;;) {
       if (isSettled(await this.ledger.events(), reservation)) return false;
       const loaded = await this.repository.loadRequired(reservation.parentWorkflowInstanceId);

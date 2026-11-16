@@ -709,7 +709,10 @@ successful stage waiting for review.
 Use /changes followed by instructions to continue an eligible blocked agent stage or ask a parent
 waiting on delegation to re-assess its cohort. The UI Continue action supports the same delegation
 wait. An assessment leaves child runs and review requirements unchanged and restores the cohort
-wait when it ends; replacement work remains subject to the existing delegation rules. /retry and
+wait when it ends. A second cohort, including replacement of an already completed child, cannot
+be submitted while an assessment is open; the agent reports that blocker and may submit replacement
+work after the original cohort settles. Requests made before the delegating Run ends or while
+delivery is unavailable return that specific reason. /retry and
 /restart remain failed-stage recovery (restart requests a fresh session); /extend explicitly
 extends an exhausted watch-group budget. Continuation does not revive deleted, closed, or frozen
 work, bypass watch authority, or reset retry/review budgets. Rejected and inapplicable commands

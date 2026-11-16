@@ -1289,3 +1289,231 @@ it('applies an external /changes during a child Run and restores the cohort wait
     if (childRun !== undefined) await terminalRun(f.root, childRun.runId);
   }
 });
+
+it('reports the exact replacement blocker from an operator assessment of an unsettled cohort with a completed child', async () => {
+  const runner = new ScriptedDelegationRunner();
+  const f = await fixture(true, runner, true);
+  const parent = await complete(f.root, await start(f.root, 'operator-replacement-parent'));
+  const probe = await start(f.root, 'operator-replacement-probe', 'child');
+  const original = assignment(probe.workflowDefinitionFingerprint!, []);
+  const batch = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'original-run',
+    },
+    'original',
+    [original, { ...original, assignmentId: 'independent' }],
+    context('reserve-assessment-replacement'),
+    { maxDepth: 1, maxDescendants: 2 },
+  );
+  const completed = (await f.root.orchestration.get(batch.children[0]!.workflowInstanceId))!;
+  await publish(f.root, completed, 'completed-before-assessment');
+  await complete(f.root, completed);
+  expect((await f.root.orchestration.get(completed.workflowInstanceId))!.status).toBe('completed');
+  expect((await f.root.orchestration.deliveryTree(parent.workItemId))[0]!.settled).toBe(false);
+  expect(
+    await f.root.orchestration.applyConversationCommandWithFeedback(
+      parent.workItemId,
+      {
+        body: '/changes Replace the completed contribution after checking the changed stack.',
+        actorId: 'maintainer',
+        capabilities: ['operator-surface'],
+        authorized: true,
+      },
+      context('request-replacement-assessment'),
+    ),
+  ).toEqual({ applied: true });
+  const attending = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+  const reason =
+    'Submit replacement work after the cohort settles; an open attention assessment cannot start a second cohort';
+  runner.scripts.push(async (request) => {
+    const caller = {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: attending.pendingActivation!.activationId,
+      runId: request.runId,
+    };
+    expect(
+      (await f.root.orchestration.inspectDelegation(caller, context('replacement-inspection')))
+        .tree,
+    ).toHaveLength(1);
+    await expect(
+      f.root.orchestration.submitDelegation(
+        caller,
+        {
+          cohortId: 'operator-repair',
+          assignments: [
+            {
+              objective: original.objective,
+              criteria: original.criteria,
+              workflowName: original.workflowName,
+              context: original.context,
+              outputs: original.outputs,
+              assignmentId: 'repair',
+              replaces: { cohortId: 'original', assignmentId: original.assignmentId },
+            },
+          ],
+        },
+        context('operator-replacement-attempt'),
+      ),
+    ).rejects.toMatchObject({ code: 'attention-open', message: reason });
+    return {
+      transport: RunStatus.Succeeded,
+      runner: 'fake',
+      output: JSON.stringify({ status: 'BLOCKED', message: reason }),
+    };
+  });
+  await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+  const run = (await f.root.execution.list()).find(
+    (entry) => entry.activationId === attending.pendingActivation!.activationId,
+  )!;
+  const ended = await terminalRun(f.root, run.runId);
+  expect(ended.failure).toBeUndefined();
+  expect(ended.outcome).toMatchObject({ kind: 'blocked', data: { message: reason } });
+  await f.root.orchestration.acceptOutcome(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: run.activationId,
+      outcome: ended.outcome!,
+    },
+    context('report-replacement-blocker'),
+  );
+  const restored = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+  expect(restored.delegationAttention).toBeUndefined();
+  expect(restored.delegationWait?.cohortId).toBe('original');
+  const tree = await f.root.orchestration.deliveryTree(parent.workItemId);
+  expect(tree).toHaveLength(1);
+  expect(tree[0]).toMatchObject({ cohortId: 'original', settled: false });
+  expect((await f.root.orchestration.get(batch.children[1]!.workflowInstanceId))!.status).toBe(
+    'active',
+  );
+  expect(
+    (await f.journal.readAll(0)).filter(
+      (entry) => entry.event.eventType === OrchestrationEventType.DelegationAttentionResolved,
+    ),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        event: expect.objectContaining({
+          payload: expect.objectContaining({ escalation: reason }),
+        }),
+      }),
+    ]),
+  );
+});
+
+it('explains that the delegating Run must end before operator reassessment can start', async () => {
+  const runner = new ScriptedDelegationRunner();
+  const f = await fixture(false, runner, true);
+  const parent = await complete(f.root, await start(f.root, 'live-delegator'));
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  runner.scripts.push(async (request) => {
+    await f.root.orchestration.submitDelegation(
+      {
+        workflowInstanceId: parent.workflowInstanceId,
+        activationId: parent.pendingActivation!.activationId,
+        runId: request.runId,
+      },
+      {
+        cohortId: 'live',
+        assignments: [
+          {
+            assignmentId: 'child',
+            objective: 'Investigate',
+            criteria: ['Findings'],
+            workflowName: workflowName('child'),
+            context: [],
+            outputs: [{ name: 'findings', path: 'findings.md' }],
+          },
+        ],
+      },
+      context('live-reservation'),
+    );
+    await held;
+    return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+  });
+  await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+  const run = (await f.root.execution.list())[0]!;
+  try {
+    await vi.waitFor(async () =>
+      expect(
+        (await f.root.orchestration.get(parent.workflowInstanceId))!.delegationWait,
+      ).toBeDefined(),
+    );
+    expect(
+      await f.root.orchestration.applyConversationCommandWithFeedback(
+        parent.workItemId,
+        {
+          body: '/changes Inspect the stack.',
+          actorId: 'maintainer',
+          capabilities: ['operator-surface'],
+          authorized: true,
+        },
+        context('too-early-assessment'),
+      ),
+    ).toEqual({
+      applied: false,
+      reason: 'The delegating Run has not ended; retry /changes after it ends.',
+    });
+    expect(
+      (await f.root.orchestration.get(parent.workflowInstanceId))!.delegationAttention,
+    ).toBeUndefined();
+  } finally {
+    release();
+    await terminalRun(f.root, run.runId);
+  }
+});
+
+it('returns the delivery-availability reason when an ancestor prevents operator reassessment', async () => {
+  const f = await fixture();
+  const ancestor = await complete(f.root, await start(f.root, 'availability-root'));
+  const parentBatch = await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: ancestor.workflowInstanceId,
+      activationId: ancestor.pendingActivation!.activationId,
+      runId: 'ancestor-run',
+    },
+    'nested-parent',
+    [
+      {
+        ...assignment(ancestor.workflowDefinitionFingerprint!, []),
+        workflowName: workflowName('parent'),
+      },
+    ],
+    context('reserve-nested-parent'),
+    { maxDepth: 2, maxDescendants: 3 },
+  );
+  const nested = (await f.root.orchestration.get(parentBatch.children[0]!.workflowInstanceId))!;
+  const parent = await complete(f.root, nested);
+  const probe = await start(f.root, 'availability-probe', 'child');
+  await f.root.orchestration['delegatedWork'].reserve(
+    {
+      workflowInstanceId: parent.workflowInstanceId,
+      activationId: parent.pendingActivation!.activationId,
+      runId: 'nested-run',
+    },
+    'nested-children',
+    [assignment(probe.workflowDefinitionFingerprint!, [])],
+    context('reserve-nested-children'),
+    { maxDepth: 2, maxDescendants: 3 },
+  );
+  await f.root.work.freeze(ancestor.workItemId, context('freeze-delivery-ancestor'));
+  expect(
+    await f.root.orchestration.applyConversationCommandWithFeedback(
+      parent.workItemId,
+      {
+        body: '/changes Inspect the delivery.',
+        actorId: 'maintainer',
+        capabilities: ['operator-surface'],
+        authorized: true,
+      },
+      context('unavailable-assessment'),
+    ),
+  ).toEqual({ applied: false, reason: `Delivery work ${ancestor.workItemId} is unavailable` });
+  expect(
+    (await f.root.orchestration.get(parent.workflowInstanceId))!.delegationAttention,
+  ).toBeUndefined();
+});

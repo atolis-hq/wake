@@ -40,6 +40,7 @@ import { nextOrdinal } from '../domain/decision-events.js';
 import { renderDelegatedBrief } from '../domain/delegated-brief.js';
 import { assertCriteriaPreserving, originalOf } from '../domain/delivery-replacement.js';
 import { isSuccessfulWorkflowCompletion } from '../domain/workflow-completion.js';
+import type { ConversationCommandResult } from './conversation-command.js';
 import type { CoordinationClaims } from './coordination-claims.js';
 import {
   DelegationAttention,
@@ -606,16 +607,31 @@ export class DelegatedWork {
       await this.join(reservation, results, context);
   }
 
-  async assessOperator(parent: WorkflowInstanceView, context: CommandContext): Promise<boolean> {
+  async assessOperator(
+    parent: WorkflowInstanceView,
+    context: CommandContext,
+  ): Promise<ConversationCommandResult> {
     const reservation = (await this.ledger.reservations()).find(
       (entry) =>
         entry.parentWorkflowInstanceId === parent.workflowInstanceId &&
         entry.cohortId === parent.delegationWait?.cohortId &&
         entry.activationId === parent.delegationWait?.activationId,
     );
-    return reservation === undefined
-      ? false
-      : this.attention.raiseForOperator(reservation, context);
+    if (reservation === undefined)
+      return { applied: false, reason: 'The parent is no longer in the matching delegation wait.' };
+    if (!(await this.endedRun(reservation.runId)))
+      return {
+        applied: false,
+        reason: 'The delegating Run has not ended; retry /changes after it ends.',
+      };
+    const availability = await this.deliveryAvailability(reservation.parentWorkItemId);
+    if (availability.reason !== undefined) return { applied: false, reason: availability.reason };
+    return (await this.attention.raiseForOperator(reservation, context))
+      ? { applied: true }
+      : {
+          applied: false,
+          reason: 'The cohort settled or its parent assessment is no longer available.',
+        };
   }
 
   /** A human reply on a parent: wake it to pass the answer to the children still waiting. */
