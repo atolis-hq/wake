@@ -121,6 +121,8 @@ export class DelegationCommands {
     const { reservation, child } = await this.delegated.recoverableChild(
       parent,
       command.childWorkItemId,
+      command.action,
+      command.output,
     );
     const policy = (await this.workflows.definitionFor(parent)).delegation;
     if (policy === undefined) throw new Error('Workflow delegation is disabled');

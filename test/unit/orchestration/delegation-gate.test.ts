@@ -1,6 +1,9 @@
 import { expect, it, vi } from 'vitest';
 import { DelegationGate } from '../../../src/orchestration/application/delegation-gate.js';
-import type { WorkflowInstanceView } from '../../../src/orchestration/index.js';
+import {
+  OrchestrationEventType,
+  type WorkflowInstanceView,
+} from '../../../src/orchestration/index.js';
 import type { WorkService } from '../../../src/work/index.js';
 import { snapshotOf } from '../../support/delivery-snapshot.js';
 
@@ -85,3 +88,66 @@ it('admits only a durably re-requested attention activation through a prerequisi
   const frozen = new DelegationGate({} as never, workOf({ item: { state: 'open', frozen: true } }));
   expect(await frozen.filterAvailable([retried], (view) => view)).toEqual([]);
 });
+
+it.each(['requested-review', 'primary', 'unrelated-review', 'retired-review', 'prerequisite-held'])(
+  'preserves historical outcomes except the current recovery review (%s)',
+  async (scenario) => {
+    const view = {
+      workItemId: 'item',
+      workflowInstanceId:
+        scenario === 'primary'
+          ? 'child'
+          : scenario === 'unrelated-review'
+            ? 'other-review'
+            : 'recovery',
+      ...(scenario === 'primary' ? {} : { parentWorkflowInstanceId: 'child' }),
+    } as WorkflowInstanceView;
+    const events = [
+      {
+        stream: { id: 'child' },
+        event: {
+          eventType: OrchestrationEventType.DelegationReviewRefreshRequested,
+          payload: { requestId: 'recovery' },
+        },
+      },
+      ...(scenario === 'retired-review'
+        ? [
+            {
+              stream: { id: 'child' },
+              event: { eventType: OrchestrationEventType.DelegationInputsRefreshed, payload: {} },
+            },
+          ]
+        : []),
+    ];
+    const subject = new DelegationGate(
+      { load: async () => ({ view }), events: async () => events } as never,
+      workOf({ item: { state: 'open' } }),
+      async () =>
+        new Map([
+          [
+            'item',
+            {
+              abandoned: true,
+              reason: scenario === 'prerequisite-held' ? 'Upstream changed' : undefined,
+            },
+          ],
+        ]),
+    );
+    const operation = vi.fn(async () => 'accepted');
+    const historical = vi.fn(async () => 'historical');
+    const result = subject.outcome(
+      view.workflowInstanceId,
+      'activation' as never,
+      operation,
+      async () => 'held',
+      historical,
+    );
+    if (scenario === 'prerequisite-held') {
+      await expect(result).rejects.toThrow('outstanding delegation');
+      expect(operation).not.toHaveBeenCalled();
+    } else {
+      expect(await result).toBe(scenario === 'requested-review' ? 'accepted' : 'historical');
+      expect(operation).toHaveBeenCalledTimes(scenario === 'requested-review' ? 1 : 0);
+    }
+  },
+);
