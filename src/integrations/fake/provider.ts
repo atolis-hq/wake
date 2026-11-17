@@ -26,6 +26,7 @@ const configSchema = z
             title: z.string().min(1),
             kind: z.enum(['issue', 'pull-request']).optional(),
             revision: z.string().min(1).optional(),
+            ancestors: z.array(z.string().min(1)).optional(),
             branch: z.string().min(1).optional(),
             baseBranch: z.string().min(1).optional(),
             baseRevision: z.string().min(1).optional(),
@@ -92,6 +93,18 @@ export const fakeProviderDefinition: ProviderDefinition<z.output<typeof configSc
         effects: config.deliveryEffects,
         ...(config.effectsFile === undefined ? {} : { effectsFile: config.effectsFile }),
       }),
+      verifyRevisionAncestry: async (repository, ancestor, descendant) => {
+        const events =
+          config.eventsFile === undefined
+            ? config.events
+            : configSchema.shape.events.parse(
+                JSON.parse(await readFile(config.eventsFile, 'utf8')),
+              );
+        const evidence = events.find(
+          (event) => event.key.split('#')[0] === repository.key && event.revision === descendant,
+        );
+        return evidence?.ancestors === undefined ? null : evidence.ancestors.includes(ancestor);
+      },
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== BuiltInResourceKind.PullRequest) return ArtifactVerificationResult.NotFound;
         const events =

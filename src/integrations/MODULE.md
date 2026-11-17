@@ -91,7 +91,9 @@ Prerequisite diagnostics expose missing reviews, head mismatches and provider
 authority denials through the live work-detail query.
 
 Completed-child recovery verifies the current provider head against the original
-child-owned repository, branch and logical base before requesting review. Only an
+child-owned repository, branch and logical base before requesting review. A changed
+head also requires provider-backed ancestry from the producing Run's attested revision;
+unavailable evidence fails closed. Only an
 accepted successful configured recovery review attesting that exact head can
 refresh the original output's revision. Ownership and provider verification remain
 required, as do the producing workflow's approval policy and exact-head checks for

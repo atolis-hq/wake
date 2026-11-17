@@ -21,7 +21,7 @@ import {
   hasSuccessfulOutcome,
   reviewSource,
   runSource,
-  verifiedChange,
+  verifiedReviewChange,
   type ChangeOutput,
   type OutputDependencies,
 } from './delegation-output-source.js';
@@ -110,10 +110,17 @@ async function qualifyingChange(
     .at(-1);
   let source = run === undefined ? undefined : runSource(run, output.name);
   if (run === undefined || source === undefined) return null;
+  const original = source;
   source = await reviewSource(input, child, output, { ...latest, run }, source, currentHead);
   if (source === undefined) return null;
   const { assignment, branch, revision } = source;
-  const resource = await verifiedChange(input, latest.report, source);
+  const resource = await verifiedReviewChange(
+    input,
+    latest.report,
+    source,
+    original.revision,
+    currentHead,
+  );
   if (resource === null) return null;
   const qualified = await qualifyingObservation(
     input,
@@ -121,7 +128,7 @@ async function qualifyingChange(
     output,
     resource.resourceId,
     revision,
-    condition,
+    { condition, currentHead },
   );
   if (qualified === null) return null;
   return {
@@ -146,9 +153,19 @@ async function qualifyingObservation(
   output: ChangeOutput,
   id: Parameters<PullRequestService['get']>[0],
   revision: string,
-  condition: DelegationPrerequisite['condition'] | undefined,
+  {
+    condition,
+    currentHead,
+  }: {
+    readonly condition: DelegationPrerequisite['condition'] | undefined;
+    readonly currentHead: boolean;
+  },
 ) {
-  if (!(await ownsOutput(input, child, id))) return null;
+  if (!(await ownsOutput(input, child, id))) {
+    if (currentHead)
+      throw new Error('Child PR identity mismatch: primary ownership could not be verified');
+    return null;
+  }
   const observed = await input.pullRequests.get(id);
   if (observed === null || observed.headRevision !== revision) return null;
   if (condition === Condition.MergedChange) {
