@@ -599,7 +599,7 @@ Each `watches[]` entry requires all of the following:
 | `on.events` | non-empty canonical event-name list; optional | Events that trigger this watch. |
 | `schedule.cron` | non-empty string; optional | Cron trigger for this watch. At least one of `on` or `schedule` is required. |
 | `workflow` | non-empty string | Child workflow to start. |
-| `maxPerGroup` | positive integer | Maximum child starts for an orchestration group. |
+| `maxPerGroup` | positive integer | Maximum child starts for an orchestration group. Children that ended only because the runner never answered (quota, authentication, transport) do not count. |
 
 A `workflowSelectors[]` entry requires `workflow` and a non-empty `match`
 object. `match.tags`, `match.kind`, and `match.adapter` each accept either one

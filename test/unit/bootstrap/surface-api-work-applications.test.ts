@@ -3,6 +3,7 @@ import type { CompositionRoot } from '../../../src/bootstrap/composition-root.js
 import { createSurfaceWorkApplications } from '../../../src/bootstrap/surface-api-work-applications.js';
 import { RunStatus, type RunView } from '../../../src/execution/index.js';
 import {
+  GroupBudgetExtensionIneligibleError,
   OperatorRetryIneligibleError,
   type WorkflowInstanceView,
 } from '../../../src/orchestration/index.js';
@@ -205,6 +206,66 @@ it('extends an eligible exhausted watch group with human authority', async () =>
       expect.objectContaining({ commandId: 'work:operator-1' }),
     ],
   ]);
+});
+
+it('extends a completed delegated child blocked on a review-recovery budget exhaustion', async () => {
+  const extended: unknown[] = [];
+  // No gate wait: the instance completed before the fresh review was requested.
+  const delegated = {
+    workflowInstanceId: 'delegated:work-extend' as never,
+    parentWorkflowInstanceId: undefined,
+    status: 'blocked' as const,
+    blockReason: 'watch group budget exhausted for pr-review',
+  };
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => ({ state: 'open', deleted: false }) },
+      orchestration: {
+        listForWorkItem: async () => [delegated],
+        extendBlockedGroupBudget: async (...input: unknown[]) => {
+          extended.push(input);
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const extend = applications.extend;
+  if (extend === undefined) throw new Error('Expected extend work application');
+
+  await expect(extend(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).resolves.toMatchObject({
+    status: 'accepted',
+  });
+  expect(extended).toEqual([[delegated.workflowInstanceId, { kind: 'human' }, expect.any(Object)]]);
+});
+
+it('reports why an exhausted budget cannot be extended instead of failing the command', async () => {
+  const applications = createSurfaceWorkApplications(
+    {
+      work: { get: async () => ({ state: 'open', deleted: false }) },
+      orchestration: {
+        listForWorkItem: async () => [
+          {
+            workflowInstanceId: 'delegated:work-extend' as never,
+            parentWorkflowInstanceId: undefined,
+            status: 'blocked' as const,
+            blockReason: 'watch group budget exhausted for pr-review',
+          },
+        ],
+        extendBlockedGroupBudget: async () => {
+          throw new GroupBudgetExtensionIneligibleError('no pending review recovery to resume');
+        },
+      },
+    } as unknown as CompositionRoot,
+    () => '2026-08-17T00:00:00.000Z',
+  );
+  const extend = applications.extend;
+  if (extend === undefined) throw new Error('Expected extend work application');
+
+  await expect(extend(toWorkItemKey(id), { idempotencyKey: 'operator-1' })).resolves.toMatchObject({
+    conflict: true,
+    code: 'extend-ineligible',
+    detail: 'no pending review recovery to resume',
+  });
 });
 
 it('uses stable resource-specific command ids when deleting multiple correlations', async () => {

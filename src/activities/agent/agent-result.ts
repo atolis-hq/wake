@@ -70,6 +70,29 @@ export const agentActivityOutcomeSchema = z.union([
 
 export type AgentActivityOutcome = z.output<typeof agentActivityOutcomeSchema>;
 
+const infrastructureFailureReasons: ReadonlySet<string> = new Set([
+  ActivityFailureCode.AmbiguousRunnerResult,
+  ActivityFailureCode.RunnerAuthenticationRequired,
+  ActivityFailureCode.RunnerFailed,
+  ActivityFailureCode.RunnerQuotaExceeded,
+]);
+
+/**
+ * Whether an agent outcome means the runner never produced an answer (quota, authentication,
+ * transport, ambiguity). A malformed answer (`invalid-agent-result`) is the agent's own and is not.
+ */
+export function isRunnerInfrastructureOutcome(value: unknown): boolean {
+  const parsed = agentActivityOutcomeSchema.safeParse(value);
+  return (
+    parsed.success &&
+    (parsed.data.kind === ActivityOutcomeKind.Blocked ||
+      parsed.data.kind === ActivityOutcomeKind.Failed) &&
+    'reason' in parsed.data.data &&
+    typeof parsed.data.data.reason === 'string' &&
+    infrastructureFailureReasons.has(parsed.data.data.reason)
+  );
+}
+
 /** Identifies the agent sentinel that explicitly asks a human for input. */
 export function isNeedsClarificationAgentOutcome(value: unknown): boolean {
   const parsed = agentActivityOutcomeSchema.safeParse(value);

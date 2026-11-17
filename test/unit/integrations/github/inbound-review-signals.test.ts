@@ -16,6 +16,7 @@ import {
 } from '../../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import {
+  GroupBudgetExtensionIneligibleError,
   OperatorRetryIneligibleError,
   signalName,
   stageName,
@@ -1038,3 +1039,76 @@ async function acceptedSignal(fixture: Awaited<ReturnType<typeof waitingIssueWor
   const event = (await fixture.world.events('orchestration.signal-accepted')).at(-1);
   return event?.event.payload;
 }
+
+async function extendComment(
+  primary: Record<string, unknown>,
+  extend: () => Promise<void>,
+): Promise<void> {
+  const event = issueCommentEvent('/extend');
+  await applyReviewSignal({
+    event: {
+      ...event,
+      event: {
+        ...event.event,
+        payload: {
+          ...event.event.payload,
+          authorization: {
+            source: ReviewerAuthorizationSource.ProviderPermission,
+            permission: ProviderPermission.Write,
+          },
+        },
+      },
+    } as never,
+    journal: {} as never,
+    resources: {
+      async correlations() {
+        return [{ role: 'primary', workItemId: 'work-7' }];
+      },
+      async get() {
+        return { kind: resourceKind('issue') };
+      },
+    } as never,
+    work: {
+      async get() {
+        return { state: 'open', frozen: false, deleted: false };
+      },
+    } as never,
+    lookup: {
+      async resourceIdForExternalKey() {
+        return 'resource-7';
+      },
+    } as never,
+    pullRequests: undefined,
+    ids: {} as never,
+    adapter: GitHubAdapter,
+    orchestration: {
+      async listAll() {
+        return [{ workItemId: 'work-7', parentWorkflowInstanceId: undefined, ...primary }];
+      },
+      extendBlockedGroupBudget: extend,
+    } as never,
+  });
+}
+
+// A completed delegated child blocked by a review-recovery request has no gate wait left.
+const completedThenBlocked = {
+  workflowInstanceId: 'delegated:work-7',
+  status: 'blocked',
+  blockReason: 'watch group budget exhausted for pr-review',
+};
+
+it('extends an exhausted review budget for an authorized /extend comment without a gate wait', async () => {
+  let extended = false;
+  await extendComment(completedThenBlocked, async () => {
+    extended = true;
+  });
+  expect(extended).toBe(true);
+});
+
+it('does not fail the reactor when an authorized /extend cannot be applied', async () => {
+  await expect(
+    extendComment(completedThenBlocked, async () => {
+      throw new GroupBudgetExtensionIneligibleError('nothing pending to resume');
+    }),
+  ).resolves.toBeUndefined();
+});

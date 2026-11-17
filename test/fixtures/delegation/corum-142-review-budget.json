@@ -1,0 +1,2784 @@
+[
+  {
+    "eventId": "workflow-definition:pr-review:18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+    "eventType": "orchestration.workflow-definition-registered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-10-15T08:19:43.234Z",
+    "correlationId": "primary:work-01m4z7zs77apzbw69c2z0dmv5z",
+    "causationId": "command-01m4zaakg2etfjjnt8q5gqjst6:orchestration.signal-wait-started:2:watch:parent:primary:work-01m4z7zs77apzbw69c2z0dmv5z:watch:pr-review:trigger:command-01m4zaakg2etfjjnt8q5gqjst6:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-definitions",
+      "id": "registry"
+    },
+    "payload": {
+      "workflowName": "pr-review",
+      "fingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "compiledDefinition": {
+        "remainingAgentSteps": {
+          "review": 1
+        },
+        "name": "pr-review",
+        "entry": "review",
+        "commands": {},
+        "watches": [],
+        "stages": {
+          "review": {
+            "activity": "agent",
+            "with": {
+              "template": "pr-review"
+            },
+            "execution": {
+              "workspace": "read-only",
+              "runnerPool": "deep"
+            },
+            "on": {
+              "done": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "review"
+                },
+                "id": "pr-review:review:done"
+              },
+              "rejected": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "review"
+                },
+                "id": "pr-review:review:rejected"
+              },
+              "blocked": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "review"
+                },
+                "id": "pr-review:review:blocked"
+              },
+              "failed": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "review"
+                },
+                "retry": {
+                  "max": 1
+                },
+                "id": "pr-review:review:failed"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sequence": 10,
+    "globalPosition": 18318
+  },
+  {
+    "eventId": "workflow-definition:child-impl:67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b",
+    "eventType": "orchestration.workflow-definition-registered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:43:10.913Z",
+    "correlationId": "artifact:run-01m7hrbb99xyhexrj73s7ax0re",
+    "causationId": "artifact-mcp:run-01m7hrbb99xyhexrj73s7ax0re:9e6d2d9b-620f-4319-a235-86bd87004ffb",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-definitions",
+      "id": "registry"
+    },
+    "payload": {
+      "workflowName": "child-impl",
+      "fingerprint": "67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b",
+      "compiledDefinition": {
+        "remainingAgentSteps": {
+          "implement": 1,
+          "revise": 1
+        },
+        "name": "child-impl",
+        "entry": "implement",
+        "commands": {},
+        "watches": [
+          {
+            "id": "pr-review",
+            "while": {
+              "stages": ["implement", "revise"],
+              "statuses": ["waiting"]
+            },
+            "on": {
+              "events": ["orchestration.signal-wait-started"]
+            },
+            "workflow": "pr-review",
+            "maxPerGroup": 5
+          }
+        ],
+        "stages": {
+          "implement": {
+            "activity": "agent",
+            "with": {
+              "template": "child-implement"
+            },
+            "execution": {
+              "workspace": "branch",
+              "runnerPool": "standard"
+            },
+            "on": {
+              "rejected": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "rejected"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:rejected"
+              },
+              "blocked": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "blocked"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:blocked"
+              },
+              "failed": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "failed"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "id": "child-impl:implement:failed"
+              },
+              "done": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "implement"
+                },
+                "watchGates": [
+                  {
+                    "watch": "pr-review",
+                    "onRejectTarget": {
+                      "kind": "stage",
+                      "stage": "revise"
+                    }
+                  }
+                ],
+                "id": "child-impl:implement:done"
+              }
+            }
+          },
+          "revise": {
+            "activity": "agent",
+            "with": {
+              "template": "revise"
+            },
+            "execution": {
+              "workspace": "branch",
+              "runnerPool": "standard"
+            },
+            "on": {
+              "done": {
+                "target": {
+                  "kind": "complete"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "repeat": {
+                  "max": 3
+                },
+                "watchGates": [
+                  {
+                    "watch": "pr-review",
+                    "onRejectTarget": {
+                      "kind": "stage",
+                      "stage": "revise"
+                    }
+                  }
+                ],
+                "id": "child-impl:revise:done"
+              },
+              "blocked": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "blocked"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "id": "child-impl:revise:blocked"
+              },
+              "failed": {
+                "target": {
+                  "kind": "await-signal",
+                  "signal": "failed"
+                },
+                "reentryTarget": {
+                  "kind": "stage",
+                  "stage": "revise"
+                },
+                "retry": {
+                  "max": 2
+                },
+                "id": "child-impl:revise:failed"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sequence": 17,
+    "globalPosition": 65261
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.instance-started:1",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "child-impl",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "implement",
+      "workflowDefinitionFingerprint": "67f7b5e5195ebed2289179646ccabf2bb17635a8550f970501b0dce30fdde03b"
+    },
+    "sequence": 1,
+    "globalPosition": 65349
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "implement"
+    },
+    "sequence": 2,
+    "globalPosition": 65350
+  },
+  {
+    "eventId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "delegation-start:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "implement",
+      "input": {
+        "template": "child-implement"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      }
+    },
+    "sequence": 3,
+    "globalPosition": 65351
+  },
+  {
+    "eventId": "command-01m7hrpecsqbvv63mkp7fedpag:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:34.713Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+    "causationId": "command-01m7hrpecsqbvv63mkp7fedpag",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1"
+    },
+    "sequence": 4,
+    "globalPosition": 65352
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:1",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE",
+          "reportedArtifacts": [
+            {
+              "name": "change",
+              "kind": "pull-request",
+              "externalKey": {
+                "adapter": "github",
+                "key": "atolis-hq/corum#142"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 65407
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "sequence": 6,
+    "globalPosition": 65408
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.group-claimed:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.group-claimed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "watch-reactor"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "orchestration-group",
+      "id": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review"
+    },
+    "payload": {
+      "key": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "sequence": 1,
+    "globalPosition": 65409
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.child-requested:1",
+    "eventType": "orchestration.child-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "workflowName": "pr-review"
+    },
+    "sequence": 1,
+    "globalPosition": 65410
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.child-started:2",
+    "eventType": "orchestration.child-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "sequence": 2,
+    "globalPosition": 65411
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "sequence": 3,
+    "globalPosition": 65412
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "sequence": 4,
+    "globalPosition": 65413
+  },
+  {
+    "eventId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:52:55.731Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 65414
+  },
+  {
+    "eventId": "command-01m7hrytfxgk1xktsn3a2f2z53:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:53:09.245Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+    "causationId": "command-01m7hrytfxgk1xktsn3a2f2z53",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1"
+    },
+    "sequence": 6,
+    "globalPosition": 65419
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "rejected",
+        "data": {
+          "status": "REJECTED"
+        }
+      }
+    },
+    "sequence": 7,
+    "globalPosition": 65446
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "sequence": 8,
+    "globalPosition": 65447
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.child-completed:1",
+    "eventType": "orchestration.child-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "sequence": 9,
+    "globalPosition": 65458
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "outcome": "rejected"
+    },
+    "sequence": 7,
+    "globalPosition": 65459
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "revise"
+    },
+    "sequence": 8,
+    "globalPosition": 65460
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+      "ordinal": 2,
+      "activity": "agent",
+      "stage": "revise",
+      "input": {
+        "template": "revise"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      },
+      "watchDriven": true
+    },
+    "sequence": 9,
+    "globalPosition": 65461
+  },
+  {
+    "eventId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2:orchestration.child-completion-consumed:2",
+    "eventType": "orchestration.child-completion-consumed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:16.737Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs0wd1t3nqjvcfhfr2xfn2:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hryd9jj7cxj8kxtb421r0r:orchestration.signal-wait-started:2"
+    },
+    "sequence": 10,
+    "globalPosition": 65462
+  },
+  {
+    "eventId": "command-01m7hs1g51avaqbt57bf69656m:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:54:36.961Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+    "causationId": "command-01m7hs1g51avaqbt57bf69656m",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2"
+    },
+    "sequence": 11,
+    "globalPosition": 65463
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:2",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "sequence": 12,
+    "globalPosition": 65480
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "sequence": 13,
+    "globalPosition": 65481
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.group-claimed:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.group-claimed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "watch-reactor"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "orchestration-group",
+      "id": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review"
+    },
+    "payload": {
+      "key": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "sequence": 2,
+    "globalPosition": 65483
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.child-requested:1",
+    "eventType": "orchestration.child-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "workflowName": "pr-review"
+    },
+    "sequence": 1,
+    "globalPosition": 65485
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.child-started:2",
+    "eventType": "orchestration.child-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "sequence": 2,
+    "globalPosition": 65486
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "sequence": 3,
+    "globalPosition": 65487
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "sequence": 4,
+    "globalPosition": 65488
+  },
+  {
+    "eventId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:17.798Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 65489
+  },
+  {
+    "eventId": "command-01m7hs54g94mk9frf6b2h0t3sh:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:56:36.105Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+    "causationId": "command-01m7hs54g94mk9frf6b2h0t3sh",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1"
+    },
+    "sequence": 6,
+    "globalPosition": 65490
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "rejected",
+        "data": {
+          "status": "REJECTED"
+        }
+      }
+    },
+    "sequence": 7,
+    "globalPosition": 65504
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "sequence": 8,
+    "globalPosition": 65505
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.child-completed:1",
+    "eventType": "orchestration.child-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "sequence": 9,
+    "globalPosition": 65509
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "outcome": "rejected"
+    },
+    "sequence": 14,
+    "globalPosition": 65510
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.stage-entered:2",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "stage": "revise"
+    },
+    "sequence": 15,
+    "globalPosition": 65511
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+      "ordinal": 3,
+      "activity": "agent",
+      "stage": "revise",
+      "input": {
+        "template": "revise"
+      },
+      "execution": {
+        "workspace": "branch",
+        "runnerPool": "standard"
+      },
+      "watchDriven": true
+    },
+    "sequence": 16,
+    "globalPosition": 65512
+  },
+  {
+    "eventId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2:orchestration.child-completion-consumed:2",
+    "eventType": "orchestration.child-completion-consumed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:15.970Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hs6be2gne0vs0mg727jhb9:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hs4jm6j24fsryq74phtn4p:orchestration.signal-wait-started:2"
+    },
+    "sequence": 17,
+    "globalPosition": 65513
+  },
+  {
+    "eventId": "command-01m7hs6xjzkqjy17bycr76embx:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:57:34.559Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+    "causationId": "command-01m7hs6xjzkqjy17bycr76embx",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3"
+    },
+    "sequence": 18,
+    "globalPosition": 65516
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:activity:3",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "sequence": 19,
+    "globalPosition": 65584
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.signal-wait-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "signalKind": "orchestration.watch-gate-verdict",
+      "from": [
+        {
+          "kind": "watch",
+          "watch": "pr-review"
+        },
+        {
+          "kind": "human"
+        }
+      ],
+      "resume": {
+        "kind": "complete"
+      },
+      "onRejectResume": {
+        "kind": "stage",
+        "stage": "revise"
+      }
+    },
+    "sequence": 20,
+    "globalPosition": 65585
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.group-claimed:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "eventType": "orchestration.group-claimed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "watch-reactor"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "orchestration-group",
+      "id": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review"
+    },
+    "payload": {
+      "key": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "sequence": 3,
+    "globalPosition": 65586
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.child-requested:1",
+    "eventType": "orchestration.child-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "workflowName": "pr-review"
+    },
+    "sequence": 1,
+    "globalPosition": 65588
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.child-started:2",
+    "eventType": "orchestration.child-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "sequence": 2,
+    "globalPosition": 65589
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "sequence": 3,
+    "globalPosition": 65590
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "sequence": 4,
+    "globalPosition": 65591
+  },
+  {
+    "eventId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:23.537Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:watch:parent:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 65592
+  },
+  {
+    "eventId": "command-01m7hscfeap9aexvqrv4197qcm:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:00:36.682Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+    "causationId": "command-01m7hscfeap9aexvqrv4197qcm",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1"
+    },
+    "sequence": 6,
+    "globalPosition": 65596
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:activity:1",
+      "outcome": {
+        "kind": "done",
+        "data": {
+          "status": "DONE"
+        }
+      }
+    },
+    "sequence": 7,
+    "globalPosition": 65610
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {},
+    "sequence": 8,
+    "globalPosition": 65611
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.child-completed:1",
+    "eventType": "orchestration.child-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "sequence": 9,
+    "globalPosition": 65626
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.signal-accepted:1",
+    "eventType": "orchestration.signal-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "kind": "orchestration.watch-gate-verdict",
+      "actorId": "orchestration",
+      "actorDecision": {
+        "authorized": true,
+        "evidenceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+      },
+      "providerEventId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "authority": {
+        "kind": "watch",
+        "watch": "pr-review"
+      },
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "outcome": "done"
+    },
+    "sequence": 21,
+    "globalPosition": 65627
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {},
+    "sequence": 22,
+    "globalPosition": 65628
+  },
+  {
+    "eventId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2:orchestration.child-completion-consumed:2",
+    "eventType": "orchestration.child-completion-consumed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T09:01:31.620Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7hse534mb7p6mt1ang0m438:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:command-01m7hsc2kgqh2psb57xzxcpx8y:orchestration.signal-wait-started:2"
+    },
+    "sequence": 23,
+    "globalPosition": 65629
+  },
+  {
+    "eventId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+    "eventType": "orchestration.delegation-review-refresh-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:48.015Z",
+    "correlationId": "artifact:run-01m7mqkr0v905mzx76b5cz16j4",
+    "causationId": "artifact-mcp:run-01m7mqkr0v905mzx76b5cz16j4:879bdfb4-78f9-4064-9146-a9de8fc0cb55",
+    "actor": {
+      "kind": "system",
+      "id": "wake-mcp"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "delegation"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "watchId": "pr-review",
+      "workflowName": "pr-review",
+      "workflowFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "maxPerGroup": 5,
+      "subject": {
+        "name": "change",
+        "reference": {
+          "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "resourceId": "resource-01m7hryg7cazt1pkwfd0g76djq",
+          "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+          "revision": "a505194b5353590afc401e52ed26f7001151c894",
+          "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc",
+          "runId": "run-01m7hs6xs7k8y2jksgmmkyvdjt",
+          "baseRevision": "0047fe86ccee8112b56e3d444f11f6c837046445"
+        }
+      }
+    },
+    "sequence": 24,
+    "globalPosition": 72924
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.group-claimed:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+    "eventType": "orchestration.group-claimed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "orchestration-group",
+      "id": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review"
+    },
+    "payload": {
+      "key": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "sequence": 4,
+    "globalPosition": 72926
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.child-requested:1",
+    "eventType": "orchestration.child-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "workflowName": "pr-review"
+    },
+    "sequence": 1,
+    "globalPosition": 72927
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.child-started:2",
+    "eventType": "orchestration.child-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "sequence": 2,
+    "globalPosition": 72928
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "sequence": 3,
+    "globalPosition": 72929
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "sequence": 4,
+    "globalPosition": 72930
+  },
+  {
+    "eventId": "command-01m7mqmpwjgpvfjrax242jt5xm:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:52.594Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7mqmpwjgpvfjrax242jt5xm",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 72931
+  },
+  {
+    "eventId": "command-01m7mqmsghggj96g4y9cb2g99r:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:27:55.281Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:1",
+    "causationId": "command-01m7mqmsghggj96g4y9cb2g99r",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:1"
+    },
+    "sequence": 6,
+    "globalPosition": 72932
+  },
+  {
+    "eventId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:08.610Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:1",
+      "outcome": {
+        "kind": "failed",
+        "data": {
+          "reason": "runner-failed",
+          "message": "exit 1"
+        }
+      }
+    },
+    "sequence": 7,
+    "globalPosition": 72952
+  },
+  {
+    "eventId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa:orchestration.retry-counted:2",
+    "eventType": "orchestration.retry-counted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:08.610Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "retryKey": "review:failed",
+      "count": 1
+    },
+    "sequence": 8,
+    "globalPosition": 72953
+  },
+  {
+    "eventId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa:orchestration.activity-requested:3",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:08.610Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqn6h2k9qhqh4hdw2jmgwa",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:2",
+      "ordinal": 2,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 9,
+    "globalPosition": 72954
+  },
+  {
+    "eventId": "command-01m7mqnbyj7kxsb79wg0r6s5d6:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:14.162Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:2",
+    "causationId": "command-01m7mqnbyj7kxsb79wg0r6s5d6",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:2"
+    },
+    "sequence": 10,
+    "globalPosition": 72957
+  },
+  {
+    "eventId": "command-01m7mqnhffk8wc414q7rhf69s4:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:19.823Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqnhffk8wc414q7rhf69s4",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:activity:2",
+      "outcome": {
+        "kind": "failed",
+        "data": {
+          "reason": "runner-failed",
+          "message": "exit 1"
+        }
+      }
+    },
+    "sequence": 11,
+    "globalPosition": 72969
+  },
+  {
+    "eventId": "command-01m7mqnhffk8wc414q7rhf69s4:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:19.823Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqnhffk8wc414q7rhf69s4",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {},
+    "sequence": 12,
+    "globalPosition": 72970
+  },
+  {
+    "eventId": "command-01m7mqnhffk8wc414q7rhf69s4:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:orchestration.child-completed:1",
+    "eventType": "orchestration.child-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T12:28:19.823Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7mqnhffk8wc414q7rhf69s4:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894"
+    },
+    "sequence": 13,
+    "globalPosition": 72973
+  },
+  {
+    "eventId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+    "eventType": "orchestration.delegation-review-refresh-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:37.658Z",
+    "correlationId": "artifact:run-01m7nekhwyvczpe793zh2kjfte",
+    "causationId": "artifact-mcp:run-01m7nekhwyvczpe793zh2kjfte:a5cc32d9-8ae0-44dd-834b-2704c9c83f68",
+    "actor": {
+      "kind": "system",
+      "id": "wake-mcp"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "delegation"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "watchId": "pr-review",
+      "workflowName": "pr-review",
+      "workflowFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "maxPerGroup": 5,
+      "subject": {
+        "name": "change",
+        "reference": {
+          "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "resourceId": "resource-01m7hryg7cazt1pkwfd0g76djq",
+          "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+          "revision": "a505194b5353590afc401e52ed26f7001151c894",
+          "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc",
+          "runId": "run-01m7hs6xs7k8y2jksgmmkyvdjt",
+          "baseRevision": "0047fe86ccee8112b56e3d444f11f6c837046445"
+        }
+      }
+    },
+    "sequence": 25,
+    "globalPosition": 73525
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.group-claimed:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+    "eventType": "orchestration.group-claimed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "orchestration-group",
+      "id": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review"
+    },
+    "payload": {
+      "key": "group:primary%3Awork-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "sequence": 5,
+    "globalPosition": 73527
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.child-requested:1",
+    "eventType": "orchestration.child-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "workflowName": "pr-review"
+    },
+    "sequence": 1,
+    "globalPosition": 73528
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.child-started:2",
+    "eventType": "orchestration.child-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "sequence": 2,
+    "globalPosition": 73529
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.instance-started:3",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "workflowName": "pr-review",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "entry": "review",
+      "workflowDefinitionFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "sequence": 3,
+    "globalPosition": 73530
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.stage-entered:4",
+    "eventType": "orchestration.stage-entered",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "stage": "review"
+    },
+    "sequence": 4,
+    "globalPosition": 73531
+  },
+  {
+    "eventId": "command-01m7nemf19yj5vx9ytq8cbw7xx:orchestration.activity-requested:5",
+    "eventType": "orchestration.activity-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:41.801Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7nemf19yj5vx9ytq8cbw7xx",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2:activity:1",
+      "ordinal": 1,
+      "activity": "agent",
+      "stage": "review",
+      "input": {
+        "template": "pr-review"
+      },
+      "execution": {
+        "workspace": "read-only",
+        "runnerPool": "deep"
+      }
+    },
+    "sequence": 5,
+    "globalPosition": 73532
+  },
+  {
+    "eventId": "command-01m7nemhy0srbv8sjt60n1wqhq:orchestration.activity-started",
+    "eventType": "orchestration.activity-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:44.768Z",
+    "correlationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2:activity:1",
+    "causationId": "command-01m7nemhy0srbv8sjt60n1wqhq",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration-service"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2:activity:1"
+    },
+    "sequence": 6,
+    "globalPosition": 73533
+  },
+  {
+    "eventId": "command-01m7nempng9fs07v46s6d5w4qd:orchestration.activity-outcome-accepted:1",
+    "eventType": "orchestration.activity-outcome-accepted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:49.616Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7nempng9fs07v46s6d5w4qd",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "activationId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2:activity:1",
+      "outcome": {
+        "kind": "blocked",
+        "data": {
+          "reason": "runner-authentication-required",
+          "message": "Failed to authenticate: this login reached its time limit and cannot be renewed"
+        }
+      }
+    },
+    "sequence": 7,
+    "globalPosition": 73542
+  },
+  {
+    "eventId": "command-01m7nempng9fs07v46s6d5w4qd:orchestration.instance-completed:2",
+    "eventType": "orchestration.instance-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:49.616Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7nempng9fs07v46s6d5w4qd",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {},
+    "sequence": 8,
+    "globalPosition": 73543
+  },
+  {
+    "eventId": "command-01m7nempng9fs07v46s6d5w4qd:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2:orchestration.child-completed:1",
+    "eventType": "orchestration.child-completed",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:09:49.616Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7nempng9fs07v46s6d5w4qd:child:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:2"
+    },
+    "sequence": 9,
+    "globalPosition": 73549
+  },
+  {
+    "eventId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+    "eventType": "orchestration.delegation-review-refresh-requested",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:23:33.758Z",
+    "correlationId": "artifact:run-01m7nfd20s8zm1388dvr367p0w",
+    "causationId": "artifact-mcp:run-01m7nfd20s8zm1388dvr367p0w:bd4437e0-e07b-4df8-ab7b-25ae2eef12b7",
+    "actor": {
+      "kind": "system",
+      "id": "wake-mcp"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "delegation"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+      "watchId": "pr-review",
+      "workflowName": "pr-review",
+      "workflowFingerprint": "18838769826dfa758d53524641ee32ff53fbc5eae4f6861c416b5a5261c8ebfd",
+      "maxPerGroup": 5,
+      "subject": {
+        "name": "change",
+        "reference": {
+          "workItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "resourceId": "resource-01m7hryg7cazt1pkwfd0g76djq",
+          "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+          "revision": "a505194b5353590afc401e52ed26f7001151c894",
+          "branch": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+          "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc",
+          "runId": "run-01m7hs6xs7k8y2jksgmmkyvdjt",
+          "baseRevision": "0047fe86ccee8112b56e3d444f11f6c837046445"
+        }
+      }
+    },
+    "sequence": 26,
+    "globalPosition": 73709
+  },
+  {
+    "eventId": "command-01m7nfdzqsgzv57a478d6d6ky4:orchestration.group-budget-exhausted:1",
+    "eventType": "orchestration.group-budget-exhausted",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:23:38.105Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7nfdzqsgzv57a478d6d6ky4",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "parentWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "watchId": "pr-review",
+      "triggerId": "delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+      "orchestrationGroupId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "causalCycleId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+      "requestId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+      "childWorkflowInstanceId": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:watch:pr-review:trigger:delegation:delegated:work-01m7hrcky7tr7rbwkkm39dx5kv:review-refresh:change:a505194b5353590afc401e52ed26f7001151c894:attempt:3",
+      "workflowName": "pr-review",
+      "maxPerGroup": 5
+    },
+    "sequence": 27,
+    "globalPosition": 73711
+  },
+  {
+    "eventId": "command-01m7nfdzqsgzv57a478d6d6ky4:orchestration.instance-blocked:2",
+    "eventType": "orchestration.instance-blocked",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-17T19:23:38.105Z",
+    "correlationId": "primary:work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "causationId": "command-01m7nfdzqsgzv57a478d6d6ky4",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "delegated:work-01m7hrcky7tr7rbwkkm39dx5kv"
+    },
+    "payload": {
+      "reason": "watch group budget exhausted for pr-review"
+    },
+    "sequence": 28,
+    "globalPosition": 73712
+  }
+]

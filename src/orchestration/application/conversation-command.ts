@@ -13,6 +13,7 @@ import {
   selectChangesResumeTargets,
   selectOperatorRetryTarget,
 } from '../domain/operator-retry-policy.js';
+import { GroupBudgetExtensionIneligibleError } from './group-budget-extension-error.js';
 
 export const BuiltInConversationCommands = Object.values(ConversationBuiltInCommand);
 
@@ -120,7 +121,12 @@ export async function applyBuiltInConversationCommand(
     input.command === ConversationBuiltInCommand.Extend &&
     isGroupBudgetExtensionEligible(primary)
   ) {
-    await input.extend(primary.workflowInstanceId);
+    try {
+      await input.extend(primary.workflowInstanceId);
+    } catch (error) {
+      if (error instanceof GroupBudgetExtensionIneligibleError) return denied(error.message);
+      throw error;
+    }
     return { applied: true };
   }
   return denied(

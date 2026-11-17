@@ -13,6 +13,9 @@ import {
 import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
 import { claimWithCasRetry } from './durable-append.js';
 
+/** The subset of claimed request ids whose slot is credited back to the group budget. */
+export type CreditedClaims = (requestIds: readonly string[]) => Promise<ReadonlySet<string>>;
+
 export class CoordinationClaims {
   constructor(private readonly journal: EventJournal) {}
 
@@ -54,10 +57,15 @@ export class CoordinationClaims {
     );
   }
 
+  /**
+   * `credited` names which already-claimed requests ended without a verdict for infrastructure
+   * reasons; they free their slot. It is consulted only when the group would otherwise be full.
+   */
   async claimWithinBudget(
     stream: ChildOrchestrationGroupStreamRef,
     request: ChildWorkflowRequest & { readonly maxPerGroup: number },
     context: CommandContext,
+    credited?: CreditedClaims,
   ): Promise<boolean> {
     const existing = groupEvents(await this.journal.readStream(stream));
     if (claimedRequestIds(existing).has(request.requestId)) return true;
@@ -65,8 +73,13 @@ export class CoordinationClaims {
       read: () => this.journal.readStream(stream),
       decode: groupEvents,
       alreadyClaimed: (events) => claimedRequestIds(events).has(request.requestId),
-      canAppend: (_rawEvents, events) =>
-        claimedRequestIds(events).size < request.maxPerGroup + budgetGrants(events),
+      canAppend: async (_rawEvents, events) => {
+        const claimed = claimedRequestIds(events);
+        const capacity = request.maxPerGroup + budgetGrants(events);
+        if (claimed.size < capacity) return true;
+        if (credited === undefined) return false;
+        return claimed.size - (await credited([...claimed])).size < capacity;
+      },
       append: async (sequence) => {
         await this.journal.appendToStream(stream, sequence, [
           createOrchestrationEventData({

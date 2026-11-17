@@ -21,6 +21,7 @@ import { acceptSignal as decideSignal } from '../domain/interpreter.js';
 import type { AdvanceWorkflow } from './advance-workflow.js';
 import { parentWaitsForWatch, watchGateVerdictOutcome, watchIdsFor } from './child-review-gate.js';
 import type { CoordinationClaims } from './coordination-claims.js';
+import { creditedGroupClaims } from './group-budget-credits.js';
 import type { GroupBudgetRecorder } from './group-budget-recorder.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import { watchPredatesPrerequisiteRefresh } from './prerequisite-review-freshness.js';
@@ -49,7 +50,14 @@ export class RequestChild {
     if (existing.view !== null) return existing.view;
     const group = childOrchestrationGroupStream(parent.view.orchestrationGroupId, request.watchId);
     const metadata = coordinationMetadata(parent.view, request);
-    if (!(await this.claims.claimWithinBudget(group, request, context))) {
+    if (
+      !(await this.claims.claimWithinBudget(
+        group,
+        request,
+        context,
+        creditedGroupClaims(this.repository),
+      ))
+    ) {
       await this.groupBudgets.record(
         parent.view,
         metadata,
