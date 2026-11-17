@@ -215,7 +215,7 @@ it does not construct envelope metadata or own durable subscriptions.
 | `orchestration.causal-activation-rejected` | A Watch trigger is recognised as a causal repeat within the same orchestration group | This trigger will not start a child; recorded on the parent, which is also blocked. |
 | `orchestration.group-budget-exhausted` | A child claim fails because a Watch's per-group budget is already claimed out | This trigger did not start a child because the Watch's configured `maxPerGroup` is already met; the parent is blocked in the same append. |
 | `orchestration.primary-claimed` | A WorkItem's primary WorkflowInstance ownership is claimed | This WorkflowInstance identity is now the WorkItem's one active primary. |
-| `orchestration.group-claimed` | A child request's slot within a Watch's per-group budget is claimed | This request now counts against the Watch's `maxPerGroup` for this orchestration group. |
+| `orchestration.group-claimed` | A child request's slot within a Watch's per-group budget is claimed | This request now counts against the Watch's `maxPerGroup` for this orchestration group, unless its child ends completed or blocked on a runner-infrastructure outcome (`runner-failed`, `runner-quota-exceeded`, `runner-authentication-required`, `ambiguous-runner-result`), which credits the slot back when the group would otherwise be full. |
 
 ## Conceptual schema
 

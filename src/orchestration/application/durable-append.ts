@@ -24,14 +24,14 @@ export async function claimWithCasRetry<Event, Decoded>(input: {
   readonly read: () => Promise<readonly Event[]>;
   readonly decode: (events: readonly Event[]) => Decoded;
   readonly alreadyClaimed: (events: Decoded) => boolean;
-  readonly canAppend?: (events: readonly Event[], decoded: Decoded) => boolean;
+  readonly canAppend?: (events: readonly Event[], decoded: Decoded) => boolean | Promise<boolean>;
   readonly append: (expectedSequence: number) => Promise<void>;
 }): Promise<boolean> {
   for (;;) {
     const events = await input.read();
     const decoded = input.decode(events);
     if (input.alreadyClaimed(decoded)) return false;
-    if (input.canAppend?.(events, decoded) === false) return false;
+    if ((await input.canAppend?.(events, decoded)) === false) return false;
     try {
       await input.append(events.length);
       return true;

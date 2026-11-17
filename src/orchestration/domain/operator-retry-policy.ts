@@ -175,11 +175,15 @@ function isCompletedAgentStage(view: WorkflowInstanceView): boolean {
   );
 }
 
+/**
+ * Blocked on an exhausted watch-group budget. A gate wait is not required: a completed delegated
+ * child blocked by a review-recovery request has none. What can be resumed is decided, with the
+ * durable exhaustion and pending request, where the extension is applied.
+ */
 export function isGroupBudgetExtensionEligible(view: WorkflowInstanceView): boolean {
   return (
     view.status === WorkflowStatus.Blocked &&
-    view.blockReason?.startsWith('watch group budget exhausted for ') === true &&
-    view.waitingFor !== undefined
+    view.blockReason?.startsWith('watch group budget exhausted for ') === true
   );
 }
 

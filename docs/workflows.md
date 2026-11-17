@@ -544,7 +544,16 @@ The watch reactor checkpoints its journal position, so event-triggered watches
 survive process restart. It gives every child deterministic parent, watch,
 trigger, and causal-cycle provenance. A repeated causal trigger is rejected
 and blocks the parent instead of recursively spawning children. `maxPerGroup`
-is an additional durable circuit breaker.
+is an additional durable circuit breaker. It counts attempts that reached a
+verdict or failed on their own terms: a child that stopped because the runner
+never answered (quota, authentication required, transport failure, or an
+ambiguous result) gives its slot back, so an outage cannot exhaust the budget
+before a review has run. When the budget is exhausted anyway, an operator's
+`/extend` (or `POST .../commands/extend`) grants one more start. For a parent
+waiting on a gate it restores the wait; for a completed delegated child blocked
+by a fresh-review request it restores the completed state and starts that
+review. `/extend` is refused, with the reason, when nothing is pending to
+resume.
 
 A route may declare exactly one `watchGates` entry. On its `done` outcome,
 Wake waits for the named child workflow's verdict; a `done` verdict follows

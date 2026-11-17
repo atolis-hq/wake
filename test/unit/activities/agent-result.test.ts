@@ -9,6 +9,7 @@ import {
   agentActivityOutcomeKinds,
   agentActivityOutcomeSchema,
   createAgentActivity,
+  isRunnerInfrastructureOutcome,
   translateAgentResult,
   type AgentActivityOutcome,
 } from '../../../src/activities/index.js';
@@ -364,5 +365,28 @@ it('retains distinct output names when normalizing several PR URLs', () => {
         { name: 'web', externalKey: { adapter: 'github', key: 'org/repo#2' } },
       ],
     },
+  });
+});
+
+describe('runner infrastructure outcomes', () => {
+  it.each([
+    [ActivityOutcomeKind.Failed, ActivityFailureCode.RunnerFailed],
+    [ActivityOutcomeKind.Failed, ActivityFailureCode.RunnerQuotaExceeded],
+    [ActivityOutcomeKind.Blocked, ActivityFailureCode.RunnerAuthenticationRequired],
+    [ActivityOutcomeKind.Blocked, ActivityFailureCode.AmbiguousRunnerResult],
+  ] as const)('treats %s %s as the runner never answering', (kind, reason) => {
+    expect(isRunnerInfrastructureOutcome({ kind, data: { reason } })).toBe(true);
+  });
+
+  it.each([
+    { kind: ActivityOutcomeKind.Failed, data: { reason: ActivityFailureCode.InvalidAgentResult } },
+    { kind: ActivityOutcomeKind.Done, data: { status: 'DONE' } },
+    { kind: ActivityOutcomeKind.Rejected, data: { status: 'REJECTED' } },
+    { kind: ActivityOutcomeKind.Failed, data: { status: 'FAILED' } },
+    { kind: ActivityOutcomeKind.Blocked, data: { status: 'NEEDS_CLARIFICATION' } },
+    undefined,
+    'not an outcome',
+  ])('does not treat an agent-authored or absent outcome as infrastructure: %j', (outcome) => {
+    expect(isRunnerInfrastructureOutcome(outcome)).toBe(false);
   });
 });

@@ -18,6 +18,7 @@ import type {
   DeliveryQaCommand,
   DeliverySelectionCommand,
 } from '../contracts/delivery.js';
+import { stateDraft } from '../domain/decision-events.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
@@ -86,11 +87,13 @@ import {
 import { CoordinationClaims } from './coordination-claims.js';
 import { attentionVerdict } from './delegation-attention-state.js';
 import type { DelegationAttentionDependencies } from './delegation-attention.js';
+import { GroupBudgetExtensionIneligibleError } from './group-budget-extension-error.js';
 import { GroupBudgetRecorder } from './group-budget-recorder.js';
 import { workflowsByWorkItemProjection } from './orchestration-projection.js';
 import { OrchestrationRepository } from './orchestration-repository.js';
 import type { AgentActivityClassifier } from './pending-activations.js';
 import { RequestChild } from './request-child.js';
+import { currentReviewRefreshes } from './review-refresh-facts.js';
 import { StartWorkflow } from './start-workflow.js';
 import { continuesWaitingForSameWatchGate } from './watch-child-transitions.js';
 import { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
@@ -809,13 +812,24 @@ export class OrchestrationService {
       throw new GroupBudgetExtensionIneligibleError(
         'Workflow has no durable gate definition to extend',
       );
+    // A completed delegated child has no gate wait; its exhausted request is a pending review recovery.
+    const pendingRecovery =
+      currentReviewRefreshes((await this.repository.history(parent.workflowInstanceId)).events).get(
+        parent.workflowInstanceId,
+      )?.request.requestId === exhausted.requestId;
+    if (parent.waitingFor === undefined && !pendingRecovery)
+      throw new GroupBudgetExtensionIneligibleError(
+        'Workflow has neither a gate wait nor a pending review recovery to resume after the budget exhaustion',
+      );
     const group = childOrchestrationGroupStream(parent.orchestrationGroupId, exhausted.watchId);
     await this.claims.grantBudget(group, exhausted.requestId, context, authority);
-    await this.waitForSignal(
-      parent.workflowInstanceId,
-      { ...parent.waitingFor!, suppressWatchDispatch: true },
-      context,
-    );
+    if (parent.waitingFor !== undefined)
+      await this.waitForSignal(
+        parent.workflowInstanceId,
+        { ...parent.waitingFor, suppressWatchDispatch: true },
+        context,
+      );
+    else await this.restoreCompletedAfterBudgetExhaustion(parent.workflowInstanceId, context);
     return this.requestChild(
       {
         ...exhausted,
@@ -825,6 +839,22 @@ export class OrchestrationService {
       },
       { ...context, commandId: `${context.commandId}:dispatch` },
     );
+  }
+
+  /** Returns a recovery parent to the completed state its pending review request requires. */
+  private async restoreCompletedAfterBudgetExhaustion(
+    workflowInstanceId: WorkflowInstanceId,
+    context: CommandContext,
+  ) {
+    const loaded = await this.repository.loadRequired(workflowInstanceId);
+    await this.repository.append(workflowInstanceId, loaded.sequence, [
+      stateDraft(
+        loaded.view,
+        { occurredAt: context.occurredAt, causationId: context.commandId },
+        { eventType: OrchestrationEventType.InstanceCompleted, payload: {} },
+        1,
+      ),
+    ]);
   }
 
   retryObservedState(event: Parameters<typeof retryObservedState>[3]) {
@@ -998,12 +1028,7 @@ export class OrchestrationService {
   }
 }
 
-export class GroupBudgetExtensionIneligibleError extends Error {
-  constructor(detail: string) {
-    super(detail);
-    this.name = 'GroupBudgetExtensionIneligibleError';
-  }
-}
+export { GroupBudgetExtensionIneligibleError };
 
 async function journalGroupBudgetExhaustion(
   journal: EventJournal,

@@ -12,6 +12,7 @@ import {
 import type { IdGenerator } from '../../../kernel/index.js';
 import {
   ApprovalAuthorityKind,
+  GroupBudgetExtensionIneligibleError,
   isGroupBudgetExtensionEligible,
   isOperatorRetryEligible,
   selectOperatorRetryTarget,
@@ -261,11 +262,16 @@ async function applyIssueBudgetExtension(input: {
         workflow.workItemId === workItemId && workflow.parentWorkflowInstanceId === undefined,
     );
     if (primary === undefined || !isGroupBudgetExtensionEligible(primary)) continue;
-    await orchestration.extendBlockedGroupBudget(
-      primary.workflowInstanceId,
-      { kind: ApprovalAuthorityKind.Human },
-      commandContext(event),
-    );
+    try {
+      await orchestration.extendBlockedGroupBudget(
+        primary.workflowInstanceId,
+        { kind: ApprovalAuthorityKind.Human },
+        commandContext(event),
+      );
+    } catch (error) {
+      // A comment cannot be refused interactively; an inapplicable extension must not fail the reactor.
+      if (!(error instanceof GroupBudgetExtensionIneligibleError)) throw error;
+    }
   }
 }
 
