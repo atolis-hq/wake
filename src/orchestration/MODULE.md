@@ -233,8 +233,10 @@ prerequisite diagnostics use stable reason-code identities. Cross-repository pre
 never Git ancestry. Independent children remain eligible while others wait.
 
 An active delegating Run may request recovery of a member of its own unsettled
-cohort through `recoverDelegation`. A completed single-change child can receive a
-journaled `delegation-review-refresh-requested` fact with a provider-verified
+cohort through `recoverDelegation`. A settled-cohort child is also eligible when an
+unsettled cohort under the same parent declares a prerequisite on that child and
+the requested output. Recovery preserves the original cohort settlement. A completed
+single-change child can receive a journaled `delegation-review-refresh-requested` fact with a provider-verified
 subject and the configured watch's pinned review definition and budget. This
 starts a separate read-only review without changing the ordinary watch gate or
 reopening the completed primary workflow. Accepted successful exact-head review

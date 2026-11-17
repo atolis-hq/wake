@@ -5,6 +5,7 @@ import type { WorkflowInstanceId } from '../contracts/identifiers.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { PrerequisiteAdmission } from './prerequisite-readiness.js';
+import { currentReviewRefreshes } from './review-refresh-facts.js';
 
 /** One admission policy for ordinary advancement while a committed cohort owns the parent. */
 export class DelegationGate {
@@ -110,12 +111,25 @@ export class DelegationGate {
     const snapshot = await this.work.deliverySnapshot();
     if (this.heldBy(snapshot, view)) throw new DelegationPendingError(id);
     const admission = (await this.prerequisiteReasons?.([view.workItemId]))?.get(view.workItemId);
-    if (admission?.abandoned === true) return historical(view);
+    if (await this.isHistoricalOutcome(view, admission?.abandoned)) return historical(view);
     if (admission?.reason !== undefined) throw new DelegationPendingError(id);
     // An attention outcome restores the cohort wait; it never reaches ordinary routing.
     if (attention !== undefined && view.delegationAttention?.activationId === activationId)
       return attention();
     return this.fencedOutcome(view, activationId, operation, held);
+  }
+
+  private async isHistoricalOutcome(
+    view: WorkflowInstanceView,
+    abandoned: boolean | undefined,
+  ): Promise<boolean> {
+    if (abandoned !== true) return false;
+    if (view.parentWorkflowInstanceId === undefined) return true;
+    // Only the explicitly requested review may advance; settled primary outcomes stay historical.
+    const recovery = currentReviewRefreshes(await this.repository.events()).get(
+      view.parentWorkflowInstanceId,
+    );
+    return recovery?.request.requestId !== view.workflowInstanceId;
   }
 
   private fencedOutcome<T>(
