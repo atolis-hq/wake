@@ -7,6 +7,8 @@ export type DelegationReviewPolicy = (child: WorkflowInstanceView) => Promise<{
   readonly requireApproval: boolean;
   readonly allowTrustedReview?: boolean;
   readonly review?: WorkflowInstanceView | undefined;
+  /** Why a requested fresh review cannot attest the head, when it ended without a verdict. */
+  readonly reviewUnavailable?: string | undefined;
 }>;
 
 /** A watch verdict is usable only with an accepted review Run's exact checkout attestation. */
@@ -21,7 +23,8 @@ export async function deliveryReadyRequirements(
 ) {
   const policy = (await input.reviewPolicy?.(child)) ?? { requireApproval: true };
   if (!policy.requireApproval) {
-    const reason = await reviewedHead(input.runs, child, policy.review, revision);
+    const reason =
+      policy.reviewUnavailable ?? (await reviewedHead(input.runs, child, policy.review, revision));
     if (reason !== undefined) {
       if (policy.allowTrustedReview)
         return { requireReview: true, requireChecks: true, reviewFallbackReason: reason };
@@ -41,11 +44,13 @@ export async function refreshedReviewSubject(
 ) {
   const policy = await input.reviewPolicy?.(child);
   const subject = policy?.refreshedSubject;
-  if (subject === undefined || !('revision' in subject.reference)) return undefined;
+  if (subject === undefined || !('revision' in subject.reference)) return {};
   return (await reviewedHead(input.runs, child, policy?.review, subject.reference.revision)) ===
     undefined
-    ? subject
-    : undefined;
+    ? { subject }
+    : policy?.reviewUnavailable === undefined
+      ? {}
+      : { unavailable: policy.reviewUnavailable };
 }
 
 async function reviewedHead(

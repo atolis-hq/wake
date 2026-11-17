@@ -1191,7 +1191,12 @@ recover a member of its own unsettled cohort. With `action: review`, name the
 child, its change `output`, and the provider's current head in `expectedRevision`.
 Wake verifies the child-owned PR and journals a fresh request for the configured
 review watch. The review uses that exact commit in a read-only workspace. Requests
-for the same output and head share one durable review; watch budgets still apply.
+for the same output and head share one durable review while it is in flight or
+after it accepted the head; watch budgets still apply. If that review rejected the
+head, the request is refused and names the rejecting review. If it ended without
+a verdict (for example its runner failed and the review workflow's retries were
+spent), the head is still unreviewed: the request records a new attempt, and the
+dependent's blocker names the review that ended without a verdict until then.
 This currently requires one change output and an existing, unambiguous watch
 review gate. Unavailable verification, unresolved Runs, and ineligible children
 return an explicit error naming the verification that failed.

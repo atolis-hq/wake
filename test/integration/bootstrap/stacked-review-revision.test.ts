@@ -46,13 +46,17 @@ it.each([
   'completed-head',
   'settled-head',
   'retargeted-head',
+  'failed-review-head',
 ])(
   'handles a pushed-change review stack safely (%s)',
   // Each branch exercises a distinct durable recovery sequence.
   // eslint-disable-next-line complexity
   async (scenario) => {
     // retargeted-head: upstream one merges and two's PR moves to main, as for corum#141/#142.
-    const retargetedHead = scenario === 'retargeted-head';
+    // failed-review-head: the fresh review of two ends without a verdict, as corum#142's did when
+    // its runner hit a usage limit; the same head must be reviewable again.
+    const failedReview = scenario === 'failed-review-head';
+    const retargetedHead = scenario === 'retargeted-head' || failedReview;
     const settledHead = scenario === 'settled-head' || retargetedHead;
     const completedHead = scenario === 'completed-head' || settledHead;
     let twoRetargeted = false;
@@ -207,7 +211,11 @@ it.each([
                       execution: {
                         workspace: completedHead ? 'read-only' : 'none',
                       },
-                      on: { done: { then: 'done' }, rejected: { then: 'done' } },
+                      on: {
+                        done: { then: 'done' },
+                        rejected: { then: 'done' },
+                        failed: { retry: { max: 1 }, then: 'done' },
+                      },
                     },
                   },
                 },
@@ -325,6 +333,7 @@ it.each([
         return done;
       });
       let rejectedTwo = completedHead;
+      let failingReviews = 0;
       runner.scriptFor = (request) =>
         request.prompt.startsWith('Review')
           ? async (request) => {
@@ -332,6 +341,15 @@ it.each([
               const watch = (await root.orchestration.get(
                 workflowInstanceId(run.workflowInstanceId),
               ))!;
+              if (failingReviews > 0) {
+                failingReviews--;
+                return {
+                  transport: RunStatus.Failed,
+                  runner: 'fake',
+                  output: '',
+                  failure: { kind: 'process-exit', message: 'exit 1' },
+                };
+              }
               const reject =
                 watch.parentWorkflowInstanceId === child('two').workflowInstanceId && !rejectedTwo;
               if (reject) rejectedTwo = true;
@@ -673,6 +691,61 @@ it.each([
             context('duplicate-review'),
           ),
         ).toEqual(requested);
+        if (failedReview) {
+          if (!('requestId' in requested)) throw new Error('Expected a review request');
+          // Both attempts fail as a plain runner exit; workflow retry policy then completes the
+          // review instance without a verdict.
+          failingReviews = 2;
+          await root.orchestration.reconcileChildCompletions(context('start-failing-review'));
+          for (const attempt of [1, 2]) {
+            const failing = (await root.orchestration.listAll()).find(
+              (view) => view.workflowInstanceId === requested.requestId,
+            )!;
+            expect(failing.status).toBe('active');
+            await root.advanceOnce({ workItemId: child('two').workItemId, maxProgress: 1 });
+            await idle();
+            const run = (await root.execution.list()).find(
+              (entry) => entry.activationId === failing.pendingActivation!.activationId,
+            )!;
+            expect(run.outcome).toMatchObject({
+              kind: 'failed',
+              data: { reason: 'runner-failed' },
+            });
+            await root.orchestration.acceptOutcome(
+              {
+                workflowInstanceId: failing.workflowInstanceId,
+                activationId: run.activationId,
+                outcome: run.outcome!,
+              },
+              context('failed-review-' + attempt),
+            );
+          }
+          expect((await root.orchestration.get(requested.requestId))!.status).toBe('completed');
+          await root.orchestration.reconcileChildCompletions(context('after-failed-review'));
+          const blocker = (await root.orchestration.deliveryTree(parentWork, { verify: true }))
+            .at(-1)!
+            .children.find((entry) => entry.assignmentId === 'three')!.prerequisiteBlocker;
+          expect(blocker).toContain(
+            'Fresh review ' +
+              requested.requestId +
+              ' ended failed (runner-failed: exit 1) without a verdict',
+          );
+          const retried = await root.orchestration.recoverDelegation(
+            recoveryCaller!,
+            command,
+            context('request-review-again'),
+          );
+          if (!('requestId' in retried)) throw new Error('Expected a review request');
+          expect(retried.requestId).toBe(requested.requestId + ':attempt:2');
+          expect(retried.subject).toEqual(requested.subject);
+          expect(
+            await root.orchestration.recoverDelegation(
+              recoveryCaller!,
+              command,
+              context('duplicate-review-again'),
+            ),
+          ).toEqual(retried);
+        }
         releaseParent();
         await vi.waitFor(async () =>
           expect(
@@ -741,7 +814,7 @@ it.each([
             ({ event }) =>
               event.eventType === OrchestrationEventType.DelegationReviewRefreshRequested,
           ),
-        ).toHaveLength(1);
+        ).toHaveLength(failedReview ? 2 : 1);
         expect(
           (await journal.readAll(0)).filter(
             ({ event }) => event.eventType === OrchestrationEventType.DelegationInputsRefreshed,

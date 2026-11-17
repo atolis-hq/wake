@@ -12,8 +12,9 @@ import {
   type WorkflowOrchestrationEvent,
 } from '../contracts/events.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
-import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
+import { ApprovalAuthorityKind } from '../contracts/vocabulary.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import { reviewRefreshVerdict, ReviewRefreshVerdict } from './review-refresh-facts.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
 /** Read the pinned merge policy and accepted configured watch verdicts, never issue prose. */
@@ -42,14 +43,16 @@ export function createDelegationReviewPolicy(
     const { accepted, refresh } = acceptedReview(history.events);
     const review =
       accepted === undefined ? undefined : ((await repository.load(accepted)).view ?? undefined);
+    const verdict = refresh === undefined ? undefined : reviewRefreshVerdict(review ?? null);
     return {
       requireApproval,
       review:
-        refresh === undefined ||
-        (review?.status === WorkflowStatus.Completed &&
-          review.lastOutcome?.kind === ActivityOutcomeKind.Done)
+        verdict === undefined || verdict.kind === ReviewRefreshVerdict.Accepted
           ? review
           : undefined,
+      ...(verdict?.reason === undefined
+        ? {}
+        : { reviewUnavailable: verdict.reason + '; request a fresh review of the same head' }),
       refreshedSubject: refresh?.subject,
       allowTrustedReview: merges.length === 0,
     };
