@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const octokit = vi.hoisted(() => ({
   constructor: vi.fn(),
+  compareCommits: vi.fn(),
   paginateIterator: vi.fn(),
   listIssues: vi.fn(),
   listComments: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('@octokit/rest', () => ({
     return {
       paginate: Object.assign(vi.fn(), { iterator: octokit.paginateIterator }),
       rest: {
+        repos: { compareCommitsWithBasehead: octokit.compareCommits },
         users: { getAuthenticated: octokit.getAuthenticated },
         issues: {
           listForRepo: octokit.listIssues,
@@ -41,6 +43,21 @@ describe('GitHub client transport contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     octokit.paginateIterator.mockImplementation(() => pagesOf());
+  });
+
+  it.each([
+    ['ancestor', true],
+    ['other', false],
+  ])('verifies commit ancestry from merge base %s', async (mergeBase, expected) => {
+    octokit.compareCommits.mockResolvedValue({ data: { merge_base_commit: { sha: mergeBase } } });
+    await expect(
+      createGitHubClient('token').revisionDescendsFrom('owner', 'repo', 'ancestor', 'head'),
+    ).resolves.toBe(expected);
+    expect(octokit.compareCommits).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      basehead: 'ancestor...head',
+    });
   });
 
   it('reads auto-merge labels directly without the ETag cache', async () => {

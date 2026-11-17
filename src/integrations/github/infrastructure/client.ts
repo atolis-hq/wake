@@ -58,6 +58,19 @@ export function createGitHubClient(token: string) {
   const cache = createEtagCache();
   return {
     ...createGitHubReadClient(octokit, cache),
+    revisionDescendsFrom: async (
+      owner: string,
+      repo: string,
+      ancestor: string,
+      descendant: string,
+    ) => {
+      const { data } = await octokit.rest.repos.compareCommitsWithBasehead({
+        owner,
+        repo,
+        basehead: ancestor + '...' + descendant,
+      });
+      return data.merge_base_commit.sha === ancestor;
+    },
     authenticatedLogin: async () => (await octokit.rest.users.getAuthenticated()).data.login,
     collaboratorPermission: async (owner: string, repo: string, login: string) => {
       const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({

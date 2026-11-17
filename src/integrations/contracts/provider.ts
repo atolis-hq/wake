@@ -120,6 +120,12 @@ export interface ProviderInstance {
       readonly pullRequestBase?: string;
     },
   ): Promise<VerifiedArtifact | ArtifactVerificationResult>;
+  /** Provider evidence that descendant contains ancestor; null means unavailable. */
+  readonly verifyRevisionAncestry?: (
+    repository: ExternalResourceKey,
+    ancestor: string,
+    descendant: string,
+  ) => Promise<boolean | null>;
   /**
    * Re-applies the latest journaled observation of a resource Wake has just begun tracking,
    * for observations that arrived before the resource had a WorkItem.

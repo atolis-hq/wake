@@ -201,6 +201,15 @@ export const gitHubProviderDefinition: ProviderDefinition<GitHubConfig> = {
         },
         () => requests.run(() => client.authenticatedLogin()),
       ),
+      verifyRevisionAncestry: async (repository, ancestor, descendant) => {
+        const parts = repository.key.split('/');
+        if (repository.adapter !== adapter || parts.length !== 2) return null;
+        try {
+          return await client.revisionDescendsFrom(parts[0]!, parts[1]!, ancestor, descendant);
+        } catch {
+          return null;
+        }
+      },
       verifyArtifact: async (kind, externalKey, context) => {
         if (kind !== resourceKind('pull-request')) return ArtifactVerificationResult.NotFound;
         const parsed = parsePullRequestKey(externalKey.key);

@@ -43,12 +43,21 @@ const run = (activationId: string, revision: string, reported: boolean) => ({
   },
 });
 
-function outputs(runs: unknown[], providerHead: string) {
+function outputs(
+  runs: unknown[],
+  providerHead: string,
+  options: {
+    ancestry?: boolean | null;
+    owns?: boolean;
+    observed?: boolean;
+    mismatchedPR?: boolean;
+  } = {},
+) {
   const verifyArtifact = vi.fn(async (_kind, externalKey, source) =>
     source.workspaceRevision === providerHead
       ? {
           kind: BuiltInResourceKind.PullRequest,
-          externalKey,
+          externalKey: options.mismatchedPR ? { ...externalKey, key: 'org/repo#2' } : externalKey,
           capabilities: [],
           revision: providerHead,
         }
@@ -60,25 +69,51 @@ function outputs(runs: unknown[], providerHead: string) {
       get: async () => repository,
       findByExternalKey: async () => pullRequest,
       primaryCorrelation: async () => ({
-        workItemId: 'child',
+        workItemId: options.owns === false ? 'other-child' : 'child',
         role: ResourceCorrelationRole.Primary,
         provenance: ResourceCorrelationProvenance.AgentReported,
       }),
     },
     pullRequests: {
-      get: async () => ({ headRevision: providerHead, baseRevision: 'base-1', state: 'open' }),
+      get: async () =>
+        options.observed === false
+          ? null
+          : { headRevision: providerHead, baseRevision: 'base-1', state: 'open' },
       decideAuthority: async () => ({ allowed: true, revision: providerHead }),
     },
     runs: async () => runs,
-    providers: async () => [{ adapter: 'fake', verifyArtifact }],
+    providers: async () => [
+      {
+        adapter: 'fake',
+        verifyArtifact,
+        verifyRevisionAncestry: async () => options.ancestry ?? null,
+      },
+    ],
   } as never);
   return {
     verifyArtifact,
+    review: () => service.reviewSubject!(child as never, output as never),
     qualify: () => service.qualifyingOutputs(child as never, [output] as never),
   };
 }
 
 describe('createDelegationOutputs', () => {
+  it.each([
+    { options: { ancestry: false }, reason: 'not a descendant' },
+    { options: {}, reason: 'ancestry evidence is unavailable' },
+    { options: { ancestry: true, owns: false }, reason: 'PR identity mismatch' },
+    { options: { ancestry: true, mismatchedPR: true }, reason: 'PR identity mismatch' },
+    { options: { ancestry: true, observed: false }, reason: 'head is not observed' },
+  ])('rejects recovery with precise evidence failure ($reason)', async ({ options, reason }) => {
+    const { review } = outputs([run('a1', 'head-1', true)], 'head-2', options);
+    await expect(review()).rejects.toThrow(reason);
+  });
+
+  it('selects a descendant for recovery without qualifying an unreviewed head', async () => {
+    const { review, qualify } = outputs([run('a1', 'head-1', true)], 'head-2', { ancestry: true });
+    expect(await review()).toMatchObject({ reference: { revision: 'head-2' } });
+    expect(await qualify()).toBeNull();
+  });
   it('keeps a reported PR qualifying when a later revision run pushes without re-reporting it', async () => {
     const { qualify, verifyArtifact } = outputs(
       [run('a1', 'head-1', true), run('a2', 'head-2', false)],

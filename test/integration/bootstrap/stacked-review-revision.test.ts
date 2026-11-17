@@ -69,8 +69,12 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
       const source = await commit('source');
       const heads = new Map<string, string>();
       for (const id of ['one', 'two', 'three']) heads.set(id, await commit(id));
-      await git(repo, 'switch', '-c', 'revised', heads.get('two')!);
-      const revised = await commit('revision');
+      const attestedTwo = heads.get('two')!;
+      await git(repo, 'switch', '-c', 'base-update', source);
+      await commit('base-update');
+      await git(repo, 'switch', '-c', 'revised', attestedTwo);
+      await git(repo, 'merge', '--no-ff', 'base-update', '-m', 'Merge base update');
+      const revised = await git(repo, 'rev-parse', 'HEAD');
       await git(repo, 'cherry-pick', heads.get('three')!);
       const refreshed = await git(repo, 'rev-parse', 'HEAD');
       const fourth = await commit('fourth');
@@ -102,6 +106,7 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
               kind: 'pull-request',
               title: entry.assignmentId,
               revision: heads.get(entry.assignmentId),
+              ancestors: entry.assignmentId === 'two' ? [attestedTwo] : [],
               branch: entry.workItemId,
               baseBranch:
                 upstream(entry.assignmentId) === undefined
@@ -603,6 +608,13 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
           output: 'change',
           expectedRevision: revised,
         };
+        await expect(
+          root.orchestration.recoverDelegation(
+            recoveryCaller!,
+            { ...command, expectedRevision: 'outdated-head' },
+            context('expected-revision-race'),
+          ),
+        ).rejects.toThrow('Provider head changed');
         const requested = await root.orchestration.recoverDelegation(
           recoveryCaller!,
           command,

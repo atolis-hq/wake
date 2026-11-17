@@ -60,6 +60,8 @@ export async function verifiedChange(
   if (
     resource === null ||
     resource.kind !== BuiltInResourceKind.PullRequest ||
+    verified.externalKey.adapter !== report.externalKey.adapter ||
+    verified.externalKey.key !== report.externalKey.key ||
     verified.revision !== revision ||
     resource.primaryCorrelationConflict !== undefined
   )
@@ -108,8 +110,7 @@ export async function reviewSource(
   const observed =
     observedResource === null ? null : await input.pullRequests.get(observedResource.resourceId);
   if (currentHead) {
-    if (observed === null || observed.state !== PullRequestState.Open) return undefined;
-    source = { ...source, revision: observed.headRevision };
+    source = { ...source, revision: openReviewHead(observed) };
   } else if (
     refresh?.name === output.name &&
     'revision' in refresh.reference &&
@@ -120,4 +121,50 @@ export async function reviewSource(
     source = { ...source, revision: refresh.reference.revision };
   }
   return source;
+}
+
+function openReviewHead(observed: Awaited<ReturnType<PullRequestService['get']>>) {
+  if (observed === null || !observed.headRevision)
+    throw new Error('Current provider head is not observed for the child PR');
+  if (observed.state !== PullRequestState.Open)
+    throw new Error('Child PR is not open for review recovery');
+  return observed.headRevision;
+}
+
+export async function verifiedReviewChange(
+  input: OutputDependencies,
+  report: NonNullable<ReturnType<typeof reportedChange>>['report'],
+  source: NonNullable<ReturnType<typeof runSource>>,
+  attestedRevision: string,
+  currentHead: boolean,
+) {
+  const resource = await verifiedChange(input, report, source);
+  if (resource === null) {
+    if (currentHead)
+      throw new Error(
+        'Child PR identity mismatch: repository, branch, base or primary ownership could not be verified',
+      );
+    return null;
+  }
+  if (source.revision === attestedRevision) return resource;
+  const repository = await input.resources.get(resourceId(source.assignment.resourceId));
+  const provider = (await input.providers()).find(
+    (entry) => entry.adapter === report.externalKey.adapter,
+  );
+  const ancestry =
+    repository === null
+      ? null
+      : await provider?.verifyRevisionAncestry?.(
+          repository.externalKey,
+          attestedRevision,
+          source.revision,
+        );
+  if (ancestry === true) return resource;
+  const reason =
+    ancestry === false
+      ? 'Current provider head is not a descendant of the attested revision'
+      : 'Provider ancestry evidence is unavailable for the attested revision';
+  if (currentHead) throw new Error(reason);
+  input.blocked?.(reason);
+  return null;
 }
