@@ -1,0 +1,121 @@
+[
+  {
+    "eventId": "github:issue:atolis-hq/corum#135:fb81ae64b6c46cc1e132f6fe32e7b571ab9b60a02500b84e3f4fec75410f0b1f:inbound:orchestration.instance-started:1",
+    "eventType": "orchestration.instance-started",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:30:45Z",
+    "correlationId": "github:atolis-hq/corum#135",
+    "causationId": "github:issue:atolis-hq/corum#135:fb81ae64b6c46cc1e132f6fe32e7b571ab9b60a02500b84e3f4fec75410f0b1f:inbound",
+    "actor": {
+      "kind": "system",
+      "id": "orchestration"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "orchestration"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "primary:work-01m7hqsr5d8enk1p9vg0f4nw1q"
+    },
+    "payload": {
+      "workItemId": "work-01m7hqsr5d8enk1p9vg0f4nw1q",
+      "workflowName": "dark-factory",
+      "orchestrationGroupId": "primary:work-01m7hqsr5d8enk1p9vg0f4nw1q",
+      "entry": "refine",
+      "workflowDefinitionFingerprint": "ce3cbb45e4aa01fae3ae0209d57b459ac146134b07f7eacd460e4764179833b3"
+    },
+    "recordedAt": "2026-11-16T08:32:56.544Z",
+    "sequence": 1,
+    "globalPosition": 65080
+  },
+  {
+    "eventId": "delegation:primary:work-01m7hqsr5d8enk1p9vg0f4nw1q:inputs:child-work-01m7hrcky7tr7rbwkkm39dx5kv",
+    "eventType": "orchestration.delegation-inputs-resolved",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:48:26.340Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7hrp674qr7n1yptcd70w91r",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "delegation"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "primary:work-01m7hqsr5d8enk1p9vg0f4nw1q"
+    },
+    "payload": {
+      "childWorkItemId": "work-01m7hrcky7tr7rbwkkm39dx5kv",
+      "consumed": [
+        {
+          "name": "change",
+          "reference": {
+            "workItemId": "work-01m7hrcky7vrh233mh04h17hhc",
+            "resourceId": "resource-01m7hrnhsbwprtm1ej5v7ag4jm",
+            "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+            "revision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+            "branch": "work-01m7hrcky7vrh233mh04h17hhc",
+            "pullRequestBase": "main",
+            "runId": "run-01m7hrcvv119v3cwkb7d6j1111",
+            "baseRevision": "26c2eecf1e3d6571e760198bb555d8fcc9296208"
+          }
+        }
+      ],
+      "repository": {
+        "resourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+        "sourceRef": "work-01m7hrcky7vrh233mh04h17hhc",
+        "sourceRevision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+        "pullRequestBase": "work-01m7hrcky7vrh233mh04h17hhc"
+      }
+    },
+    "recordedAt": "2026-11-16T08:48:29.527Z",
+    "sequence": 32,
+    "globalPosition": 65347
+  },
+  {
+    "eventId": "delegation:primary:work-01m7hqsr5d8enk1p9vg0f4nw1q:result:child-work-01m7hrcky7vrh233mh04h17hhc",
+    "eventType": "orchestration.delegation-result-selected",
+    "schemaVersion": 1,
+    "occurredAt": "2026-11-16T08:49:20.022Z",
+    "correlationId": "child-completion-reconciliation",
+    "causationId": "command-01m7hrqtmpnszd0xtxgwvanbb4",
+    "actor": {
+      "kind": "system",
+      "id": "control-plane"
+    },
+    "source": {
+      "kind": "internal",
+      "id": "delegation"
+    },
+    "stream": {
+      "kind": "workflow-instance",
+      "id": "primary:work-01m7hqsr5d8enk1p9vg0f4nw1q"
+    },
+    "payload": {
+      "cohortId": "namespaces-135-stack",
+      "childWorkItemId": "work-01m7hrcky7vrh233mh04h17hhc",
+      "outputs": [
+        {
+          "name": "change",
+          "reference": {
+            "workItemId": "work-01m7hrcky7vrh233mh04h17hhc",
+            "resourceId": "resource-01m7hrnhsbwprtm1ej5v7ag4jm",
+            "repositoryResourceId": "resource-01m7gssvh2myz9ggk7csb3ajj6",
+            "revision": "4daab3a4988dee6e444d28fe59c80bc0a0e0c439",
+            "branch": "work-01m7hrcky7vrh233mh04h17hhc",
+            "pullRequestBase": "main",
+            "runId": "run-01m7hrcvv119v3cwkb7d6j1111",
+            "baseRevision": "26c2eecf1e3d6571e760198bb555d8fcc9296208"
+          }
+        }
+      ]
+    },
+    "recordedAt": "2026-11-16T08:49:20.649Z",
+    "sequence": 33,
+    "globalPosition": 65376
+  }
+]

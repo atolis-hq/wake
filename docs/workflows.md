@@ -1194,7 +1194,15 @@ review watch. The review uses that exact commit in a read-only workspace. Reques
 for the same output and head share one durable review; watch budgets still apply.
 This currently requires one change output and an existing, unambiguous watch
 review gate. Unavailable verification, unresolved Runs, and ineligible children
-return an explicit error.
+return an explicit error naming the verification that failed.
+
+A stacked child's PR may have been retargeted after its upstream PR merged (for
+example from the upstream branch to `main`). Review recovery, and the recovered
+review subject it produces, accept such a base only along the journaled base
+lineage: the child's input receipt must name the upstream output whose branch is
+the recorded base, that upstream PR must be observed merged, and the provider must
+confirm it targeted the new base. A review attested before the retarget never
+qualifies against the new base; recover a review at the current head instead.
 
 Only an accepted successful review of the requested head refreshes the output.
 The producing workflow's merge approval policy and exact-head checks still apply;

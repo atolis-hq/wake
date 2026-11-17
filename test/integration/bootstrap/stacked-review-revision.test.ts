@@ -38,12 +38,25 @@ const context = (commandId: string) => ({
 });
 const done = { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
 
-it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled-head'])(
+it.each([
+  'recover',
+  'in-review',
+  'terminal',
+  'stale',
+  'completed-head',
+  'settled-head',
+  'retargeted-head',
+])(
   'handles a pushed-change review stack safely (%s)',
   // Each branch exercises a distinct durable recovery sequence.
   // eslint-disable-next-line complexity
   async (scenario) => {
-    const completedHead = scenario === 'completed-head' || scenario === 'settled-head';
+    // retargeted-head: upstream one merges and two's PR moves to main, as for corum#141/#142.
+    const retargetedHead = scenario === 'retargeted-head';
+    const settledHead = scenario === 'settled-head' || retargetedHead;
+    const completedHead = scenario === 'completed-head' || settledHead;
+    let twoRetargeted = false;
+    let oneMerged = false;
     const home = await mkdtemp(join(tmpdir(), 'wake-stack-review-'));
     let shutdown = async () => {};
     let releaseParent = () => {};
@@ -108,8 +121,10 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
               revision: heads.get(entry.assignmentId),
               ancestors: entry.assignmentId === 'two' ? [attestedTwo] : [],
               branch: entry.workItemId,
+              ...(entry.assignmentId === 'one' && oneMerged ? { state: 'merged' } : {}),
               baseBranch:
-                upstream(entry.assignmentId) === undefined
+                upstream(entry.assignmentId) === undefined ||
+                (entry.assignmentId === 'two' && twoRetargeted)
                   ? 'main'
                   : child(upstream(entry.assignmentId)!).workItemId,
               baseRevision:
@@ -496,7 +511,7 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
       await implement('two', heads.get('one')!, heads.get('two')!);
       if (completedHead) await review('two');
       let settledFacts: unknown[] = [];
-      if (scenario === 'settled-head') {
+      if (settledHead) {
         runner.scripts.push(async () => ({ ...done, output: '{"status":"FAILED"}' }));
         await root.advanceOnce({ workItemId: child('three').workItemId, maxProgress: 1 });
         await idle();
@@ -615,6 +630,37 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
             context('expected-revision-race'),
           ),
         ).rejects.toThrow('Provider head changed');
+        if (retargetedHead) {
+          // The provider base no longer matches the recorded stacked base.
+          twoRetargeted = true;
+          await publish();
+          await expect(
+            root.orchestration.recoverDelegation(
+              recoveryCaller!,
+              command,
+              context('retargeted-before-upstream-merge'),
+            ),
+          ).rejects.toThrow(
+            'targeting ' + child('one').workItemId + ' (no merged upstream base lineage)',
+          );
+          oneMerged = true;
+          await publish();
+          const onePr = (await root.resources.findByExternalKey({
+            adapter: 'fake',
+            key: 'org/repo#1',
+          }))!;
+          await root.pullRequests.observe(
+            {
+              resourceId: onePr.resourceId,
+              workItemId: child('one').workItemId,
+              state: 'merged',
+              headRevision: heads.get('one')!,
+              baseRevision: source,
+              checks: 'passing',
+            },
+            context('upstream-merged'),
+          );
+        }
         const requested = await root.orchestration.recoverDelegation(
           recoveryCaller!,
           command,
@@ -706,10 +752,10 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
         await root.orchestration.reconcileChildCompletions(context('join-refreshed-cohort'));
         const results = await root.orchestration.joinedDelegationResults(
           parent.workflowInstanceId,
-          scenario === 'settled-head' ? 'replacement' : 'stack',
+          settledHead ? 'replacement' : 'stack',
         );
-        expect(results).toHaveLength(scenario === 'settled-head' ? 2 : 4);
-        if (scenario === 'settled-head') {
+        expect(results).toHaveLength(settledHead ? 2 : 4);
+        if (settledHead) {
           expect((await root.orchestration.deliveryTree(parentWork))[0]!.settled).toBe(true);
           expect(
             (await journal.readAll(0))
