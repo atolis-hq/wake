@@ -7,7 +7,7 @@ import {
 
 /** Permanent zero-token runner for delegation actions during a real Execution Run. */
 export class ScriptedDelegationRunner implements Runner {
-  readonly name = 'fake';
+  constructor(readonly name = 'fake') {}
   readonly supportsEphemeralMcp = true;
   readonly scripts: ((request: RunnerRequest) => Promise<AgentRunnerResult>)[] = [];
   scriptFor:

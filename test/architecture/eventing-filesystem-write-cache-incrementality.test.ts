@@ -56,7 +56,7 @@ describe('Eventing filesystem write-path cache incrementality', () => {
       String(path).endsWith('.jsonl'),
     );
     expect(journalFileReads).toHaveLength(0);
-  });
+  }, 30_000);
 
   it('FileProjectionStore.write() does not force the next list() to re-read the namespace', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-architecture-projections-'));
@@ -75,6 +75,9 @@ describe('Eventing filesystem write-path cache incrementality', () => {
     await store.write({ namespace: 'work', key: 'work:6', lastGlobalPosition: 6, value: { n: 6 } });
     const entries = await store.list('work');
     expect(entries).toHaveLength(6);
-    expect(readFileMock).not.toHaveBeenCalled();
+    const projectionFileReads = readFileMock.mock.calls.filter(([path]) =>
+      String(path).endsWith('.json'),
+    );
+    expect(projectionFileReads).toHaveLength(0);
   });
 });

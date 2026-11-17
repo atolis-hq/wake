@@ -52,6 +52,7 @@ interface BuiltInConversationCommandInput {
     id: WorkflowInstanceId,
     outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected,
   ) => Promise<boolean>;
+  readonly recover?: () => Promise<ConversationCommandResult>;
   readonly retry: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly restart: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly extend: (id: WorkflowInstanceId) => Promise<unknown>;
@@ -98,10 +99,12 @@ export async function applyBuiltInConversationCommand(
   }
   if (input.command === ConversationBuiltInCommand.Retry) {
     const target = selectOperatorRetryTarget(input.workflows);
-    if (target === undefined)
+    if (target === undefined) {
+      if (input.recover !== undefined) return input.recover();
       return denied(
-        'No retry-eligible failed stage. To continue eligible blocked agent work, use /changes followed by instructions.',
+        'No retry-eligible failed stage or unrouted terminal run. To continue eligible blocked agent work, use /changes followed by instructions.',
       );
+    }
     await input.retry(target.workflowInstanceId);
     return { applied: true };
   }

@@ -16,7 +16,7 @@ import {
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
 import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
-import { createActivationScheduler } from '../../../src/control-plane/index.js';
+import { ControlEventType, createActivationScheduler } from '../../../src/control-plane/index.js';
 import {
   isActiveRunStatus,
   ProviderQuotaExceededFailureKind,
@@ -66,7 +66,12 @@ const context = (commandId: string) => ({
   actor: { kind: 'system' as const, id: 'test' },
 });
 
-async function fixture(simulateCompletedRuns = true, runner?: Runner, controls = false) {
+async function fixture(
+  simulateCompletedRuns = true,
+  runner?: Runner,
+  controls = false,
+  fallback?: Runner,
+) {
   const home = await mkdtemp(join(tmpdir(), 'wake-delegation-'));
   homes.push(home);
   const journal = new FaultInjectingJournal({ now: () => new Date() });
@@ -79,8 +84,8 @@ async function fixture(simulateCompletedRuns = true, runner?: Runner, controls =
   };
   const config = parseRootConfig({
     execution: {
-      agentRunners: { fake: { kind: 'fake' } },
-      runnerPools: { standard: ['fake'] },
+      agentRunners: { fake: { kind: 'fake' }, ...(fallback ? { fallback: { kind: 'fake' } } : {}) },
+      runnerPools: { standard: fallback ? ['fake', 'fallback'] : ['fake'] },
       defaultRunnerPool: 'standard',
     },
     controlPlane: {
@@ -114,7 +119,9 @@ async function fixture(simulateCompletedRuns = true, runner?: Runner, controls =
       journal,
       projections: new InMemoryProjectionStore(),
       checkpoints: new InMemoryCheckpointStore(),
-      ...(runner === undefined ? {} : { decorateRunner: () => runner }),
+      ...(runner === undefined
+        ? {}
+        : { decorateRunner: (_configured, name) => (name === 'fallback' ? fallback! : runner) }),
     });
     if (simulateCompletedRuns)
       vi.spyOn(
@@ -1516,4 +1523,229 @@ it('returns the delivery-availability reason when an ancestor prevents operator 
   expect(
     (await f.root.orchestration.get(parent.workflowInstanceId))!.delegationAttention,
   ).toBeUndefined();
+});
+
+it.each(['scheduler', 'conversation', 'api'] as const)(
+  'recovers a quota-stopped delegation attention through %s and dispatches the next pool runner',
+  async (surface) => {
+    const runner = new ScriptedDelegationRunner();
+    const fallback = new ScriptedDelegationRunner('fallback');
+    const f = await fixture(true, runner, false, fallback);
+    const ancestor = await complete(f.root, await start(f.root, 'quota-root'));
+    const probe = await start(f.root, 'quota-probe', 'child');
+    const outer = await f.root.orchestration['delegatedWork'].reserve(
+      {
+        workflowInstanceId: ancestor.workflowInstanceId,
+        activationId: ancestor.pendingActivation!.activationId,
+        runId: 'root-run',
+      },
+      'outer-cohort',
+      [
+        { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'upstream' },
+        {
+          ...assignment(ancestor.workflowDefinitionFingerprint!, []),
+          assignmentId: 'parent',
+          workflowName: workflowName('parent'),
+          prerequisites: [
+            { assignmentId: 'upstream', output: 'findings', condition: 'accepted-output' },
+          ],
+        },
+      ],
+      context('reserve-outer'),
+      { maxDepth: 2, maxDescendants: 4 },
+    );
+    const upstream = (await f.root.orchestration.get(outer.children[0]!.workflowInstanceId))!;
+    await publish(f.root, upstream, 'upstream-findings');
+    await complete(f.root, upstream);
+    await f.root.orchestration.reconcileChildCompletions(context('start-dependent-parent'));
+    const parent = await complete(
+      f.root,
+      (await f.root.orchestration.get(outer.children[1]!.workflowInstanceId))!,
+    );
+    const batch = await f.root.orchestration['delegatedWork'].reserve(
+      {
+        workflowInstanceId: parent.workflowInstanceId,
+        activationId: parent.pendingActivation!.activationId,
+        runId: 'delegating-run',
+      },
+      'quota-cohort',
+      [
+        { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'asker' },
+        { ...assignment(probe.workflowDefinitionFingerprint!, []), assignmentId: 'steady' },
+      ],
+      context('quota-reserve'),
+      { maxDepth: 2, maxDescendants: 4 },
+    );
+    const asker = (await f.root.orchestration.get(batch.children[0]!.workflowInstanceId))!;
+    await f.root.orchestration.acceptOutcome(
+      {
+        workflowInstanceId: asker.workflowInstanceId,
+        activationId: asker.pendingActivation!.activationId,
+        outcome: { kind: 'blocked', data: { status: 'NEEDS_CLARIFICATION' } },
+      },
+      context('quota-child-question'),
+    );
+    await f.root.orchestration.reconcileChildCompletions(context('quota-attention'));
+    const attending = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+    expect(attending.delegationAttention).toBeDefined();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runner.scripts.push(async () => {
+      await held;
+      return {
+        transport: RunStatus.Failed,
+        runner: 'fake',
+        output: '',
+        failure: { kind: ProviderQuotaExceededFailureKind, message: 'Quota exhausted' },
+      };
+    });
+    await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+    const run = (await f.root.execution.list(attending.pendingActivation!.activationId))[0]!;
+    expect(
+      await f.root.orchestration.applyConversationCommandWithFeedback(
+        parent.workItemId,
+        {
+          body: '/retry',
+          actorId: 'maintainer',
+          capabilities: ['operator-surface'],
+          authorized: true,
+        },
+        context('still-running'),
+      ),
+    ).toEqual({
+      applied: false,
+      reason:
+        'No retry-eligible failed stage or unrouted terminal run. To continue eligible blocked agent work, use /changes followed by instructions.',
+    });
+    release();
+    await terminalRun(f.root, run.runId);
+    await f.root.work.freeze(upstream.workItemId, context('hold-upstream'));
+    expect(await f.root.orchestration.listPendingActivations(parent.workItemId)).toHaveLength(0);
+    expect((await terminalRun(f.root, run.runId)).outcome).toMatchObject({
+      kind: 'failed',
+      data: { reason: 'runner-quota-exceeded' },
+    });
+    if (surface === 'scheduler') {
+      await f.root.advanceOnce({ workItemId: parent.workItemId, maxProgress: 1 });
+    } else if (surface === 'conversation') {
+      expect(
+        await f.root.orchestration.applyConversationCommandWithFeedback(
+          parent.workItemId,
+          {
+            body: '/retry',
+            actorId: 'maintainer',
+            capabilities: ['operator-surface'],
+            authorized: true,
+          },
+          context('quota-operator-retry'),
+        ),
+      ).toEqual({ applied: true });
+    } else {
+      const apps = await createSurfaceApplications(f.root);
+      expect(
+        await apps.api.work.retry!(toWorkItemKey(parent.workItemId), {
+          idempotencyKey: 'quota-retry',
+        }),
+      ).toMatchObject({ status: 'accepted' });
+    }
+    const retried = (await f.root.orchestration.get(parent.workflowInstanceId))!;
+    expect(retried.pendingActivation!.activationId).not.toBe(
+      attending.pendingActivation!.activationId,
+    );
+    expect(retried.delegationAttention!.activationId).toBe(retried.pendingActivation!.activationId);
+    expect(retried.pendingActivation!.runnerQuotaRetry).toBe(true);
+    expect(
+      await f.root.orchestration.openDelegationAttention(
+        parent.workflowInstanceId,
+        retried.pendingActivation!.activationId,
+      ),
+    ).toMatchObject({ activationId: retried.pendingActivation!.activationId });
+    expect(retried.retryCounts).toEqual(attending.retryCounts);
+    const events = await f.journal.readAll(0);
+    expect(
+      events.filter(
+        (entry) => entry.event.eventType === OrchestrationEventType.ActivityRetriedForRunnerQuota,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter((entry) => entry.event.eventType === OrchestrationEventType.RetryCounted),
+    ).toHaveLength(0);
+    expect(events.some((entry) => entry.event.eventType === ControlEventType.RunnerPaused)).toBe(
+      true,
+    );
+    expect(await f.root.orchestration.listPendingActivations(parent.workItemId)).toHaveLength(1);
+    const dispatchResult = await f.root.advanceOnce({
+      workItemId: parent.workItemId,
+      maxProgress: 1,
+    });
+    const next = (await f.root.execution.list(retried.pendingActivation!.activationId))[0]!;
+    expect(
+      next,
+      JSON.stringify({
+        dispatchResult,
+        view: await f.root.orchestration.get(parent.workflowInstanceId),
+      }),
+    ).toBeDefined();
+    expect(next.runner?.name).toBe('fallback');
+    await terminalRun(f.root, next.runId);
+    expect(fallback.requests).toHaveLength(1);
+  },
+);
+
+it.each(['frozen', 'deleted', 'closed'] as const)(
+  'both retry surfaces refuse %s work accurately',
+  async (state) => {
+    const f = await fixture();
+    const parent = await start(f.root, 'retry-unavailable');
+    if (state === 'frozen') await f.root.work.freeze(parent.workItemId, context('freeze'));
+    if (state === 'deleted') await f.root.work.delete(parent.workItemId, context('delete'));
+    if (state === 'closed') await f.root.work.close(parent.workItemId, 'done', context('close'));
+    const reason = state === 'closed' ? 'Work item is not open' : `Work item is ${state}`;
+    expect(
+      await f.root.orchestration.applyConversationCommandWithFeedback(
+        parent.workItemId,
+        {
+          body: '/retry',
+          actorId: 'maintainer',
+          capabilities: ['operator-surface'],
+          authorized: true,
+        },
+        context('retry-unavailable'),
+      ),
+    ).toEqual({ applied: false, reason });
+    const apps = await createSurfaceApplications(f.root);
+    expect(
+      await apps.api.work.retry!(toWorkItemKey(parent.workItemId), {
+        idempotencyKey: 'retry-unavailable',
+      }),
+    ).toMatchObject({ conflict: true, detail: reason });
+  },
+);
+
+it('both retry surfaces refuse already-routed runs without claiming recovery', async () => {
+  const f = await fixture();
+  const parent = await start(f.root, 'routed-parent', 'child');
+  await complete(f.root, parent);
+  const reason =
+    'No retry-eligible failed stage or unrouted terminal run. To continue eligible blocked agent work, use /changes followed by instructions.';
+  expect(
+    await f.root.orchestration.applyConversationCommandWithFeedback(
+      parent.workItemId,
+      {
+        body: '/retry',
+        actorId: 'maintainer',
+        capabilities: ['operator-surface'],
+        authorized: true,
+      },
+      context('retry-routed'),
+    ),
+  ).toEqual({ applied: false, reason });
+  const apps = await createSurfaceApplications(f.root);
+  expect(
+    await apps.api.work.retry!(toWorkItemKey(parent.workItemId), {
+      idempotencyKey: 'retry-routed',
+    }),
+  ).toMatchObject({ conflict: true, detail: reason });
 });

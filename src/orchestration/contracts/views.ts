@@ -33,6 +33,8 @@ export interface ActivityActivationView {
   readonly followOnIndex?: number;
   readonly supplemental?: boolean;
   readonly watchDriven?: true;
+  /** Derived only from the durable quota retry decision; cleared when the run starts. */
+  readonly runnerQuotaRetry?: true;
 }
 
 export interface SignalExpectationView {

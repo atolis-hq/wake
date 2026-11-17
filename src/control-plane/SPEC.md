@@ -72,3 +72,11 @@ Owns `controlPlane`, including dispatch limits, schedules, and resident-loop
 backoff.
 
 E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003, E2E-CONTROL-004.
+
+### Delegation attention quota recovery
+
+The recovery candidate set includes ungated pending attention activations for
+quota outcomes only. A durable quota re-request continues the admitted attention
+attempt without consuming route retries; never-run ordinary work remains fenced.
+Operator retry uses the same quota decision from Run evidence, through a
+Bootstrap-composed port shared by conversation commands and the Work API.

@@ -202,7 +202,7 @@ export class DelegationAttention {
         ? [event.payload]
         : [],
     );
-    return { ...request, responses };
+    return { ...request, activationId: attention.activationId, responses };
   }
 
   /**

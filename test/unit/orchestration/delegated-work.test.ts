@@ -2266,6 +2266,30 @@ const failingPair = (fingerprint: string, id: string) => [
   },
 ];
 
+it('re-requests a quota-stopped attention activation without spending retry budget', async () => {
+  const fixture = attentionBuild();
+  const { caller, fingerprint } = await startParent(fixture);
+  const reservation = await fixture.service['delegatedWork'].reserve(
+    caller,
+    'cohort-1',
+    [...failingPair(fingerprint, 'a'), assignment(fingerprint, 'independent')],
+    context('reserve'),
+  );
+  await complete(fixture, reservation.children[0]!.workflowInstanceId, 'failed');
+  await fixture.service.reconcileChildCompletions(context('r1'));
+  await fixture.service.reconcileChildCompletions(context('r2'));
+  const attending = await parentOf(fixture);
+  const attentionId = attending.delegationAttention!.activationId;
+  await fixture.service.retryRunnerQuotaFailure(
+    attending.workflowInstanceId,
+    { activationId: attentionId, runId: 'run-attention', runnerName: 'fake', message: 'quota' },
+    context('attention-quota'),
+  );
+  const after = await parentOf(fixture);
+  expect(after.pendingActivation!.activationId).not.toBe(attentionId);
+  expect(after.retryCounts).toEqual(attending.retryCounts);
+});
+
 it('coalesces failures into one attention, retains a finishing sibling and never joins successfully (DC-10, DC-32)', async () => {
   const fixture = attentionBuild();
   const { caller, fingerprint } = await startParent(fixture);

@@ -825,6 +825,62 @@ describe('advanceOnce', () => {
     ]);
   });
 
+  it.each([
+    ['quota outcome', { kind: 'failed', data: { reason: 'runner-quota-exceeded', message: 'q' } }],
+    ['ordinary failed outcome', { kind: 'failed', data: { reason: 'tests failed' } }],
+  ])(
+    'recovers a gate-hidden finished run (%s) only for quota; held work is never dispatched',
+    async (name, outcome) => {
+      const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
+      const workflow = {
+        workflowInstanceId: 'workflow-1',
+        workItemId: 'work-1',
+        orchestrationGroupId: 'group-1',
+        acceptedOutcomes: [],
+        delegationAttention: { activationId: 'activation-1' },
+      } as unknown as WorkflowInstanceView;
+      const accepted: unknown[] = [];
+      const retried: unknown[] = [];
+      const advance = createAdvanceOnce(
+        {
+          reconcileChildCompletions: async () => undefined,
+          // The delegation gate hides the parent from ordinary dispatch.
+          listPendingActivations: async () => [],
+          listRecoverableActivations: async () => [{ workflow, activation }],
+          listWaiting: async () => [],
+          acceptOutcome: async (...input: unknown[]) => {
+            accepted.push(input);
+            return workflow;
+          },
+          markActivationStarted: async () => workflow,
+          retryRunnerQuotaFailure: async (...input: unknown[]) => {
+            retried.push(input);
+            return workflow;
+          },
+        } as never,
+        {
+          attempt: async () => {
+            throw new Error('A gate-hidden activation must never be dispatched');
+          },
+          list: async () =>
+            [{ runId: 'run-1', status: 'succeeded', runner: { name: 'codex' }, outcome }] as never,
+        },
+        { correlationsForWork: async () => [] } as never,
+        { now: () => new Date('2026-08-19T00:00:00.000Z') },
+        { ids: { next: () => 'command-1' } as never },
+      );
+
+      const result = await advance({ maxProgress: 1 });
+      if (name === 'quota outcome') {
+        expect(result.kind).toBe('progressed');
+        expect(retried).toHaveLength(1);
+      } else {
+        expect(retried).toEqual([]);
+        expect(accepted).toEqual([]);
+      }
+    },
+  );
+
   it('accepts an ordinary non-quota failed outcome through acceptOutcome unchanged', async () => {
     const activation = { activationId: 'activation-1' } as unknown as ActivityActivationView;
     const workflow = {

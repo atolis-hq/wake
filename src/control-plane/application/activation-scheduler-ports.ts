@@ -26,6 +26,13 @@ export interface OrchestrationPort {
       priority?: PendingActivationPriority;
     }[]
   >;
+  /** Pending activations without the delegation gate, for recovering already-finished runs. */
+  listRecoverableActivations?(workItemId?: string): Promise<
+    readonly {
+      workflow: WorkflowInstanceView;
+      activation: ActivityActivationView;
+    }[]
+  >;
   listWaiting(): Promise<readonly (WorkflowInstanceView | null)[]>;
   deliveryQaPreparation?(workflowInstanceId: string): Promise<ExecutionCandidate | undefined>;
   deliveryMaintenancePreparation?(
