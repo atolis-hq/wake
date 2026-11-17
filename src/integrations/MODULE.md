@@ -93,7 +93,11 @@ authority denials through the live work-detail query.
 Completed-child recovery verifies the current provider head against the original
 child-owned repository, branch and logical base before requesting review. A changed
 head also requires provider-backed ancestry from the producing Run's attested revision;
-unavailable evidence fails closed. Only an
+unavailable evidence fails closed. For recovery and its recovered review subject only, a
+provider base that differs from the recorded stacked base is accepted when the child's
+latest input receipt names the upstream output on that base branch, the upstream PR is
+observed merged, and the provider confirms the upstream PR targeted the new base
+(repeated along merged ancestors). Identity rejections name the failed verification. Only an
 accepted successful configured recovery review attesting that exact head can
 refresh the original output's revision. Ownership and provider verification remain
 required, as do the producing workflow's approval policy and exact-head checks for

@@ -4,6 +4,7 @@ import type { DelegationArtifacts, DelegationRepositories } from '../contracts/d
 import type { DelegationInputs, DelegationReservation } from '../contracts/delegation.js';
 import { OrchestrationEventType } from '../contracts/events.js';
 import { DelegationRecoveryStatus, PrerequisiteBlockCode } from '../contracts/vocabulary.js';
+import { latestDelegationInputs } from './delegation-consumed-inputs.js';
 import type { DelegationLedger } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import { PrerequisiteReadiness, type PrerequisiteAdmission } from './prerequisite-readiness.js';
@@ -28,15 +29,7 @@ export class DelegationPrerequisites {
   ) {}
 
   async inputs(id: string): Promise<DelegationInputs | undefined> {
-    return (await this.ledger.events())
-      .flatMap(({ event }) =>
-        (event.eventType === OrchestrationEventType.DelegationInputsResolved ||
-          event.eventType === OrchestrationEventType.DelegationInputsRefreshed) &&
-        event.payload.childWorkItemId === id
-          ? [event.payload]
-          : [],
-      )
-      .at(-1);
+    return latestDelegationInputs(await this.ledger.events(), id);
   }
 
   async read(workSnapshot?: DeliverySnapshot): Promise<PrerequisiteReadiness> {

@@ -125,6 +125,8 @@ export type {
   DelegationSubmission,
 } from './contracts/delegation.js';
 
+export { createDelegationInputsReader } from './application/delegation-consumed-inputs.js';
+
 export { createDelegationReviewPolicy } from './application/delegation-review-policy.js';
 
 export { delegationRecoverySchema } from './contracts/delegation.js';

@@ -108,14 +108,20 @@ async function qualifyingChange(
           entry.changeOutputs?.some((source) => source.name === output.name) === true),
     )
     .at(-1);
-  let source = run === undefined ? undefined : runSource(run, output.name);
-  if (run === undefined || source === undefined) return null;
-  const original = source;
-  source = await reviewSource(input, child, output, { ...latest, run }, source, currentHead);
-  if (source === undefined) return null;
+  const original = run === undefined ? undefined : runSource(run, output.name);
+  if (run === undefined || original === undefined) return null;
+  const source = await reviewSource(
+    input,
+    child,
+    output,
+    { ...latest, run },
+    original,
+    currentHead,
+  );
   const { assignment, branch, revision } = source;
   const resource = await verifiedReviewChange(
     input,
+    child,
     latest.report,
     source,
     original.revision,
