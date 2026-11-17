@@ -11,6 +11,9 @@ it.each([
   'settled-dependent',
   'no-dependent',
   'running-child',
+  'refresh',
+  'refresh-named',
+  'missing-output',
 ])('limits settled recovery to a live matching dependency (%s)', async (scenario) => {
   const child = { workItemId: 'upstream', workflowInstanceId: 'upstream-workflow' };
   const original = { cohortId: 'original', parentWorkflowInstanceId: 'parent', children: [child] };
@@ -65,12 +68,17 @@ it.each([
   const recover = delegated.recoverableChild(
     { workflowInstanceId: 'parent' } as never,
     'upstream',
-    'change',
+    scenario.startsWith('refresh') ? 'refresh' : 'review',
+    scenario === 'refresh' || scenario === 'missing-output' ? undefined : 'change',
   );
   if (scenario === 'matching')
     await expect(recover).resolves.toEqual({ reservation: original, child });
-  else
-    await expect(recover).rejects.toThrow(
-      scenario === 'running-child' ? 'unresolved runs' : 'requires a live dependent cohort',
-    );
+  else await expect(recover).rejects.toThrow(rejectionReason(scenario));
 });
+
+function rejectionReason(scenario: string): string {
+  if (scenario.startsWith('refresh')) return 'review recovery only';
+  if (scenario === 'missing-output') return 'requires a named output';
+  if (scenario === 'running-child') return 'unresolved runs';
+  return 'requires a live dependent cohort';
+}

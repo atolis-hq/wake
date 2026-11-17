@@ -555,6 +555,23 @@ it.each(['recover', 'in-review', 'terminal', 'stale', 'completed-head', 'settled
             },
             context('replace-failed-stack'),
           );
+          const settledInputs = (
+            await root.orchestration.deliveryTree(parentWork)
+          )[0]!.children.find((entry) => entry.assignmentId === 'two')!.consumedInputs!;
+          await expect(
+            root.orchestration.recoverDelegation(
+              recoveryCaller,
+              {
+                action: 'refresh',
+                childWorkItemId: child('two').workItemId,
+                expectedRevision: JSON.stringify(settledInputs.consumed),
+              },
+              context('reject-settled-refresh'),
+            ),
+          ).rejects.toThrow('review recovery only');
+          expect((await root.orchestration.get(child('two').workflowInstanceId))!.status).toBe(
+            'completed',
+          );
           children = [...children.slice(0, 2), ...replacement.children];
           await publish();
           await parentFinished;

@@ -125,7 +125,8 @@ export class DelegationGate {
   ): Promise<boolean> {
     if (abandoned !== true) return false;
     if (view.parentWorkflowInstanceId === undefined) return true;
-    // Only the explicitly requested review may advance; settled primary outcomes stay historical.
+    // Committed read-only reviews may finish after settlement; only review evidence changes.
+    // Settled primary outcomes and unrelated reviews remain historical.
     const recovery = currentReviewRefreshes(await this.repository.events()).get(
       view.parentWorkflowInstanceId,
     );

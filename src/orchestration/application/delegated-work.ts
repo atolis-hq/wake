@@ -20,6 +20,7 @@ import type {
   DelegatedAssignment,
   DelegationCaller,
   DelegationLimits,
+  DelegationRecovery,
   DelegationReservation,
   DelegationResult,
 } from '../contracts/delegation.js';
@@ -35,6 +36,7 @@ import {
   ApprovalAuthorityKind,
   DelegationConflictCode,
   DelegationPrerequisiteCondition,
+  DelegationRecoveryAction,
   WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import { nextOrdinal } from '../domain/decision-events.js';
@@ -174,7 +176,12 @@ export class DelegatedWork {
     );
   }
 
-  async recoverableChild(parent: WorkflowInstanceView, id: string, output?: string) {
+  async recoverableChild(
+    parent: WorkflowInstanceView,
+    id: string,
+    action: DelegationRecovery['action'],
+    output?: string,
+  ) {
     const events = await this.ledger.events();
     const reservation = reservationsOf(events).find(
       (entry) =>
@@ -182,7 +189,7 @@ export class DelegatedWork {
         entry.children.some((child) => child.workItemId === id),
     );
     if (reservation === undefined) throw new Error('Child is outside this parent delegation');
-    assertRecoveryCohort(events, reservation, id, output);
+    assertRecoveryCohort(events, reservation, id, action, output);
     const child = reservation.children.find((entry) => entry.workItemId === id)!;
     const view = (await this.repository.loadRequired(child.workflowInstanceId)).view;
     if (
@@ -1221,7 +1228,7 @@ function hasLiveDependent(
   events: Awaited<ReturnType<DelegationLedger['events']>>,
   parentId: WorkflowInstanceId,
   childId: string,
-  output: string | undefined,
+  output: string,
 ): boolean {
   return unsettledReservations(events).some(
     (live) =>
@@ -1229,8 +1236,7 @@ function hasLiveDependent(
       live.children.some((dependent) =>
         dependent.prerequisites?.some(
           (edge, index) =>
-            dependent.prerequisiteWorkItemIds?.[index] === childId &&
-            (output === undefined || edge.output === output),
+            dependent.prerequisiteWorkItemIds?.[index] === childId && edge.output === output,
         ),
       ),
   );
@@ -1240,12 +1246,17 @@ function assertRecoveryCohort(
   events: Awaited<ReturnType<DelegationLedger['events']>>,
   reservation: DelegationReservation,
   childId: string,
+  action: DelegationRecovery['action'],
   output: string | undefined,
 ): void {
-  if (
-    isSettled(events, reservation) &&
-    !hasLiveDependent(events, reservation.parentWorkflowInstanceId, childId, output)
-  )
+  if (!isSettled(events, reservation)) return;
+  if (action !== DelegationRecoveryAction.Review)
+    throw new Error(
+      'Settled delegation children support review recovery only; refresh a live dependent child instead',
+    );
+  if (output === undefined)
+    throw new Error('Settled delegation review recovery requires a named output');
+  if (!hasLiveDependent(events, reservation.parentWorkflowInstanceId, childId, output))
     throw new Error(
       'Settled delegation recovery requires a live dependent cohort for the child output',
     );
