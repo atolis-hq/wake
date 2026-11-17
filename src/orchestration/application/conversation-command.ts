@@ -6,7 +6,6 @@ import {
   ApprovalAuthorityKind,
   ConversationBuiltInCommand,
   ConversationSurfaceCapability,
-  WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import {
   isGroupBudgetExtensionEligible,
@@ -53,6 +52,7 @@ interface BuiltInConversationCommandInput {
     id: WorkflowInstanceId,
     outcome: typeof ActivityOutcomeKind.Done | typeof ActivityOutcomeKind.Rejected,
   ) => Promise<boolean>;
+  readonly recover?: () => Promise<ConversationCommandResult>;
   readonly retry: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly restart: (id: WorkflowInstanceId) => Promise<unknown>;
   readonly extend: (id: WorkflowInstanceId) => Promise<unknown>;
@@ -100,18 +100,9 @@ export async function applyBuiltInConversationCommand(
   if (input.command === ConversationBuiltInCommand.Retry) {
     const target = selectOperatorRetryTarget(input.workflows);
     if (target === undefined) {
-      const unrouted = input.workflows.find(
-        (workflow) =>
-          workflow.status === WorkflowStatus.Active &&
-          workflow.pendingActivation !== undefined &&
-          !workflow.acceptedOutcomes.includes(workflow.pendingActivation.activationId),
-      );
-      if (unrouted !== undefined)
-        return denied(
-          'The current activity has no routed outcome yet (it may still be running). If its run already finished, Wake routes it, or re-requests it on another runner after a quota failure, on its next control-plane pass regardless of delegation state; /retry applies once a failed stage is recorded.',
-        );
+      if (input.recover !== undefined) return input.recover();
       return denied(
-        'No retry-eligible failed stage. To continue eligible blocked agent work, use /changes followed by instructions.',
+        'No retry-eligible failed stage or unrouted terminal run. To continue eligible blocked agent work, use /changes followed by instructions.',
       );
     }
     await input.retry(target.workflowInstanceId);

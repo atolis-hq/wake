@@ -316,3 +316,14 @@ it does not construct envelope metadata or own durable subscriptions.
   — is explicitly out of scope; Orchestration exposes the pure
   candidate-matching function and lets the calling module decide when to
   invoke it.
+
+### Operator recovery of unrouted Runs
+
+When no routed failed stage is retry-eligible, `/retry` consults the composed
+terminal Run recovery port. A quota-stopped attention Run records
+`ActivityRetriedForRunnerQuota` without `RetryCounted`; replay transfers attention
+to the new activation. Its derived `runnerQuotaRetry` marker admits only that
+attention re-request through a prerequisite hold and is cleared when execution
+starts. Frozen, deleted, non-open and unavailable delivery work stays held.
+Other terminal outcomes retain ordinary delegation admission. Refusals distinguish
+unavailable work, no unrouted terminal Run, and delegation-held evidence.

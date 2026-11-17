@@ -8,7 +8,11 @@ interface ExecutionRunLookup {
 
 /** Held work only recovers a quota stop; routing or blocking on other results stays gated. */
 export function isHeldRecoverable(run: RunView): boolean {
-  return run.status === RunStatus.Succeeded && isRunnerQuotaOutcome(run.outcome!);
+  return (
+    run.status === RunStatus.Succeeded &&
+    run.outcome !== undefined &&
+    isRunnerQuotaOutcome(run.outcome)
+  );
 }
 
 /** Pending activations the delegation gate hides, minus frozen or deleted work. */

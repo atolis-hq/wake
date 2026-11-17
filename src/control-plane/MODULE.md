@@ -88,3 +88,9 @@ E2E-CONTROL-001, E2E-CONTROL-002, E2E-CONTROL-003, E2E-CONTROL-004.
 The Triggers surface exposes operator standing instructions through each configured explicit contextScope. No scope is inferred for a trigger. Artifacts owns edits, revision concurrency, storage and read-only MCP semantics; Bootstrap binds trusted operator commands and captures revisions for execution.
 
 Trigger inspection surfaces operator documents orphaned by removal or renaming of configured scopes. Reusing a named scope reconnects its existing document; inspection never invents or registers scopes.
+
+Quota recovery also considers attention activations hidden by delegation
+admission, excluding frozen and deleted work. Other hidden outcomes stay retained.
+The public operator Run recovery adapter supplies authoritative execution evidence
+to Orchestration's retry command and the Work API; ordinary routed-stage retry
+selection keeps its existing precedence.

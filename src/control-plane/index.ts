@@ -55,3 +55,5 @@ export * from './application/trigger-invocation-projection.js';
 export * from './application/trigger-projection.js';
 
 export * from './domain/open-work-policy.js';
+
+export * from './application/operator-run-recovery.js';

@@ -161,7 +161,7 @@ export function createSurfaceWorkApplications(
       if (work.frozen) return retryIneligible('Work item is frozen');
       if (work.state !== WorkStatus.Open) return retryIneligible('Work item is not open');
       const target = selectOperatorRetryTarget(workflows);
-      if (target === undefined) return retryIneligible('Workflow is not retry eligible');
+      if (target === undefined) return recoverRetry(root, workflows, command.idempotencyKey, now);
       try {
         await root.orchestration.retryBlockedFailedStage(
           target.workflowInstanceId,
@@ -638,4 +638,19 @@ function canContinueWork(
     !work.deleted &&
     selectChangesResumeTargets(workflows).length > 0
   );
+}
+
+async function recoverRetry(
+  root: CompositionRoot,
+  workflows: readonly WorkflowInstanceView[],
+  idempotencyKey: string,
+  now: () => string,
+) {
+  const recovered = await root.orchestration.recoverUnroutedRun?.(
+    workflows,
+    commandContext(idempotencyKey, now),
+  );
+  return recovered?.applied
+    ? accepted(idempotencyKey, now())
+    : retryIneligible(recovered?.reason ?? 'Workflow is not retry eligible');
 }

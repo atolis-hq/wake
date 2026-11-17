@@ -57,3 +57,31 @@ it('admits a batch against one Work synchronisation, and none when nothing is un
   await batch.filterAvailable([views.at(-1)!, null], (view) => view);
   expect(work.deliverySnapshot).toHaveBeenCalledTimes(1);
 });
+
+it('admits only a durably re-requested attention activation through a prerequisite hold', async () => {
+  const work = workOf({ item: { state: 'open' } });
+  const batch = new DelegationGate(
+    {} as never,
+    work,
+    async () => new Map([['item', { reason: 'Upstream evidence changed', abandoned: false }]]),
+  );
+  const attention = {
+    workItemId: 'item',
+    delegationFence: { activationId: 'delegator' },
+    delegationAttention: { activationId: 'attention' },
+    pendingActivation: { activationId: 'attention' },
+  } as WorkflowInstanceView;
+  const retried = {
+    ...attention,
+    pendingActivation: { ...attention.pendingActivation!, runnerQuotaRetry: true },
+  } as WorkflowInstanceView;
+  const unrelated = {
+    ...retried,
+    pendingActivation: { ...retried.pendingActivation!, activationId: 'new-ordinary-work' },
+  } as WorkflowInstanceView;
+  expect(await batch.filterAvailable([attention, retried, unrelated], (view) => view)).toEqual([
+    retried,
+  ]);
+  const frozen = new DelegationGate({} as never, workOf({ item: { state: 'open', frozen: true } }));
+  expect(await frozen.filterAvailable([retried], (view) => view)).toEqual([]);
+});

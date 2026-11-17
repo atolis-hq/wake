@@ -29,12 +29,20 @@ export class DelegationGate {
   }
 
   /** Commit-boundary check for one instance; batches use `filterAvailable`. */
-  async unavailable(view: WorkflowInstanceView): Promise<boolean> {
+  async unavailable(view: WorkflowInstanceView, dispatch = false): Promise<boolean> {
     const snapshot = await this.work.deliverySnapshot();
     return (
       this.heldBy(snapshot, view) ||
-      (await this.prerequisiteReasons?.([view.workItemId], snapshot))?.get(view.workItemId)
-        ?.reason !== undefined
+      (!(dispatch && this.continuesQuotaAttention(view)) &&
+        (await this.prerequisiteReasons?.([view.workItemId], snapshot))?.get(view.workItemId)
+          ?.reason !== undefined)
+    );
+  }
+
+  private continuesQuotaAttention(view: WorkflowInstanceView): boolean {
+    return (
+      view.pendingActivation?.runnerQuotaRetry === true &&
+      view.delegationAttention?.activationId === view.pendingActivation.activationId
     );
   }
 
@@ -144,7 +152,8 @@ export class DelegationGate {
     return unfenced.filter(
       (item) =>
         !this.heldBy(snapshot, viewOf(item)!) &&
-        reasons?.get(viewOf(item)!.workItemId)?.reason === undefined,
+        (reasons?.get(viewOf(item)!.workItemId)?.reason === undefined ||
+          this.continuesQuotaAttention(viewOf(item)!)),
     );
   }
 }

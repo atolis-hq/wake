@@ -150,6 +150,8 @@ function applyActivityFact(state: MutableWorkflowInstance, event: ActivityFact):
     case OrchestrationEventType.ActivityRetriedForRunnerQuota:
       state.acceptedOutcomes.push(event.payload.activationId);
       updateActivationStatus(state, event.payload.activationId, ActivityActivationStatus.Completed);
+      if (state.pendingActivation?.activationId === event.payload.activationId)
+        state.pendingActivation = { ...state.pendingActivation, runnerQuotaRetry: true };
       return;
     case OrchestrationEventType.ActivityWaiting:
       applyActivityWaiting(state, event);
@@ -377,19 +379,37 @@ function updateActivationStatus(
   activationId: ActivationId,
   status: ActivityActivationView['status'],
 ): void {
-  if (state.pendingActivation?.activationId === activationId)
-    state.pendingActivation = { ...state.pendingActivation, status };
+  if (state.pendingActivation?.activationId === activationId) {
+    const { runnerQuotaRetry: _retry, ...activation } = state.pendingActivation;
+    state.pendingActivation = { ...activation, status };
+  }
+}
+
+function continueQuotaAttention(
+  state: MutableWorkflowInstance,
+  activationId: ActivationId,
+): boolean {
+  const previous = state.pendingActivation;
+  if (previous?.runnerQuotaRetry !== true) return false;
+  if (
+    state.delegationAttention !== undefined &&
+    state.delegationAttention.activationId === previous.activationId
+  )
+    state.delegationAttention = { ...state.delegationAttention, activationId };
+  return true;
 }
 
 function applyActivityRequested(
   state: MutableWorkflowInstance,
   payload: FactsOf<typeof OrchestrationEventType.ActivityRequested>['payload'],
 ): void {
+  const quotaRetry = continueQuotaAttention(state, payload.activationId);
   state.status = orchestrationStatusTransitions[OrchestrationEventType.ActivityRequested]!;
   delete state.waitingFor;
   delete state.deliveryGateBlock;
   state.pendingActivation = {
     ...(payload.notBefore === undefined ? {} : { notBefore: payload.notBefore }),
+    ...(quotaRetry ? { runnerQuotaRetry: true as const } : {}),
     activationId: payload.activationId,
     ordinal: payload.ordinal,
     activity: payload.activity,

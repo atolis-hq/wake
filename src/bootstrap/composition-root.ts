@@ -22,6 +22,7 @@ import {
   createControlPlaneService,
   createDurableRunnerIneligibility,
   createRunnerControlService,
+  recoverOperatorRun,
   type ActivationScheduler,
   type ActivationSchedulerSubscriber,
   type IntakePipeline,
@@ -438,6 +439,9 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
         }),
     },
   });
+  orchestration.setTerminalRunRecovery((workflows, context) =>
+    recoverOperatorRun(orchestration, execution, workflows, context),
+  );
   orchestration.setWatchChildCancellation({
     cancelSupersededWatchChildren: (workflowInstanceIds) =>
       execution.cancelActive(workflowInstanceIds, ExecutionCancellationReason.WorkflowSuperseded),

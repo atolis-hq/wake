@@ -114,6 +114,31 @@ export class OrchestrationService {
   private readonly advanceWorkflow: AdvanceWorkflow;
   private readonly childWorkflows: RequestChild;
   private readonly projections: ProjectionStore | undefined;
+  private recoverTerminalRun:
+    | ((
+        workflows: readonly WorkflowInstanceView[],
+        context: CommandContext,
+      ) => Promise<ConversationCommandResult>)
+    | undefined;
+
+  setTerminalRunRecovery(recover: NonNullable<OrchestrationService['recoverTerminalRun']>): void {
+    this.recoverTerminalRun = recover;
+  }
+
+  recoverUnroutedRun(
+    workflows: readonly WorkflowInstanceView[],
+    context: CommandContext,
+  ): Promise<ConversationCommandResult> {
+    return (
+      this.recoverTerminalRun?.(workflows, context) ??
+      Promise.resolve({
+        applied: false,
+        reason:
+          'No retry-eligible failed stage. Terminal run recovery is unavailable. To continue eligible blocked agent work, use /changes followed by instructions.',
+      })
+    );
+  }
+
   private coordinateAcceptSignal: OperationCoordinator = (operation) => operation();
   private watchChildCancellation: WatchChildCancellation | undefined;
   private readonly claims: CoordinationClaims;
@@ -547,8 +572,8 @@ export class OrchestrationService {
     const approvalRejection = conversationApprovalRejection(command, input, workflows);
     if (approvalRejection !== undefined) return { applied: false, reason: approvalRejection };
     const work = await this.work.get(workItemId);
-    if (!isWorkControllable(work))
-      return { applied: false, reason: 'Work item must be open, unfrozen, and not deleted.' };
+    const workRejection = workControlRejection(work);
+    if (workRejection !== undefined) return { applied: false, reason: workRejection };
     if (!input.authorized && !isReviewConversationCommand(command))
       return { applied: false, reason: 'Verified repository work-control authority is required.' };
     // Explicit continuation invokes the owning recovery command; ordinary commands keep configured precedence.
@@ -581,6 +606,7 @@ export class OrchestrationService {
         );
         return updated.acceptedSignalIds.includes(context.commandId);
       },
+      recover: () => this.recoverUnroutedRun(workflows, context),
       retry: (id) => this.retryBlockedFailedStage(id, context),
       restart: (id) => this.restartBlockedFailedStage(id, context),
       extend: (id) =>
@@ -628,7 +654,7 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     const view = (await this.repository.load(workflowInstanceId)).view;
-    if (view !== null && (await this.delegationGate.unavailable(view))) return false;
+    if (view !== null && (await this.delegationGate.unavailable(view, true))) return false;
     return this.childWorkflows.validateChildDispatch(workflowInstanceId, context);
   }
 
@@ -683,7 +709,7 @@ export class OrchestrationService {
     context: CommandContext,
   ) {
     // Re-requesting the cohort's attention activation continues an admitted attempt, so the fence
-    // does not apply; dispatch of the re-request stays gated. Other activations keep the fence.
+    // does not apply. The durable re-request alone may pass a prerequisite hold at dispatch.
     const retry = () =>
       this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context);
     return this.transitionWatchChildren(context, async () =>
@@ -1006,8 +1032,12 @@ export const createOrchestrationService = (
   delegation?: DelegationDependenciesFactory,
 ) => new OrchestrationService(journal, work, definitions, projections, isAgentActivity, delegation);
 
-function isWorkControllable(work: WorkItemView | null): boolean {
-  return work !== null && !work.deleted && !work.frozen && work.state === WorkStatus.Open;
+function workControlRejection(work: WorkItemView | null): string | undefined {
+  if (work === null) return 'Work item was not found';
+  if (work.deleted) return 'Work item is deleted';
+  if (work.frozen) return 'Work item is frozen';
+  if (work.state !== WorkStatus.Open) return 'Work item is not open';
+  return undefined;
 }
 
 function conversationCommandAlreadyApplied(

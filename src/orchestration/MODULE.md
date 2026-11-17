@@ -242,3 +242,11 @@ Runs refresh output provenance; a later ordinary review gate supersedes that
 recovery evidence. Recovery invalidates old result selections. Explicit downstream
 recovery revalidates configured prerequisites and uses `refreshPrerequisites`;
 fresh receipts clear prior prerequisite blockers while retaining their history.
+
+A quota-stopped attention activation is re-requested through the recorded quota
+retry decision. Replay transfers attention to its new activation identity and
+marks that re-request until execution starts. Only that attention re-request may
+pass a prerequisite hold at dispatch; work availability and ordinary fences
+still apply. `/retry` uses a Bootstrap-supplied terminal Run recovery port when
+no routed failed stage is eligible. Both operator surfaces share that recovery;
+held non-quota Runs remain retained under the delegation gate.
