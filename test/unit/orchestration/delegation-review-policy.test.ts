@@ -76,7 +76,7 @@ it.each(['done', 'rejected', 'wrong-watch', 'new-wait', 'missing-child'])(
   },
 );
 
-it.each(['requested', 'done', 'failed', 'later-wait'])(
+it.each(['requested', 'done', 'failed', 'rejected', 'later-wait'])(
   'selects recovery reviews only after successful completion and until a newer gate (%s)',
   async (scenario) => {
     const subject = { name: 'change', reference: { revision: 'new' } };
@@ -104,7 +104,10 @@ it.each(['requested', 'done', 'failed', 'later-wait'])(
     const review = {
       workflowInstanceId: 'fresh-review',
       status: scenario === 'requested' ? 'active' : 'completed',
-      lastOutcome: { kind: scenario === 'failed' ? 'failed' : 'done' },
+      lastOutcome:
+        scenario === 'failed'
+          ? { kind: 'failed', data: { reason: 'runner-failed', message: 'exit 1' } }
+          : { kind: scenario === 'rejected' ? 'rejected' : 'done', data: { status: 'DONE' } },
     };
     const policy = createDelegationReviewPolicy(
       { history: async () => ({ events }), load: async () => ({ view: review }) } as never,
@@ -113,5 +116,11 @@ it.each(['requested', 'done', 'failed', 'later-wait'])(
     const result = await policy({ workflowInstanceId: 'child' } as never);
     expect(result.review).toEqual(scenario === 'done' ? review : undefined);
     expect(result.refreshedSubject).toEqual(scenario === 'later-wait' ? undefined : subject);
+    // Only a review that ended without a verdict is named; a rejection is a verdict.
+    expect(result.reviewUnavailable).toBe(
+      scenario === 'failed'
+        ? 'Fresh review fresh-review ended failed (runner-failed: exit 1) without a verdict; request a fresh review of the same head'
+        : undefined,
+    );
   },
 );

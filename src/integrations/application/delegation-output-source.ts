@@ -42,7 +42,11 @@ export interface OutputDependencies extends BaseLineageDependencies {
 
 type ChangeSource = NonNullable<ReturnType<typeof runSource>>;
 
-type ReviewSource = ChangeSource & { readonly recovered: boolean };
+// `reviewUnavailable` names a requested fresh review that ended without a verdict.
+type ReviewSource = ChangeSource & {
+  readonly recovered: boolean;
+  readonly reviewUnavailable?: string | undefined;
+};
 
 type Report = NonNullable<ReturnType<typeof reportedChange>>['report'];
 
@@ -172,8 +176,12 @@ export async function reviewSource(
   original: ChangeSource,
   currentHead: boolean,
 ): Promise<ReviewSource> {
-  let source: ReviewSource = { ...original, recovered: false };
-  const refresh = await refreshedReviewSubject(input, child);
+  const { subject: refresh, unavailable } = await refreshedReviewSubject(input, child);
+  let source: ReviewSource = {
+    ...original,
+    recovered: false,
+    ...(unavailable === undefined ? {} : { reviewUnavailable: unavailable }),
+  };
   const observedResource = await input.resources.findByExternalKey(latest.report.externalKey);
   const observed =
     observedResource === null ? null : await input.pullRequests.get(observedResource.resourceId);
@@ -199,6 +207,11 @@ function openReviewHead(observed: Awaited<ReturnType<PullRequestService['get']>>
   return observed.headRevision;
 }
 
+function mismatchReason(source: ReviewSource, reason: string) {
+  const prefix = source.reviewUnavailable === undefined ? '' : source.reviewUnavailable + '. ';
+  return prefix + 'Child PR identity mismatch: ' + reason;
+}
+
 export async function verifiedReviewChange(
   input: OutputDependencies,
   child: Pick<WorkflowInstanceView, 'workItemId'>,
@@ -209,7 +222,7 @@ export async function verifiedReviewChange(
 ) {
   const verified = await verifiedChange(input, child, report, source);
   if ('reason' in verified) {
-    const reason = 'Child PR identity mismatch: ' + verified.reason;
+    const reason = mismatchReason(source, verified.reason);
     if (currentHead) throw new Error(reason);
     input.blocked?.(reason);
     return null;

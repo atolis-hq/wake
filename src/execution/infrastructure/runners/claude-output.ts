@@ -22,7 +22,16 @@ export function parseClaudeOutput(
 // key) are NOT included here — they are a different failure class and must
 // not be paused-and-retried as if they were transient.
 const claudeQuotaPattern =
-  /rate limit|quota|credit balance|spend limit|usage limit|session limit|too many requests|\b429\b/i;
+  /rate limit|quota|credit balance|spend limit|usage limit|session limit|too many requests|\b429\b|\bhit your [\w -]*limit\b/i;
+
+// The CLI's result text changes ("You've hit your 5-hour limit"); its API error fields do not.
+function reportsClaudeRateLimit(result: Record<string, unknown>): boolean {
+  return (
+    result.api_error_status === 429 ||
+    result.api_error_type === 'rate_limit_error' ||
+    result.api_error === 'usage_limit_reached'
+  );
+}
 
 const claudeAuthenticationPattern =
   /authenticate|authentication|unauthorized|oauth.*(?:expired|refresh)|session expired|not logged in|please (?:log|sign) in|invalid api key/i;
@@ -36,7 +45,7 @@ export function classifyClaudeFailure(input: {
     const message = structured.result.trim();
     if (claudeAuthenticationPattern.test(message))
       return { kind: ClaudeAuthenticationFailureKind, message };
-    if (claudeQuotaPattern.test(message))
+    if (claudeQuotaPattern.test(message) || reportsClaudeRateLimit(structured))
       return { kind: ProviderQuotaExceededFailureKind, message };
     return undefined;
   }

@@ -18,8 +18,13 @@ import {
 } from '../contracts/identifiers.js';
 import { ApprovalAuthorityKind, WorkflowStatus } from '../contracts/vocabulary.js';
 import type { DelegatedWork } from './delegated-work.js';
-import { delegationDraft } from './delegation-ledger.js';
+import { delegationDraft, delegationEventId } from './delegation-ledger.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
+import {
+  isReviewRefreshAttempt,
+  reviewRefreshVerdict,
+  ReviewRefreshVerdict,
+} from './review-refresh-facts.js';
 import type { StartWorkflow } from './start-workflow.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -49,10 +54,18 @@ export async function requestReviewRefresh(
   if (subject.reference.revision !== command.expectedRevision)
     throw new Error('Provider head changed; inspect the current head before requesting review');
   const history = await repository.history(child.workflowInstanceId);
-  const key = `review-refresh:${output.name}:${command.expectedRevision}`;
-  const triggerId = `delegation:${child.workflowInstanceId}:${key}`;
-  const prior = history.events.find(({ event }) => event.eventId === triggerId);
-  if (prior?.event.eventType === Event.DelegationReviewRefreshRequested) return prior.event.payload;
+  const subjectKey = `review-refresh:${output.name}:${command.expectedRevision}`;
+  const attempts = history.events.flatMap(({ event }) =>
+    event.eventType === Event.DelegationReviewRefreshRequested &&
+    isReviewRefreshAttempt(event.eventId, child.workflowInstanceId, subjectKey)
+      ? [event.payload]
+      : [],
+  );
+  const reusable = await reusableAttempt(repository, attempts.at(-1), output.name, command);
+  if (reusable !== undefined) return reusable;
+  // A review that ended without a verdict (runner failure, quota, block) leaves this head unreviewed.
+  const key = attempts.length === 0 ? subjectKey : `${subjectKey}:attempt:${attempts.length + 1}`;
+  const triggerId = delegationEventId(child.workflowInstanceId, key);
   const watch = configuredReviewWatch(history.events, await workflows.definitionFor(loaded.view));
   const review = configuredReviewDefinition(definitions, watch.workflow);
   await definitions.register(watch.workflow, review.fingerprint, review.definition, context);
@@ -71,6 +84,22 @@ export async function requestReviewRefresh(
     { id: child.workflowInstanceId, sequence: loaded.sequence, key, triggerId, request },
     context,
   );
+}
+
+/** The prior attempt still pending or accepted, if any; a rejection is a verdict and is refused. */
+async function reusableAttempt(
+  repository: OrchestrationRepository,
+  prior: DelegationReviewRefresh | undefined,
+  output: string,
+  command: DelegationRecovery,
+) {
+  if (prior === undefined) return undefined;
+  const verdict = reviewRefreshVerdict((await repository.load(prior.requestId)).view);
+  if (verdict.kind === ReviewRefreshVerdict.Rejected)
+    throw new Error(
+      `Fresh review ${prior.requestId} rejected ${output} at ${command.expectedRevision}; revise the change before requesting another review`,
+    );
+  return verdict.kind === ReviewRefreshVerdict.NoVerdict ? undefined : prior;
 }
 
 function configuredReviewWatch(

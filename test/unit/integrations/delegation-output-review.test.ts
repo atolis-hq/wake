@@ -77,6 +77,6 @@ it.each(['done', 'wrong-head', 'failed', 'rejected', 'unaccepted', 'missing'])(
       } as never,
       { workflowInstanceId: 'child' } as never,
     );
-    expect(result).toEqual(scenario === 'done' ? subject : undefined);
+    expect(result).toEqual(scenario === 'done' ? { subject } : {});
   },
 );
