@@ -543,6 +543,8 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     expect(
       await root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'six'),
     ).toHaveLength(6);
+    // The join can start the parent continuation, which merges PRs before setting the flag.
+    await awaitRuns();
     for (const child of children) {
       const resource = await root.resources.findByExternalKey({
         adapter: 'fake',
