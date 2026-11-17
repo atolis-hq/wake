@@ -35,6 +35,8 @@ import {
 import {
   findUnresolvedSucceededTerminal,
   findUnresolvedTerminal,
+  heldRecoveryCandidates,
+  isHeldRecoverable,
 } from './execution-reconciliation.js';
 
 export interface ActivationScheduler {
@@ -155,8 +157,11 @@ export function createActivationScheduler(
     const ambiguityBlocked = blocked.filter((item) =>
       isAmbiguityResolutionBlock(item.workflow.blockReason),
     );
+    const snapshot = async () => delivery ?? (await dependencies.work?.deliverySnapshot());
+    const held = await heldRecoveryCandidates(orchestration, options.workItemId, pending, snapshot);
     const recovery =
       (await findUnresolvedTerminal(pending, execution)) ??
+      (await findUnresolvedTerminal(held, execution, isHeldRecoverable)) ??
       (await findUnresolvedTerminal(ambiguityBlocked, execution)) ??
       (await findUnresolvedSucceededTerminal(blocked, execution));
     if (recovery !== undefined) {

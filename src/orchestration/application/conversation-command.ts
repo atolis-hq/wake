@@ -6,6 +6,7 @@ import {
   ApprovalAuthorityKind,
   ConversationBuiltInCommand,
   ConversationSurfaceCapability,
+  WorkflowStatus,
 } from '../contracts/vocabulary.js';
 import {
   isGroupBudgetExtensionEligible,
@@ -98,10 +99,21 @@ export async function applyBuiltInConversationCommand(
   }
   if (input.command === ConversationBuiltInCommand.Retry) {
     const target = selectOperatorRetryTarget(input.workflows);
-    if (target === undefined)
+    if (target === undefined) {
+      const unrouted = input.workflows.find(
+        (workflow) =>
+          workflow.status === WorkflowStatus.Active &&
+          workflow.pendingActivation !== undefined &&
+          !workflow.acceptedOutcomes.includes(workflow.pendingActivation.activationId),
+      );
+      if (unrouted !== undefined)
+        return denied(
+          'The current activity has no routed outcome yet (it may still be running). If its run already finished, Wake routes it, or re-requests it on another runner after a quota failure, on its next control-plane pass regardless of delegation state; /retry applies once a failed stage is recorded.',
+        );
       return denied(
         'No retry-eligible failed stage. To continue eligible blocked agent work, use /changes followed by instructions.',
       );
+    }
     await input.retry(target.workflowInstanceId);
     return { applied: true };
   }

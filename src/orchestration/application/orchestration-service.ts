@@ -664,6 +664,7 @@ export class OrchestrationService {
     },
     context: CommandContext,
   ) {
+    // Blocking on a failed run must not cancel a cohort the run already committed, so it stays gated.
     return this.transitionWatchChildren(context, () =>
       this.delegationGate.run(workflowInstanceId, () =>
         this.advanceWorkflow.resolveExecutionFailure(workflowInstanceId, input, context),
@@ -681,10 +682,15 @@ export class OrchestrationService {
     },
     context: CommandContext,
   ) {
-    return this.transitionWatchChildren(context, () =>
-      this.delegationGate.run(workflowInstanceId, () =>
-        this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context),
-      ),
+    // Re-requesting the cohort's attention activation continues an admitted attempt, so the fence
+    // does not apply; dispatch of the re-request stays gated. Other activations keep the fence.
+    const retry = () =>
+      this.advanceWorkflow.retryRunnerQuotaFailure(workflowInstanceId, input, context);
+    return this.transitionWatchChildren(context, async () =>
+      (await this.repository.load(workflowInstanceId)).view?.delegationAttention?.activationId ===
+      input.activationId
+        ? retry()
+        : this.delegationGate.run(workflowInstanceId, retry),
     );
   }
 
@@ -810,6 +816,11 @@ export class OrchestrationService {
   async listPendingActivations(workItemId?: string) {
     const entries = await this.advanceWorkflow.listPendingActivations(workItemId);
     return this.delegationGate.filterAvailable(entries, (entry) => entry.workflow);
+  }
+
+  /** Ungated: finished runs of held or fenced parents must still be recoverable. */
+  listRecoverableActivations(workItemId?: string) {
+    return this.advanceWorkflow.listPendingActivations(workItemId);
   }
 
   listWaiting(signalKind?: SignalName) {
