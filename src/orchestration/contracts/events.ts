@@ -53,6 +53,7 @@ export const OrchestrationEventType = {
   DelegationInputsRefreshed: 'orchestration.delegation-inputs-refreshed',
   DelegationReviewRefreshRequested: 'orchestration.delegation-review-refresh-requested',
   DelegationChildBlocked: 'orchestration.delegation-child-blocked',
+  DelegationChildSuperseded: 'orchestration.delegation-child-superseded',
   DelegationPrerequisiteBlocked: 'orchestration.delegation-prerequisite-blocked',
   DelegationRegistered: 'orchestration.delegation-registered',
   DelegationResultSelected: 'orchestration.delegation-result-selected',
@@ -112,6 +113,16 @@ export interface OrchestrationEventPayloads {
   readonly [OrchestrationEventType.DelegationChildBlocked]: {
     readonly childWorkItemId: WorkItemId;
     readonly reason: string;
+  };
+  /** A never-started child retired because an accepted replacement took over its assignment. */
+  readonly [OrchestrationEventType.DelegationChildSuperseded]: {
+    readonly cohortId: string;
+    readonly childWorkItemId: WorkItemId;
+    readonly replacement: {
+      readonly cohortId: string;
+      readonly assignmentId: string;
+      readonly childWorkItemId: WorkItemId;
+    };
   };
   readonly [OrchestrationEventType.DelegationInputsResolved]: DelegationInputs;
   readonly [OrchestrationEventType.DelegationInputsRefreshed]: DelegationInputs;

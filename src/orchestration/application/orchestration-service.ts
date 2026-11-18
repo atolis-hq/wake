@@ -367,7 +367,8 @@ export class OrchestrationService {
       (cohort) =>
         !cohort.settled &&
         cohort.children.some(
-          ({ work, workflow }) =>
+          ({ work, workflow, supersededBy }) =>
+            supersededBy === undefined &&
             work !== null &&
             work.deleted !== true &&
             work.state === WorkStatus.Open &&

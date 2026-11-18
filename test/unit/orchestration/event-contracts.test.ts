@@ -183,6 +183,15 @@ const delegationSamples = [
     workflow,
   ),
   eventEnvelope(
+    OrchestrationEventType.DelegationChildSuperseded,
+    {
+      cohortId: 'original',
+      childWorkItemId: workId('2'),
+      replacement: { cohortId: 'repair', assignmentId: 'repair-a', childWorkItemId: workId('3') },
+    },
+    workflow,
+  ),
+  eventEnvelope(
     OrchestrationEventType.DelegationInputsRefreshed,
     { childWorkItemId: workId('2'), consumed: delegationResult.outputs },
     workflow,

@@ -95,6 +95,8 @@ API surface application's board and status applications do that).
 - The wait MUST clear on child start, supersession, cohort settlement, work
   closure, cancellation, deletion, or removal by replacement. Missing child
   cards on prerequisite-blocked events MUST be tolerated.
+- A `delegation-child-superseded` fact retires a never-started child's card to
+  `finished` with `superseded` set, clearing its wait and block reason.
 
 ## Event catalogue
 

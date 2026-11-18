@@ -108,6 +108,12 @@ export interface WorkDetailResponse {
       readonly prerequisiteBlocker?: string;
       /** Original required assignment this corrective child replaces. */
       readonly replaces?: { readonly cohortId: string; readonly assignmentId: string };
+      /** Set when this never-started child was retired by an accepted replacement. */
+      readonly supersededBy?: {
+        readonly workItemKey: WorkItemKey;
+        readonly cohortId: string;
+        readonly assignmentId: string;
+      };
       readonly outputs?: readonly {
         readonly name: string;
         readonly kind: string;
