@@ -43,6 +43,10 @@ const statBatchSize = 256;
 // an unexpected change (a removed segment, an odd clock) can go unnoticed.
 const maxProbeOnlyMs = 5_000;
 const maxProbedDays = 8;
+// Segment files read ahead of the parser during a cold scan.
+const segmentReadBatch = 16;
+// Segments the manifest tail may hold before the full manifest is rewritten.
+const manifestTailLimit = 256;
 
 export class FileEventJournal implements EventJournal {
   constructor(
@@ -90,6 +94,7 @@ export class FileEventJournal implements EventJournal {
   private queuedListing: Promise<readonly FileStat[]> | undefined;
   private temporariesReclaimed = false;
   private lastFullListingMs = 0;
+  private persistedBase: PersistedBase | undefined;
 
   async appendToStream(
     stream: StreamRef,
@@ -260,7 +265,7 @@ export class FileEventJournal implements EventJournal {
     const entries = await this.currentEntries();
     const warm = this.cached;
     if (warm !== undefined && sameEntries(warm.entries, entries))
-      return warm.events.filter((event) => event.globalPosition > after).slice(0, limit);
+      return eventsAfter(warm.events, after, limit);
     const manifest = await this.loadManifest();
     if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
       try {
@@ -277,20 +282,18 @@ export class FileEventJournal implements EventJournal {
         // See readStream(): never let a derived index change journal reads.
       }
     }
-    return (await this.scan(entries)).events
-      .filter((event) => event.globalPosition > after)
-      .slice(0, limit);
+    return eventsAfter((await this.scan(entries)).events, after, limit);
   }
 
   async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
     if (beforeGlobalPosition !== undefined && beforeGlobalPosition <= 0) return [];
     if (limit <= 0) return [];
     const { events } = await this.scan(await this.currentEntries());
-    const before = beforeGlobalPosition ?? events.length + 1;
-    return events
-      .slice(0, before - 1)
-      .slice(-limit)
-      .reverse();
+    const end = Math.min(
+      Math.max(0, (beforeGlobalPosition ?? events.length + 1) - 1),
+      events.length,
+    );
+    return events.slice(Math.max(0, end - limit), end).reverse();
   }
 
   async latestGlobalPosition(): Promise<number> {
@@ -356,13 +359,11 @@ export class FileEventJournal implements EventJournal {
     const priorEvents = prior.events;
     const info = await stat(join(this.root, 'events', file));
     const updatedEntry: FileStat = { file, size: info.size, mtimeMs: info.mtimeMs };
-    const priorEntries = prior.entries;
-    const entries = priorEntries.some((entry) => entry.file === file)
-      ? priorEntries.map((entry) => (entry.file === file ? updatedEntry : entry))
-      : [...priorEntries, updatedEntry];
-    const priorSegments = prior.segments;
-    const existingSegment = priorSegments.find((segment) => segment.file === file);
-    let offset = existingSegment?.size ?? 0;
+    // nextSegmentFile() only returns a name that does not exist while the append
+    // lock is held, so the appended segment is always new: no search of the
+    // prior entries is needed.
+    const entries = [...prior.entries, updatedEntry];
+    let offset = 0;
     const indexedEvents = newEnvelopes.map((event) => {
       const length = Buffer.byteLength(`${encodeEventRecord(event)}\n`);
       const indexed = {
@@ -374,28 +375,22 @@ export class FileEventJournal implements EventJournal {
       offset += length;
       return indexed;
     });
-    const segments = existingSegment
-      ? priorSegments.map((segment) =>
-          segment.file === file
-            ? {
-                ...updatedEntry,
-                startPosition: segment.startPosition,
-                count: segment.count + newEnvelopes.length,
-                events: [...segment.events, ...indexedEvents],
-              }
-            : segment,
-        )
-      : [
-          ...priorSegments,
-          {
-            ...updatedEntry,
-            startPosition: priorEvents.length + 1,
-            count: newEnvelopes.length,
-            events: indexedEvents,
-          },
-        ];
+    const segments = [
+      ...prior.segments,
+      {
+        ...updatedEntry,
+        startPosition: priorEvents.length + 1,
+        count: newEnvelopes.length,
+        events: indexedEvents,
+      },
+    ];
     const events = [...priorEvents, ...newEnvelopes];
-    const next = { entries, events, eventsByStream: indexEventsByStream(events), segments };
+    const next = {
+      entries,
+      events,
+      eventsByStream: extendEventsByStream(prior.eventsByStream, newEnvelopes),
+      segments,
+    };
     this.adopt(next);
     this.knownSegments.set(file, updatedEntry);
     if (entries.length >= this.latestEntries.length) this.latestEntries = entries;
@@ -412,24 +407,77 @@ export class FileEventJournal implements EventJournal {
     return join(this.root, 'events', 'index-manifest.json');
   }
 
+  private manifestTailPath(): string {
+    return join(this.root, 'events', 'index-manifest.tail.json');
+  }
+
   // Persisted alongside the segments, so any reader of the same on-disk
   // journal — not just this instance — can skip straight to the segments
   // that can hold what it's looking for on a cold cache. appendToStream() extends its
   // contents from the concrete envelopes it has just written while locked.
+  //
+  // The index covers every event ever recorded, so rewriting it per append costs
+  // O(journal) in serialisation and I/O (18 MB, ~65 ms of blocked event loop at
+  // 79k events). The segments added since the last full write go to a small tail
+  // file instead; the base is rewritten only when the tail has grown past
+  // manifestTailLimit, which amortises it to a constant per append.
   private async persistManifest(snapshot: JournalSnapshot): Promise<void> {
+    const total = snapshot.segments.length;
+    const base = this.persistedBase;
+    if (
+      base !== undefined &&
+      total >= base.count &&
+      total - base.count <= manifestTailLimit &&
+      (await this.persistedBaseUnchanged(base))
+    ) {
+      const tail: PersistedTail = {
+        baseSegments: base.count,
+        segments: snapshot.segments.slice(base.count),
+      };
+      await writeFileAtomically(this.manifestTailPath(), JSON.stringify(tail));
+      return;
+    }
     const manifest: PersistedIndex = { segments: snapshot.segments };
     await writeFileAtomically(this.manifestPath(), JSON.stringify(manifest));
+    // The base now covers everything, so an older tail would only be ignored.
+    await rm(this.manifestTailPath(), { force: true });
+    const info = await stat(this.manifestPath());
+    this.persistedBase = { count: total, size: info.size, mtimeMs: info.mtimeMs };
+  }
+
+  // Another process may have compacted (or removed) the base since this
+  // instance wrote it; a tail relative to the old base would be ignored on load.
+  private async persistedBaseUnchanged(base: PersistedBase): Promise<boolean> {
+    try {
+      const info = await stat(this.manifestPath());
+      return info.size === base.size && info.mtimeMs === base.mtimeMs;
+    } catch {
+      return false;
+    }
   }
 
   private async loadManifest(): Promise<PersistedIndex | undefined> {
     try {
       const raw = await readFile(this.manifestPath(), 'utf8');
       const parsed: unknown = JSON.parse(raw);
-      return isPersistedIndex(parsed) ? parsed : undefined;
+      if (!isPersistedIndex(parsed)) return undefined;
+      const tail = await this.loadManifestTail(parsed.segments.length);
+      return tail.length === 0 ? parsed : { segments: [...parsed.segments, ...tail] };
     } catch {
       // Missing, corrupt, or foreign-shaped index: degrade to a full scan,
       // which is rebuilt by the next append.
       return undefined;
+    }
+  }
+
+  // A tail that does not extend exactly this base is ignored; the merged index
+  // then fails isCompleteIndex() and the reader falls back to the JSONL.
+  private async loadManifestTail(baseSegments: number): Promise<readonly SegmentInfo[]> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.manifestTailPath(), 'utf8'));
+      return isPersistedTail(parsed) && parsed.baseSegments === baseSegments ? parsed.segments : [];
+    } catch {
+      return [];
     }
   }
 
@@ -652,15 +700,27 @@ export class FileEventJournal implements EventJournal {
       sameEntries(prefix.entries, entries.slice(0, prefix.entries.length));
     const events: EventEnvelope[] = reuse ? [...prefix.events] : [];
     const segments: SegmentInfo[] = reuse ? [...prefix.segments] : [];
-    for (const entry of reuse ? entries.slice(prefix.entries.length) : entries) {
+    const toRead = reuse ? entries.slice(prefix.entries.length) : entries;
+    // Segments are one small file each, so a cold read is latency-bound, not
+    // CPU-bound. Reads run ahead of the parser in a bounded window; parsing and
+    // position validation stay strictly in listing order.
+    const reads = new Map<number, Promise<string>>();
+    let nextRead = 0;
+    for (const [at, entry] of toRead.entries()) {
+      for (; nextRead < toRead.length && nextRead < at + segmentReadBatch; nextRead += 1) {
+        const read = readFile(join(directory, toRead[nextRead]!.file), 'utf8');
+        read.catch(() => undefined); // surfaced when awaited in order, never unhandled
+        reads.set(nextRead, read);
+      }
       const { file } = entry;
-      const raw = await readFile(join(directory, file), 'utf8');
+      const raw = await reads.get(at)!;
+      reads.delete(at);
       if (raw.length > 0 && !raw.endsWith('\n'))
         throw new Error(`Incomplete trailing line in ${file}`);
       const startPosition = events.length + 1;
       const indexedEvents: IndexedEvent[] = [];
       let offset = 0;
-      for (const [index, line] of raw.split('\n').slice(0, -1).entries()) {
+      for (const [lineIndex, line] of raw.split('\n').slice(0, -1).entries()) {
         let input: unknown;
         try {
           input = JSON.parse(line);
@@ -677,7 +737,7 @@ export class FileEventJournal implements EventJournal {
         } catch (error) {
           const context = eventContext(input);
           throw new Error(
-            `Corrupt event at ${file}:${index + 1}${context}: ${(error as Error).message}`,
+            `Corrupt event at ${file}:${lineIndex + 1}${context}: ${(error as Error).message}`,
             { cause: error },
           );
         }
@@ -737,6 +797,28 @@ interface IndexedEvent {
 
 interface PersistedIndex {
   readonly segments: readonly SegmentInfo[];
+}
+
+interface PersistedTail {
+  /** Segment count of the base this tail extends. */
+  readonly baseSegments: number;
+  readonly segments: readonly SegmentInfo[];
+}
+
+interface PersistedBase {
+  readonly count: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+}
+
+function isPersistedTail(value: unknown): value is PersistedTail {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { baseSegments?: unknown }).baseSegments === 'number' &&
+    Array.isArray((value as { segments?: unknown }).segments) &&
+    (value as PersistedTail).segments.every(isSegmentInfo)
+  );
 }
 
 function isPersistedIndex(value: unknown): value is PersistedIndex {
@@ -829,6 +911,38 @@ function indexEventsByStream(
     else streamEvents.push(event);
   }
   return indexed;
+}
+
+// Global positions are contiguous from 1 (validateEnvelope), so the events after
+// a position are a slice, not a filter over the whole history.
+function eventsAfter(
+  events: readonly EventEnvelope[],
+  after: number,
+  limit: number,
+): EventEnvelope[] {
+  if (Number.isNaN(after)) return [];
+  const start = Math.max(0, Math.floor(after));
+  return events.slice(start, start + limit);
+}
+
+// Copy-on-write: callers keep the per-stream arrays they were handed, so only
+// the streams that gained events get a new array. Cost is the number of
+// streams, not the number of events.
+function extendEventsByStream(
+  prior: ReadonlyMap<string, readonly EventEnvelope[]>,
+  appended: readonly EventEnvelope[],
+): ReadonlyMap<string, readonly EventEnvelope[]> {
+  const next = new Map(prior);
+  const gained = new Map<string, EventEnvelope[]>();
+  for (const event of appended) {
+    const streamKey = key(event.stream);
+    const group = gained.get(streamKey);
+    if (group === undefined) gained.set(streamKey, [event]);
+    else group.push(event);
+  }
+  for (const [streamKey, events] of gained)
+    next.set(streamKey, [...(prior.get(streamKey) ?? []), ...events]);
+  return next;
 }
 
 function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
