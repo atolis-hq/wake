@@ -39,7 +39,9 @@ Defines no canonical event or relation semantics.
 
 Supervised processors report volatile health and preserve durable checkpoints.
 Bootstrap exposes composition and reconciliation diagnostics without mutating
-facts.
+facts. Host-only diagnostic roots select the read-only journal adapter, including
+in-memory recovery when a derived index is absent, so reads create no runtime
+files or locks.
 
 ## Extension rules
 

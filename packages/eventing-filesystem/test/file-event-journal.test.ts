@@ -6,16 +6,17 @@ import {
   type EventData,
 } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
-import { existsSync } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { expect, it, vi } from 'vitest';
 import { FakeClock } from './support/fake-clock.js';
 
-const { readFileMock, readdirMock, renameMock, statMock } = vi.hoisted(() => ({
+const { readFileMock, readdirMock, renameMock, statMock, openMock } = vi.hoisted(() => ({
   readFileMock: vi.fn(),
+  openMock: vi.fn(),
   readdirMock: vi.fn(),
   renameMock: vi.fn(),
   statMock: vi.fn(),
@@ -23,12 +24,14 @@ const { readFileMock, readdirMock, renameMock, statMock } = vi.hoisted(() => ({
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readFileMock.mockImplementation(actual.readFile);
+  openMock.mockImplementation(actual.open);
   readdirMock.mockImplementation(actual.readdir);
   renameMock.mockImplementation(actual.rename);
   statMock.mockImplementation(actual.stat);
   return {
     ...actual,
     readFile: readFileMock,
+    open: openMock,
     readdir: readdirMock,
     rename: renameMock,
     stat: statMock,
@@ -109,7 +112,10 @@ it('leaves the authoritative segment unchanged when an atomic batch commit fails
   const before = await readFile(segment, 'utf8');
   const revision = journal.changeSignal.revision();
 
-  renameMock.mockRejectedValueOnce(new Error('simulated atomic commit failure'));
+  const rename = renameMock.getMockImplementation()!;
+  renameMock
+    .mockImplementationOnce((...args) => rename(...args))
+    .mockRejectedValueOnce(new Error('simulated atomic commit failure'));
 
   await expect(
     journal.appendToStream(stream, 1, [event('event-2'), event('event-3')]),
@@ -468,30 +474,15 @@ it('refreshes a cached view when another file-journal instance appends', async (
   expect(await view.get()).toBe(1);
 });
 
-it('reuses validated segment fingerprints without parsing an unchanged warm journal', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-warm-cache-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const draft = createEventData({
-    eventId: 'event-1',
-    eventType: 'work.item-created',
-    occurredAt: '2026-07-30T12:00:00Z',
-    correlationId: 'corr',
-    causationId: 'event-1',
-    actor: { kind: 'system', id: 'test' },
-    source: { kind: 'internal', id: 'test' },
-    payload: { objective: 'ship' },
-  });
+it('validates requested segment fingerprints on every indexed read', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fingerprint-'));
   const journal = new FileEventJournal(root, new FakeClock());
-  await journal.appendToStream(stream, 0, [draft]);
-  await journal.readAll(0);
-
-  statMock.mockClear();
-  await journal.readAll(0);
-
-  expectNoExistingSegmentStats();
-  expect(
-    statMock.mock.calls.filter(([path]) => String(path).endsWith('index-manifest.json')),
-  ).toHaveLength(0);
+  const stream = { kind: 'test', id: 'one' };
+  await journal.appendToStream(stream, 0, [journalDraft('one')]);
+  const path = join(root, 'events', '2026-07-30.jsonl');
+  const raw = await readFile(path, 'utf8');
+  await writeFile(path, raw.replace('"eventId":"one"', '"eventId":"two"'));
+  expect((await journal.readAll(0))[0]?.event.eventId).toBe('two');
 });
 
 it('recovers a warmed reader after a JSONL append crashes before manifest update', async () => {
@@ -600,115 +591,64 @@ it('uses the refreshed warm-cache stream index for ordered, isolated stream read
   );
 });
 
-it('coalesces concurrent reads on a cold cache into a single on-disk decode', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const draft = (id: string, sequence: number) =>
-    createEventData({
-      eventId: id,
-      eventType: 'work.item-created',
-      occurredAt: '2026-07-30T12:00:00Z',
-      correlationId: 'corr',
-      causationId: id,
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      payload: { objective: `event ${sequence}` },
-    });
-  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [
-    draft('event-1', 1),
-    draft('event-2', 2),
-  ]);
-
-  // Force the scan fallback so this retains coverage for the coalescing
-  // guard even when a valid persisted index would serve readAll directly.
-  await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
-  const reopened = new FileEventJournal(root, new FakeClock());
-  readFileMock.mockClear();
-  const [first, second, third] = await Promise.all([
-    reopened.readAll(0),
-    reopened.readAll(0),
-    reopened.latestGlobalPosition(),
-  ]);
-
-  expect(first).toHaveLength(2);
-  expect(second).toHaveLength(2);
-  expect(third).toBe(2);
-  const journalFileReads = readFileMock.mock.calls.filter(([path]) =>
-    String(path).endsWith('.jsonl'),
-  );
-  expect(journalFileReads).toHaveLength(1);
+it('rebuilds a missing index once for concurrent local reads', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-recovery-'));
+  const writer = new FileEventJournal(root, new FakeClock());
+  await writer.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  await rm(join(root, 'journal-index.sqlite'));
+  const reader = new FileEventJournal(root, new FakeClock());
+  readdirMock.mockClear();
+  expect(
+    await Promise.all([
+      reader.latestGlobalPosition(),
+      reader.latestGlobalPosition(),
+      reader.latestGlobalPosition(),
+    ]),
+  ).toEqual([1, 1, 1]);
+  expect(
+    readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+  ).toHaveLength(2);
 });
 
-it('shares listings across concurrent journal reads', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-shared-listing-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const clock = new FakeClock();
-  const writer = new FileEventJournal(root, clock);
-  await writer.appendToStream(stream, 0, [journalDraft('event-1')]);
-  const reader = new FileEventJournal(root, clock);
+it('serves concurrent cold reads without listing the event directory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-concurrent-index-'));
+  const writer = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 'one' };
+  await writer.appendToStream(stream, 0, [journalDraft('one')]);
+  const reader = new FileEventJournal(root, new FakeClock());
   readdirMock.mockClear();
-  statMock.mockClear();
-
-  const [position, all, streamEvents] = await Promise.all([
+  const [head, all, events] = await Promise.all([
     reader.latestGlobalPosition(),
     reader.readAll(0),
     reader.readStream(stream),
   ]);
-
-  expect(position).toBe(1);
-  expect(all.map((event) => event.event.eventId)).toEqual(['event-1']);
-  expect(streamEvents.map((event) => event.event.eventId)).toEqual(['event-1']);
-  expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
-  expect(statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(1);
+  expect(head).toBe(1);
+  expect(all).toHaveLength(1);
+  expect(events).toHaveLength(1);
+  expect(
+    readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+  ).toHaveLength(0);
 });
 
-it('answers any number of concurrent reads with at most two listings and no segment stats', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-listing-coalescing-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const clock = new FakeClock();
-  const writer = new FileEventJournal(root, clock);
-  for (let index = 0; index < 40; index += 1)
-    await writer.appendToStream(stream, index, [journalDraft(`event-${index}`)]);
-  const reader = new FileEventJournal(root, clock);
-  await reader.latestGlobalPosition();
-  readdirMock.mockClear();
-  statMock.mockClear();
-
-  const reads = await Promise.all(Array.from({ length: 500 }, () => reader.readStream(stream)));
-
-  expect(reads.every((events) => events.length === 40)).toBe(true);
-  expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
-  // Segments are immutable, so those already seen are never stat'ed again.
-  expectNoExistingSegmentStats();
+it('serialises many local reads without retaining decoded history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-many-reads-'));
+  const journal = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 'one' };
+  await journal.appendToStream(stream, 0, [journalDraft('one')]);
+  const reads = await Promise.all(Array.from({ length: 50 }, () => journal.readStream(stream)));
+  expect(reads.every((events) => events.length === 1)).toBe(true);
+  expect(reads[0]).not.toBe(reads[1]);
 });
 
-it('does not answer a read with a listing that began before its call', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-listing-ordering-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  const clock = new FakeClock();
-  const writer = new FileEventJournal(root, clock);
-  await writer.appendToStream(stream, 0, [journalDraft('event-0')]);
-  const reader = new FileEventJournal(root, clock);
-  const originalReaddir = readdirMock.getMockImplementation();
-  if (originalReaddir === undefined) throw new Error('Expected readdir mock implementation');
-  let release: () => void = () => undefined;
-  const held = new Promise<void>((resolve) => (release = resolve));
-  readdirMock.mockClear();
-  // The listing is taken, then held open across an append by another host.
-  readdirMock.mockImplementationOnce(async (...args: Parameters<typeof originalReaddir>) => {
-    const listing = await originalReaddir(...args);
-    await held;
-    return listing;
-  });
-
-  const earlier = reader.latestGlobalPosition();
-  await vi.waitFor(() => expect(readdirMock).toHaveBeenCalledOnce());
-  await writer.appendToStream(stream, 1, [journalDraft('event-1')]);
-  const later = reader.latestGlobalPosition();
-  release();
-
-  expect(await earlier).toBe(1);
-  expect(await later).toBe(2);
+it('reflects completed foreign appends in every later read', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-read-order-'));
+  const writer = new FileEventJournal(root, new FakeClock());
+  const reader = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 'one' };
+  await writer.appendToStream(stream, 0, [journalDraft('one')]);
+  expect(await reader.latestGlobalPosition()).toBe(1);
+  await writer.appendToStream(stream, 1, [journalDraft('two')]);
+  expect(await reader.latestGlobalPosition()).toBe(2);
 });
 
 it('observes another instance’s append on the next read with no watcher and no validity window', async () => {
@@ -750,85 +690,42 @@ it('reads only the new segment when another instance appends to a warmed journal
     'event-30',
   );
   expect(readFileMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl'))).toHaveLength(
-    1,
+    0,
   );
 });
 
-it('is not misled by a slower scan of older entries finishing after a newer one', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-scan-race-'));
-  const clock = new FakeClock();
-  const a: EntityRef<'test', 'a'> = { kind: 'test', id: 'a' };
-  const b: EntityRef<'test', 'b'> = { kind: 'test', id: 'b' };
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  const reader = new FileEventJournal(root, clock);
-  const other = new FileEventJournal(root, clock);
-  await reader.appendToStream(a, 0, [journalDraft('a-1')]);
-  await other.appendToStream(b, 0, [journalDraft('b-1')]);
-
-  // Stand in for slow I/O: the first read lists two segments, then stalls while a
-  // later append lists three and starts a slower full scan.
-  const slow = reader as unknown as {
-    loadManifest(): Promise<unknown>;
-    scanUncoalesced(entries: readonly unknown[]): Promise<unknown>;
-  };
-  const loadManifest = slow.loadManifest.bind(reader);
-  let stallManifest = true;
-  slow.loadManifest = async () => {
-    if (!stallManifest) return loadManifest();
-    stallManifest = false;
-    await sleep(50);
-    return undefined;
-  };
-  const scan = slow.scanUncoalesced.bind(reader);
-  slow.scanUncoalesced = async (entries) => {
-    if (entries.length === 3) await sleep(200);
-    return scan(entries);
-  };
-
-  const older = reader.readAll(0);
-  await sleep(5);
-  await other.appendToStream(a, 1, [journalDraft('a-2')]);
-  const stale = reader.appendToStream(a, 1, [journalDraft('a-3')]);
-  await older;
-
-  // The append was built on a listing that predates a-2: it must be rejected, not committed.
-  await expect(stale).rejects.toThrow('Expected sequence 1');
-  expect((await reader.readAll(0)).map((event) => event.globalPosition)).toEqual([1, 2, 3]);
-  const sequences = (await new FileEventJournal(root, clock).readStream(a)).map(
-    (event) => event.sequence,
+it('rejects a stale sequence after a foreign append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-sequence-'));
+  const writer = new FileEventJournal(root, new FakeClock());
+  const reader = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 'one' };
+  await reader.appendToStream(stream, 0, [journalDraft('one')]);
+  await writer.appendToStream(stream, 1, [journalDraft('two')]);
+  await expect(reader.appendToStream(stream, 1, [journalDraft('three')])).rejects.toBeInstanceOf(
+    WrongExpectedSequenceError,
   );
-  expect(sequences).toEqual([1, 2]);
-
-  // The instance is not left with a lagging view: later appends by either side work.
-  await other.appendToStream(a, 2, [journalDraft('a-4')]);
-  expect((await reader.readAll(0)).map((event) => event.globalPosition)).toEqual([1, 2, 3, 4]);
-  await reader.appendToStream(a, 3, [journalDraft('a-5')]);
-  expect(
-    (await new FileEventJournal(root, clock).readAll(0)).map((event) => event.globalPosition),
-  ).toEqual([1, 2, 3, 4, 5]);
+  expect(await reader.latestGlobalPosition()).toBe(2);
 });
 
-it('retries a listing after its first attempt rejects', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-listing-retry-'));
-  const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [
-    journalDraft('event-1'),
-  ]);
-  const originalReaddir = readdirMock.getMockImplementation();
-  if (originalReaddir === undefined) throw new Error('Expected readdir mock implementation');
-  readdirMock.mockClear();
-  readdirMock.mockRejectedValueOnce(new Error('transient entry read failure'));
+it('recovers after a transient recovery listing failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-recovery-retry-'));
   const journal = new FileEventJournal(root, new FakeClock());
-
+  await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  await rm(join(root, 'journal-index.sqlite'));
+  const original = readdirMock.getMockImplementation()!;
+  readdirMock.mockImplementation(async (...args) => {
+    if (String(args[0]) === join(root, 'events')) throw new Error('transient failure');
+    return original(...args);
+  });
   try {
-    await expect(journal.latestGlobalPosition()).rejects.toThrow('transient entry read failure');
-    await expect(journal.latestGlobalPosition()).resolves.toBe(1);
+    await expect(journal.latestGlobalPosition()).rejects.toThrow('transient failure');
   } finally {
-    readdirMock.mockImplementation(originalReaddir);
+    readdirMock.mockImplementation(original);
   }
+  expect(await journal.latestGlobalPosition()).toBe(1);
 });
 
-it('skips the directory listing while an old, unchanged directory proves nothing was added', async () => {
+it('uses the committed head regardless of directory timestamp age', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-unchanged-directory-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const clock = new FakeClock();
@@ -841,18 +738,22 @@ it('skips the directory listing while an old, unchanged directory proves nothing
     expect(await reader.latestGlobalPosition()).toBe(1);
     readdirMock.mockClear();
     expect(await reader.latestGlobalPosition()).toBe(1);
-    expect(readdirMock).not.toHaveBeenCalled();
+    expect(
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
 
     await writer.appendToStream(stream, 1, [journalDraft('event-2')]);
     readdirMock.mockClear();
     expect(await reader.latestGlobalPosition()).toBe(2);
-    expect(readdirMock).toHaveBeenCalledOnce();
+    expect(
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
   } finally {
     now.mockRestore();
   }
 });
 
-it('relists a directory changed inside the timestamp granularity window', async () => {
+it('sees committed appends inside the timestamp granularity window', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-young-directory-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
   const clock = new FakeClock();
@@ -884,91 +785,18 @@ it('treats the watcher only as a wake-up, never as a freshness requirement', asy
   await expect(reader.readAll(0)).resolves.toHaveLength(2);
 });
 
-it('revalidates an in-flight local scan after an external append before assigning positions', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-scan-'));
-  const clock = new FakeClock();
-  const primary: EntityRef<'work-item', 'primary'> = { kind: 'work-item', id: 'primary' };
-  const external: EntityRef<'work-item', 'external'> = { kind: 'work-item', id: 'external' };
-  const local: EntityRef<'work-item', 'local'> = { kind: 'work-item', id: 'local' };
-  const draft = (stream: EntityRef, id: string) =>
-    createEventData({
-      eventId: id,
-      eventType: 'work.item-created',
-      occurredAt: '2026-07-30T12:00:00Z',
-      correlationId: 'corr',
-      causationId: id,
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      payload: { objective: id },
-    });
-  const remoteWriter = new FileEventJournal(root, clock);
-  await remoteWriter.appendToStream(primary, 0, [draft(primary, 'event-1')]);
-
-  const segmentPath = join(root, 'events', '2026-07-30.jsonl');
-  const journalLockPath = join(root, 'locks', 'event-journal.lock');
-  const snapshotRead = deferred<void>();
-  const releaseSnapshot = deferred<void>();
-  const originalReadFile = readFileMock.getMockImplementation();
-  if (originalReadFile === undefined)
-    throw new Error('Expected the filesystem read mock implementation');
-  let heldSnapshot = false;
-  readFileMock.mockImplementation(async (...args) => {
-    if (!heldSnapshot && String(args[0]) === segmentPath) {
-      heldSnapshot = true;
-      const contents = await originalReadFile(...args);
-      snapshotRead.resolve();
-      await releaseSnapshot.promise;
-      return contents;
-    }
-    return originalReadFile(...args);
-  });
-
-  try {
-    const localReader = new FileEventJournal(root, clock);
-    const staleRead = localReader.latestGlobalPosition();
-    await snapshotRead.promise;
-    await remoteWriter.appendToStream(external, 0, [draft(external, 'event-2')]);
-    const localAppend = localReader.appendToStream(local, 0, [draft(local, 'event-3')]);
-    let localAppendSettled = false;
-    void localAppend.then(
-      () => {
-        localAppendSettled = true;
-      },
-      () => {
-        localAppendSettled = true;
-      },
-    );
-    await vi.waitFor(async () => {
-      if (localAppendSettled) return;
-      expect(await readFile(journalLockPath, 'utf8')).toContain('compatibilityOwner');
-    });
-    releaseSnapshot.resolve();
-
-    await expect(staleRead).resolves.toBe(1);
-    await expect(localAppend).resolves.toEqual([
-      expect.objectContaining({
-        event: expect.objectContaining({ eventId: 'event-3' }),
-        globalPosition: 3,
-      }),
-    ]);
-    await expect(new FileEventJournal(root, clock).readAll(0)).resolves.toEqual([
-      expect.objectContaining({
-        event: expect.objectContaining({ eventId: 'event-1' }),
-        globalPosition: 1,
-      }),
-      expect.objectContaining({
-        event: expect.objectContaining({ eventId: 'event-2' }),
-        globalPosition: 2,
-      }),
-      expect.objectContaining({
-        event: expect.objectContaining({ eventId: 'event-3' }),
-        globalPosition: 3,
-      }),
-    ]);
-  } finally {
-    releaseSnapshot.resolve();
-    readFileMock.mockImplementation(originalReadFile);
-  }
+it('assigns contiguous positions across concurrent writers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-writers-'));
+  const writers = Array.from({ length: 8 }, () => new FileEventJournal(root, new FakeClock()));
+  const appended = await Promise.all(
+    writers.map((writer, index) =>
+      writer.appendToStream({ kind: 'test', id: String(index) }, 0, [journalDraft(String(index))]),
+    ),
+  );
+  expect(appended.map((events) => events[0]!.globalPosition).sort((a, b) => a - b)).toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8,
+  ]);
+  expect(await writers[0]!.readAll(0)).toHaveLength(8);
 });
 
 it('readStream on a cold cache parses only the segment files that can hold that stream', async () => {
@@ -1051,7 +879,7 @@ it('falls back to a full scan and still returns correct data when the persisted 
     });
   const writer = new FileEventJournal(root, new FakeClock());
   await writer.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
-  await writeFile(join(root, 'events', 'index-manifest.json'), '{not json', 'utf8');
+  await writeFile(join(root, 'journal-index.sqlite'), '{not sqlite', 'utf8');
 
   const reader = new FileEventJournal(root, new FakeClock());
   expect((await reader.readAll(0)).map((event) => event.event.eventId)).toEqual([
@@ -1080,11 +908,9 @@ it('falls back to a full scan when a valid-shaped persisted index points at the 
     });
   const writer = new FileEventJournal(root, new FakeClock());
   await writer.appendToStream(stream, 0, [draft('event-1'), draft('event-2')]);
-  const manifest = JSON.parse(
-    await readFile(join(root, 'events', 'index-manifest.json'), 'utf8'),
-  ) as { segments: Array<{ events: Array<{ offset: number }> }> };
-  manifest.segments[0]!.events[1]!.offset = 0;
-  await writeFile(join(root, 'events', 'index-manifest.json'), JSON.stringify(manifest), 'utf8');
+  const index = new DatabaseSync(join(root, 'journal-index.sqlite'));
+  index.exec('UPDATE records SET offset = 0 WHERE position = 2');
+  index.close();
 
   const reader = new FileEventJournal(root, new FakeClock());
   expect((await reader.readAll(0)).map((event) => event.event.eventId)).toEqual([
@@ -1180,35 +1006,14 @@ it('arms a watcher on a fresh root and wakes promptly after the first external a
 });
 
 it('discovers an external append by fallback when watcher setup fails', async () => {
-  vi.useFakeTimers();
-  try {
-    const root = await mkdtemp(join(tmpdir(), 'wake-journal-fallback-wake-'));
-    const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
-    const draft = createEventData({
-      eventId: 'event-1',
-      eventType: 'work.item-created',
-      occurredAt: '2026-07-30T12:00:00Z',
-      correlationId: 'corr',
-      causationId: 'event-1',
-      actor: { kind: 'system', id: 'test' },
-      source: { kind: 'internal', id: 'test' },
-      payload: { objective: 'ship' },
-    });
-    const watcher = controlledWatcherFactory(new Error('watch unavailable'));
-    const clock = new FakeClock();
-    const reader = new FileEventJournal(root, clock, { watcherFactory: watcher.factory });
-    const writer = new FileEventJournal(root, new FakeClock());
-    const wait = reader.waitForEventsAfter(0, new AbortController().signal, 1_000);
-
-    await vi.waitFor(() => expect(watcher.factory).toHaveBeenCalledOnce());
-    await writer.appendToStream(stream, 0, [draft]);
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    await expect(wait).resolves.toBeUndefined();
-    expect((await reader.readAll(0)).map((entry) => entry.event.eventId)).toEqual(['event-1']);
-  } finally {
-    vi.useRealTimers();
-  }
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-fallback-wake-'));
+  const watcher = controlledWatcherFactory(new Error('watch unavailable'));
+  const reader = new FileEventJournal(root, new FakeClock(), { watcherFactory: watcher.factory });
+  const writer = new FileEventJournal(root, new FakeClock());
+  const wait = reader.waitForEventsAfter(0, new AbortController().signal, 20);
+  await writer.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  await wait;
+  expect(await reader.latestGlobalPosition()).toBe(1);
 });
 
 it('rearms the advisory watcher after a watcher failure', async () => {
@@ -1271,14 +1076,6 @@ function journalDraft(eventId: string) {
   });
 }
 
-function deferred<Value>() {
-  let resolve!: (value: Value | PromiseLike<Value>) => void;
-  const promise = new Promise<Value>((next) => {
-    resolve = next;
-  });
-  return { promise, resolve };
-}
-
 it('wakes every concurrent waiter from one external append', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-many-waiters-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
@@ -1333,15 +1130,6 @@ it('stream reads observe cross-host appends immediately', async () => {
   ]);
 });
 
-// Probing for the next segment stats names that do not exist yet; a segment
-// that is already known must never be stat'ed again.
-function expectNoExistingSegmentStats(): void {
-  const existing = statMock.mock.calls
-    .map(([path]) => String(path))
-    .filter((path) => path.endsWith('.jsonl') && existsSync(path));
-  expect(existing).toEqual([]);
-}
-
 it('does not list the directory while a probe for the next segment finds nothing', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-'));
   const stream: EntityRef<'work-item', 'work-1'> = { kind: 'work-item', id: 'work-1' };
@@ -1356,7 +1144,9 @@ it('does not list the directory while a probe for the next segment finds nothing
   // The directory changed moments ago, so its stamp alone could not be trusted.
   for (let call = 0; call < 50; call += 1) expect(await journal.latestGlobalPosition()).toBe(5);
 
-  expect(readdirMock).not.toHaveBeenCalled();
+  expect(
+    readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+  ).toHaveLength(0);
 });
 
 it('still sees an append by another journal instance immediately', async () => {
@@ -1375,7 +1165,7 @@ it('still sees an append by another journal instance immediately', async () => {
   }
 });
 
-it('relists the directory once the probe-only interval has passed', async () => {
+it('keeps idle reads independent of history after time passes', async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   try {
     const root = await mkdtemp(join(tmpdir(), 'wake-journal-probe-interval-'));
@@ -1388,7 +1178,9 @@ it('relists the directory once the probe-only interval has passed', async () => 
     vi.setSystemTime(Date.now() + 6_000);
     await journal.latestGlobalPosition();
 
-    expect(readdirMock).toHaveBeenCalled();
+    expect(
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
   } finally {
     vi.useRealTimers();
   }
@@ -1411,3 +1203,119 @@ it('sees a first-of-day append by an instance whose clock is on an earlier day t
   expect(await reader.latestGlobalPosition()).toBe(2);
   expect((await reader.readStream(stream)).length).toBe(2);
 });
+
+it('does not list event files during cold or warm steady-state appends', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-no-append-listing-'));
+  const stream = { kind: 'test', id: 'one' };
+  await new FileEventJournal(root, new FakeClock()).appendToStream(stream, 0, [
+    journalDraft('one'),
+  ]);
+  readdirMock.mockClear();
+  const writer = new FileEventJournal(root, new FakeClock());
+  await writer.appendToStream(stream, 1, [journalDraft('two')]);
+  await writer.appendToStream(stream, 2, [journalDraft('three')]);
+  expect(
+    readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+  ).toHaveLength(0);
+});
+
+it('returns a committed append and heals on the next read after an index write fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-index-write-failure-'));
+  const stream = { kind: 'test', id: 'one' };
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream(stream, 0, [journalDraft('one')]);
+  const original = DatabaseSync.prototype.prepare;
+  const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (
+    this: DatabaseSync,
+    sql,
+  ) {
+    if (sql.startsWith('INSERT INTO records')) throw new Error('simulated index write failure');
+    return original.call(this, sql);
+  });
+  try {
+    expect(await journal.appendToStream(stream, 1, [journalDraft('two')])).toHaveLength(1);
+    expect(await readFile(join(root, 'journal-index.dirty'), 'utf8')).toBe('pending');
+  } finally {
+    prepare.mockRestore();
+  }
+  expect((await journal.readStream(stream)).map((event) => event.event.eventId)).toEqual([
+    'one',
+    'two',
+  ]);
+  await expect(readFile(join(root, 'journal-index.dirty'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+});
+
+it('does not retain the results of an unbounded read in its serialisation queue', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-no-result-cache-'));
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  const all = await journal.readAll(0);
+  expect(all).toHaveLength(1);
+  expect(await (journal as unknown as { queue: Promise<unknown> }).queue).toBeUndefined();
+});
+
+it('keeps explicit diagnostic reads non-mutating with missing and corrupt indexes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-read-only-'));
+  const reader = new FileEventJournal(root, new FakeClock(), { readOnly: true });
+  expect(await reader.latestGlobalPosition()).toBe(0);
+  expect(await reader.readAll(0)).toEqual([]);
+  expect(await readdir(root)).toEqual([]);
+  await expect(
+    reader.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]),
+  ).rejects.toThrow('Read-only');
+  const writer = new FileEventJournal(root, new FakeClock());
+  await writer.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  const index = join(root, 'journal-index.sqlite');
+  await rm(index);
+  const before = await readdir(root);
+  expect(await reader.readAll(0)).toHaveLength(1);
+  expect(await readdir(root)).toEqual(before);
+  await writeFile(index, 'corrupt index');
+  expect(await reader.readStream({ kind: 'test', id: 'one' })).toHaveLength(1);
+  expect(await readFile(index, 'utf8')).toBe('corrupt index');
+});
+
+it('releases its SQLite snapshot before segment I/O so a writer can commit concurrently', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-reader-writer-'));
+  const stream = { kind: 'test', id: 'one' };
+  const writer = new FileEventJournal(root, new FakeClock());
+  const reader = new FileEventJournal(root, new FakeClock());
+  await writer.appendToStream(stream, 0, [journalDraft('one')]);
+  const original = openMock.getMockImplementation()!;
+  let release!: () => void;
+  let observed!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  let paused = false;
+  openMock.mockImplementation(async (...args) => {
+    if (!paused && String(args[0]).endsWith('.jsonl')) {
+      paused = true;
+      observed();
+      await held;
+    }
+    return original(...args);
+  });
+  const reading = reader.readAll(0);
+  try {
+    await started;
+    readdirMock.mockClear();
+    await writer.appendToStream(stream, 1, [journalDraft('two')]);
+    await expect(readFile(join(root, 'journal-index.dirty'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    expect(
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
+  } finally {
+    release();
+    openMock.mockImplementation(original);
+  }
+  expect(await reading).toHaveLength(1);
+  expect(await reader.readStream(stream)).toHaveLength(2);
+}, 15_000);

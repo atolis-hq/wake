@@ -202,7 +202,14 @@ function resolveResourceLink(externalKey: Parameters<ResourceLinkResolver>[0]): 
   return resourceLinkResolvers[externalKey.adapter]?.(externalKey) ?? null;
 }
 
-async function createApplicationServices(wakeRoot: string, options: CompositionRootOptions = {}) {
+interface ApplicationServicesOptions extends CompositionRootOptions {
+  readonly readOnlyJournal?: boolean;
+}
+
+async function createApplicationServices(
+  wakeRoot: string,
+  options: ApplicationServicesOptions = {},
+) {
   const config = options.config ?? (await loadConfig(wakeRoot));
   const fakeScenarios = await loadFakeScenarios(wakeRoot);
   const paths = resolveWakePaths(wakeRoot);
@@ -502,7 +509,7 @@ async function createApplicationServices(wakeRoot: string, options: CompositionR
 }
 
 export async function createDiagnosticRoot(wakeRoot: string) {
-  const base = await createApplicationServices(wakeRoot);
+  const base = await createApplicationServices(wakeRoot, { readOnlyJournal: true });
   const { instances, failures } = await composeProviders({
     ...base,
     wakeRoot,

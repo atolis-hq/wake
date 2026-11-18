@@ -16,6 +16,7 @@ import type { Clock } from '../kernel/index.js';
 import type { WakePaths } from './paths.js';
 
 export interface PersistenceCompositionOptions {
+  readonly readOnlyJournal?: boolean;
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
@@ -79,7 +80,10 @@ export function composePersistence(
   return {
     journal: serializeJournalAppends(
       (options.decorateJournal ?? identity)(
-        options.journal ?? new FileEventJournal(paths.dataRoot, clock),
+        options.journal ??
+          new FileEventJournal(paths.dataRoot, clock, {
+            readOnly: options.readOnlyJournal ?? false,
+          }),
       ),
     ),
     projections: (options.decorateProjections ?? identity)(

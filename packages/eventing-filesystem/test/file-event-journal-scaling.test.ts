@@ -1,10 +1,10 @@
 import { createEventData, type StreamRef as EntityRef } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
-import { statSync } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, expect, it, vi } from 'vitest';
 import { FakeClock } from './support/fake-clock.js';
 
@@ -14,6 +14,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   readFileMock.mockImplementation(actual.readFile);
   return { ...actual, readFile: readFileMock };
 });
+
+// Scaling fixtures publish thousands of files on real storage.
+vi.setConfig({ testTimeout: 20_000 });
 
 // A resident Wake home holds tens of thousands of one-event segments. These
 // tests pin the cost of the hot journal operations to the size of the change,
@@ -69,53 +72,49 @@ async function seedSegments(root: string, count: number, streams = 40): Promise<
   await Promise.all(writes);
 }
 
-it('does not re-serialise the whole segment index on every append', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-manifest-cost-'));
-  const segments = 3_000;
-  await seedSegments(root, segments);
+it('does not serialise history during steady-state appends', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-index-cost-'));
+  await seedSegments(root, 3000);
   const journal = new FileEventJournal(root, new FakeClock());
-  const stream: EntityRef<'test', 'append'> = { kind: 'test', id: 'append' };
-  // The first append of a process writes the base index once.
+  const stream = { kind: 'test', id: 'append' };
   await journal.appendToStream(stream, 0, [draft('first')]);
-  const baseBytes = statSync(join(root, 'events', 'index-manifest.json')).size;
-  expect(baseBytes).toBeGreaterThan(500_000);
-
   const stringify = vi.spyOn(JSON, 'stringify');
-  const appends = 40;
-  for (let index = 1; index <= appends; index += 1)
-    await journal.appendToStream(stream, index, [draft(`event-${index}`)]);
-
-  const serialisedChars = stringify.mock.results.reduce(
-    (total, result) => total + (typeof result.value === 'string' ? result.value.length : 0),
-    0,
+  for (let index = 1; index <= 40; index += 1)
+    await journal.appendToStream(stream, index, [draft(String(index))]);
+  const largest = Math.max(
+    ...stringify.mock.results.map((result) =>
+      typeof result.value === 'string' ? result.value.length : 0,
+    ),
   );
-  // Indexing the whole history per append would serialise `baseBytes` characters
-  // each time; the tail holds only the segments added since the base was written.
-  expect(serialisedChars / appends).toBeLessThan(baseBytes / 4);
-  expect(statSync(join(root, 'events', 'index-manifest.json')).size).toBe(baseBytes);
+  expect(largest).toBeLessThan(2000);
 });
 
-it('rewrites the base index only once per tail window', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-manifest-compaction-'));
-  const journal = new FileEventJournal(root, new FakeClock());
-  const stream: EntityRef<'test', 'append'> = { kind: 'test', id: 'append' };
-  const bases = new Set<string>();
-  const appends = 600;
-  for (let index = 0; index < appends; index += 1) {
-    await journal.appendToStream(stream, index, [draft(`event-${index}`)]);
-    const info = statSync(join(root, 'events', 'index-manifest.json'));
-    bases.add(`${info.ino}:${info.mtimeMs}`);
+it('uses the global and per-stream B-tree indexes for bounded lookups', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-query-plan-'));
+  await seedSegments(root, 3000);
+  await new FileEventJournal(root, new FakeClock()).latestGlobalPosition();
+  const db = new DatabaseSync(join(root, 'journal-index.sqlite'));
+  try {
+    const global = db
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT * FROM records WHERE position > 2900 ORDER BY position LIMIT 100',
+      )
+      .all();
+    const stream = db
+      .prepare('EXPLAIN QUERY PLAN SELECT * FROM records WHERE stream = ? ORDER BY sequence')
+      .all('["test","s1"]');
+    expect(global.map((row) => row.detail).join(' ')).toContain(
+      'SEARCH records USING INTEGER PRIMARY KEY',
+    );
+    expect(stream.map((row) => row.detail).join(' ')).toContain(
+      'SEARCH records USING INDEX stream_sequence',
+    );
+  } finally {
+    db.close();
   }
-
-  // Once at the start, then every 256 appended segments: not once per append.
-  expect(bases.size).toBeLessThanOrEqual(Math.ceil(appends / 256) + 1);
-  const tail = JSON.parse(
-    await readFile(join(root, 'events', 'index-manifest.tail.json'), 'utf8'),
-  ) as { segments: unknown[] };
-  expect(tail.segments.length).toBeLessThanOrEqual(256);
 });
 
-it('serves a cold reader from the base index plus its tail without parsing unrelated segments', async () => {
+it('serves a cold reader without parsing unrelated segments', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-tail-read-'));
   await seedSegments(root, 400, 8);
   const writer = new FileEventJournal(root, new FakeClock());
@@ -136,27 +135,17 @@ it('serves a cold reader from the base index plus its tail without parsing unrel
   );
 });
 
-it('falls back to the segments when the tail does not extend the base', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'wake-journal-stale-tail-'));
-  const writer = new FileEventJournal(root, new FakeClock());
-  const stream: EntityRef<'test', 'stale'> = { kind: 'test', id: 'stale' };
-  for (let index = 0; index < 5; index += 1)
-    await writer.appendToStream(stream, index, [draft(`event-${index}`)]);
-  const tailPath = join(root, 'events', 'index-manifest.tail.json');
-  const tail = JSON.parse(await readFile(tailPath, 'utf8')) as { baseSegments: number };
-  await writeFile(tailPath, JSON.stringify({ ...tail, baseSegments: tail.baseSegments + 7 }));
-
-  const reader = new FileEventJournal(root, new FakeClock());
-  expect((await reader.readAll(0)).map((event) => event.event.eventId)).toEqual([
-    'event-0',
-    'event-1',
-    'event-2',
-    'event-3',
-    'event-4',
-  ]);
-  // The next append heals the derived index for the following cold reader.
-  await reader.appendToStream(stream, 5, [draft('event-5')]);
-  expect(await new FileEventJournal(root, new FakeClock()).readAll(4)).toHaveLength(2);
+it('rebuilds after a dirty marker even when the directory stamp did not change', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-dirty-'));
+  const journal = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 'one' };
+  await journal.appendToStream(stream, 0, [draft('one')]);
+  const db = new DatabaseSync(join(root, 'journal-index.sqlite'));
+  db.exec('DELETE FROM records');
+  db.close();
+  await writeFile(join(root, 'journal-index.dirty'), 'pending');
+  expect(await journal.latestGlobalPosition()).toBe(1);
+  expect((await journal.readStream(stream))[0]?.event.eventId).toBe('one');
 });
 
 it('answers readAll and readLatest by position, with the same bounds as a scan', async () => {
@@ -203,8 +192,7 @@ it('never mutates a stream array already handed to a reader when the stream grow
     'g-0',
     'g-1',
   ]);
-  // Streams the append did not touch keep sharing their existing array.
-  expect(await journal.readStream(other)).toBe(heldOther);
+  expect(await journal.readStream(other)).toEqual(heldOther);
 });
 
 it('reads a cold journal in listing order even when segment reads complete out of order', async () => {
@@ -216,4 +204,18 @@ it('reads a cold journal in listing order even when segment reads complete out o
   expect(events.map((event) => event.globalPosition)).toEqual(
     Array.from({ length: 500 }, (_, index) => index + 1),
   );
+});
+
+it('keeps decoded envelopes bounded after head, replay, and stream reads', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-bounded-cache-'));
+  await seedSegments(root, 3000);
+  const journal = new FileEventJournal(root, new FakeClock());
+  expect(await journal.latestGlobalPosition()).toBe(3000);
+  const cache = (journal as unknown as { envelopeCache: ReadonlyMap<string, unknown> })
+    .envelopeCache;
+  expect(cache.size).toBe(1);
+  expect(await journal.readAll(0)).toHaveLength(3000);
+  expect(cache.size).toBe(256);
+  expect(await journal.readStream({ kind: 'test', id: 's1' })).toHaveLength(75);
+  expect(cache.size).toBe(256);
 });

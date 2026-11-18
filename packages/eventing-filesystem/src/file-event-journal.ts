@@ -8,9 +8,11 @@ import type {
 } from '@atolis-hq/eventing';
 import { decodeEventEnvelope, WrongExpectedSequenceError, yieldScan } from '@atolis-hq/eventing';
 import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
-import { createReadStream, watch } from 'node:fs';
-import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { watch } from 'node:fs';
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { scheduler } from 'node:timers/promises';
 import { writeFileAtomically } from './atomic-write.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
@@ -28,26 +30,15 @@ export type FileEventJournalWatcherFactory = (
 
 export interface FileEventJournalOptions {
   readonly watcherFactory?: FileEventJournalWatcherFactory;
+  /** Diagnostic readers never create locks, indexes, or recovery files. */
+  readonly readOnly?: boolean;
 }
 
 const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
   watch(directory, { persistent: false }, notify);
 
-// A directory timestamp only proves "unchanged" once it is older than the
-// filesystem's timestamp granularity, otherwise a second change inside the same
-// tick would leave it identical. Younger stamps are re-listed, never trusted.
-const unchangedStampMinAgeMs = 2_500;
-const statBatchSize = 256;
-// Reads may skip the directory listing while a probe for the next segment finds
-// nothing, but never for longer than this: a full listing still bounds how long
-// an unexpected change (a removed segment, an odd clock) can go unnoticed.
-const maxProbeOnlyMs = 5_000;
-const maxProbedDays = 8;
-// Segment files read ahead of the parser during a cold scan.
-const segmentReadBatch = 16;
-// Segments the manifest tail may hold before the full manifest is rewritten.
-const manifestTailLimit = 256;
-
+// The JSONL files are authoritative. SQLite contains only rebuildable byte
+// locations; its B-trees bound page reads/writes without a growing JS manifest.
 export class FileEventJournal implements EventJournal {
   constructor(
     private readonly root: string,
@@ -58,247 +49,447 @@ export class FileEventJournal implements EventJournal {
   private readonly changeSignalSource = new InProcessJournalChangeSignal();
   private changeWatcher: FileEventJournalWatcher | undefined;
   private startingChangeWatcher: Promise<void> | undefined;
+  private queue: Promise<void> = Promise.resolve();
+  private readonly envelopeCache = new Map<string, EventEnvelope>();
 
   get changeSignal(): JournalChangeSignal {
     return this.changeSignalSource;
   }
 
-  // The most complete snapshot seen so far. Readers never build on it after an
-  // await: a scan returns its own snapshot, because a slower scan of older
-  // entries may finish after a newer one and must not be mistaken for it.
-  private cached: JournalSnapshot | undefined;
+  private get indexPath(): string {
+    return join(this.root, 'journal-index.sqlite');
+  }
 
-  // Every read (readStream/readAll/readLatest/latestGlobalPosition) reaches
-  // scan(), and the resident host's tick loop calls those many times a
-  // second while work is progressing. Without coalescing, calls that land
-  // concurrently each independently decide the cache is stale and each
-  // re-read and re-parse the entire on-disk journal — under I/O pressure
-  // (e.g. a concurrently running build/test process competing for disk),
-  // enough of these can overlap at once to exhaust the heap. Sharing a decode
-  // only for the same segment fingerprints keeps that protection without
-  // letting an append reuse a scan from before another process wrote.
-  private inFlightScan:
-    { readonly entries: readonly FileStat[]; readonly run: Promise<JournalSnapshot> } | undefined;
+  private get dirtyPath(): string {
+    return join(this.root, 'journal-index.dirty');
+  }
 
-  // Segments are immutable: each is published by atomic rename to a name that is
-  // never reused, and nothing rewrites or deletes one. A segment seen once is
-  // therefore never stat'ed again, and a listing costs a directory stat, one
-  // readdir and a stat of the names not seen before. There is no validity
-  // window: every read reflects every append committed before it was called,
-  // including appends by other processes sharing the directory.
-  private readonly knownSegments = new Map<string, FileStat>();
-  private latestEntries: readonly FileStat[] = [];
-  private listing: { readonly stamp: DirectoryStamp; readonly startedAtMs: number } | undefined;
+  // Serialise local writes and recovery before competing for the process lock.
+  private serialised<T>(operation: (db: DatabaseSync) => Promise<T>): Promise<T> {
+    if (this.options.readOnly) return this.readOnlyIndex(operation);
+    const run = this.queue
+      .catch(() => undefined)
+      .then(() =>
+        withFileLock(
+          join(this.root, 'locks', 'event-journal.lock'),
+          async () => {
+            await mkdir(join(this.root, 'events'), { recursive: true });
+            let db: DatabaseSync;
+            try {
+              db = this.openIndex();
+            } catch {
+              await rm(this.indexPath, { force: true });
+              db = this.openIndex();
+            }
+            try {
+              let valid = false;
+              try {
+                const head = db.prepare('SELECT stamp, position FROM head WHERE id = 1').get();
+                valid =
+                  head?.stamp === (await this.directoryStamp()) && head?.position === this.head(db);
+              } catch {
+                db.close();
+                await rm(this.indexPath, { force: true });
+                db = this.openIndex();
+              }
+              if (!valid || (await exists(this.dirtyPath))) await this.rebuild(db);
+              return await operation(db);
+            } finally {
+              db.close();
+            }
+          },
+          { waitMs: 30_000, retryIntervalMs: 10 },
+        ),
+      );
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
-  private runningListing: Promise<readonly FileStat[]> | undefined;
-  private queuedListing: Promise<readonly FileStat[]> | undefined;
-  private temporariesReclaimed = false;
-  private lastFullListingMs = 0;
-  private persistedBase: PersistedBase | undefined;
+  private async readOnlyIndex<T>(operation: (db: DatabaseSync) => Promise<T>): Promise<T> {
+    let db: DatabaseSync | undefined;
+    let ready = false;
+    try {
+      const stamp = await this.directoryStamp();
+      const dirty = await exists(this.dirtyPath);
+      db = this.openIndex(this.indexPath, true);
+      db.exec('BEGIN');
+      const head = db.prepare('SELECT stamp, position FROM head WHERE id = 1').get();
+      if (head?.stamp !== stamp || head?.position !== this.head(db) || dirty)
+        throw new Error('Journal index requires recovery');
+      ready = true;
+      return await operation(db);
+    } catch {
+      db?.close();
+      db = undefined;
+      if (!this.options.readOnly)
+        return this.serialised(async (index) => {
+          if (ready) await this.rebuild(index);
+          return operation(index);
+        });
+      // Read-only diagnostics can inspect legacy or damaged indexes without
+      // changing runtime state. Their recovery index exists only in memory.
+      const memory = this.openIndex(':memory:');
+      try {
+        await this.rebuild(memory, false);
+        return await operation(memory);
+      } finally {
+        memory.close();
+      }
+    } finally {
+      db?.close();
+    }
+  }
+
+  private openIndex(path = this.indexPath, readOnly = false): DatabaseSync {
+    const db = new DatabaseSync(path, { readOnly });
+    try {
+      db.exec(`
+        PRAGMA cache_size = -2048;
+        PRAGMA mmap_size = 0;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA busy_timeout = 5000;
+      `);
+      if (!readOnly)
+        db.exec(`
+        CREATE TABLE IF NOT EXISTS head (id INTEGER PRIMARY KEY CHECK (id = 1), stamp TEXT NOT NULL, position INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS records (
+          position INTEGER PRIMARY KEY,
+          stream TEXT NOT NULL, sequence INTEGER NOT NULL,
+          file TEXT NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL,
+          size INTEGER NOT NULL, mtime REAL NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS stream_sequence ON records (stream, sequence);
+      `);
+      return db;
+    } catch (error) {
+      db.close();
+      throw error;
+    }
+  }
+
+  private async directoryStamp(): Promise<string> {
+    try {
+      const info = await stat(join(this.root, 'events'), { bigint: true });
+      return `${info.ino}:${info.mtimeNs}:${info.ctimeNs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+      throw error;
+    }
+  }
+
+  private head(db: DatabaseSync): number {
+    return Number(
+      db.prepare('SELECT position FROM records ORDER BY position DESC LIMIT 1').get()?.position ??
+        0,
+    );
+  }
 
   async appendToStream(
     stream: StreamRef,
     expectedSequence: number,
     drafts: readonly EventData[],
   ): Promise<readonly EventEnvelope[]> {
+    if (this.options.readOnly) throw new Error('Read-only journal cannot append');
     if (drafts.length === 0) throw new Error('appendToStream requires at least one event');
-    return withFileLock(
-      join(this.root, 'locks', 'event-journal.lock'),
-      async () => {
-        if (!this.temporariesReclaimed) {
-          await reclaimStaleSegmentTemps(join(this.root, 'events'));
-          this.temporariesReclaimed = true;
-        }
-        // Positions are assigned from this snapshot, so it must come from a full listing.
-        const snapshot = await this.scan(await this.currentEntries({ exhaustive: true }));
-        const current = snapshot.events;
-        const streamEvents = snapshot.eventsByStream.get(key(stream)) ?? [];
-        if (streamEvents.length !== expectedSequence)
-          throw new WrongExpectedSequenceError(
-            `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${streamEvents.length}`,
-          );
-        const recordedAt = this.clock.now().toISOString();
-        const envelopes = drafts.map((draft, index): EventEnvelope => ({
-          event: draft,
+    return this.serialised(async (db) => {
+      await this.indexedRead(db, 'SELECT * FROM records ORDER BY position DESC LIMIT 1', []);
+      const streamTail = await this.indexedRead(
+        db,
+        'SELECT * FROM records WHERE stream = ? ORDER BY sequence DESC LIMIT 1',
+        [key(stream)],
+      );
+      const sequence = streamTail[0]?.sequence ?? 0;
+      if (sequence !== expectedSequence)
+        throw new WrongExpectedSequenceError(
+          `Expected sequence ${expectedSequence} for ${key(stream)}, actual ${sequence}`,
+        );
+      const position = this.head(db);
+      const recordedAt = this.clock.now().toISOString();
+      const events = drafts.map((event, index) =>
+        decodeEventEnvelope({
+          event,
           stream,
           recordedAt,
-          sequence: streamEvents.length + index + 1,
-          globalPosition: current.length + index + 1,
-        }));
-        const finalizedEnvelopes = envelopes.map((event) => decodeEventEnvelope(event));
-        const directory = join(this.root, 'events');
-        await mkdir(directory, { recursive: true });
-        const file = await this.nextSegmentFile(directory, recordedAt, current.length + 1);
-        await writeSegmentAtomically(
-          join(directory, file),
-          finalizedEnvelopes.map(encodeEventRecord).join('\n') + '\n',
-        );
-        const next = await this.extendCache(file, snapshot, finalizedEnvelopes);
-        // The manifest is derived data. The event append is authoritative, so
-        // an index-write failure must not turn a successfully recorded event
-        // into a failed append.
-        await this.persistManifest(next).catch(() => undefined);
-        this.changeSignalSource.notify();
-        return finalizedEnvelopes;
-      },
-      { waitMs: 5_000, retryIntervalMs: 25 },
-    );
+          sequence: sequence + index + 1,
+          globalPosition: position + index + 1,
+        }),
+      );
+      const day = recordedAt.slice(0, 10);
+      const file = (await exists(join(this.root, 'events', `${day}.jsonl`)))
+        ? `${day}~${String(position + 1).padStart(20, '0')}.jsonl`
+        : `${day}.jsonl`;
+      // Persist the recovery intent before publishing the authoritative segment.
+      // A crash or failed index write leaves it behind for the next locked call.
+      await writeFileAtomically(this.dirtyPath, 'pending');
+      const raw = events.map(encodeEventRecord).join('\n') + '\n';
+      await writeSegmentAtomically(join(this.root, 'events', file), raw);
+      try {
+        db.exec('BEGIN');
+        await this.indexSegment(db, file, raw, position);
+        await this.commitHead(db);
+        await rm(this.dirtyPath, { force: true });
+      } catch {
+        if (db.isTransaction) db.exec('ROLLBACK');
+        // An index failure cannot undo a committed JSONL append.
+      }
+      this.changeSignalSource.notify();
+      return events;
+    });
   }
 
-  private async nextSegmentFile(
-    directory: string,
-    recordedAt: string,
-    firstGlobalPosition: number,
-  ): Promise<string> {
-    const day = recordedAt.slice(0, 10);
-    const daily = `${day}.jsonl`;
+  private async commitHead(db: DatabaseSync): Promise<void> {
+    db.prepare('INSERT OR REPLACE INTO head VALUES (1, ?, ?)').run(
+      await this.directoryStamp(),
+      this.head(db),
+    );
+    db.exec('COMMIT');
+  }
+
+  private async rebuild(db: DatabaseSync, persist = true): Promise<void> {
+    if (persist) {
+      await writeFile(this.dirtyPath, 'rebuilding');
+      await reclaimStaleSegmentTemps(join(this.root, 'events'));
+    }
+    let names: string[];
     try {
-      await stat(join(directory, daily));
-      return `${day}~${String(firstGlobalPosition).padStart(20, '0')}.jsonl`;
+      names = await readdir(join(this.root, 'events'));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return daily;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      names = [];
+    }
+    const files = names.filter((file) => segmentName.test(file));
+    // Sort by the first persisted position, rather than clock order. Clock skew
+    // never changes global ordering or requires rewriting historical segments.
+    const segments: { file: string; position: number }[] = [];
+    for (const file of files) {
+      const suffix = /~(\d{20})\.jsonl$/.exec(file);
+      if (suffix !== null) segments.push({ file, position: Number(suffix[1]) });
+      else {
+        const raw = await readFile(join(this.root, 'events', file), 'utf8');
+        if (raw !== '' && !raw.endsWith('\n'))
+          throw new Error(`Incomplete trailing line in ${file}`);
+        const first = raw.split('\n', 1)[0];
+        let position = 0;
+        if (first) {
+          try {
+            position = decodeEventRecord(JSON.parse(first)).globalPosition;
+          } catch {
+            decodeLine(file, 1, first, 1);
+          }
+        }
+        segments.push({ file, position });
+      }
+    }
+    segments.sort((a, b) => a.position - b.position || a.file.localeCompare(b.file));
+    db.exec('BEGIN; DELETE FROM records; DELETE FROM head;');
+    try {
+      let position = 0;
+      for (const { file } of segments) {
+        position = await this.indexSegment(
+          db,
+          file,
+          await readFile(join(this.root, 'events', file), 'utf8'),
+          position,
+        );
+        if (position % 100 === 0) await scheduler.yield();
+      }
+      await this.commitHead(db);
+      if (persist) await rm(this.dirtyPath, { force: true });
+    } catch (error) {
+      if (db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
   }
 
-  // Reads via the persisted per-segment manifest when the in-memory cache is
-  // cold (fresh process, or an on-disk change this instance didn't make),
-  // parsing only the segment files that can hold matching events instead of
-  // the entire history. A missing or stale manifest degrades to scan()'s
-  // full parse rather than to incorrect data. The next successful append
-  // rebuilds the derived manifest.
-  async readStream(stream: StreamRef) {
-    const streamKey = key(stream);
-    const entries = await this.currentEntries();
-    const warm = this.cached;
-    if (warm !== undefined) {
-      const snapshot = sameEntries(warm.entries, entries) ? warm : await this.scan(entries);
-      return snapshot.eventsByStream.get(streamKey) ?? [];
-    }
-    const manifest = await this.loadManifest();
-    if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
-      try {
-        return await this.parseIndexedEntries(
-          manifest.segments.flatMap((segment) =>
-            segment.events
-              .filter((event) => event.stream === streamKey)
-              .map((event) => ({ ...event, file: segment.file })),
-          ),
-        );
-      } catch {
-        // The segment stats guarded the common stale-index case. If an index
-        // is nevertheless internally inconsistent, the JSONL remains the
-        // authority and retains the original read semantics.
-      }
-    }
-    return (await this.scan(entries)).events.filter((event) => key(event.stream) === streamKey);
-  }
-
-  /** Live readers bypass the full-history cache and stop at captured segment sizes. */
-  async *scanAll(signal?: AbortSignal): AsyncIterable<EventEnvelope> {
-    signal?.throwIfAborted();
-    const entries = await this.currentEntries();
-    let position = 0;
-    for (const entry of entries) {
-      let lineNumber = 0;
-      for await (const line of this.scanSegment(entry, signal)) {
-        if (position % 100 === 0) await yieldScan(signal);
-        signal?.throwIfAborted();
-        yield this.decodeScanRecord(entry.file, ++lineNumber, line, ++position);
-      }
-    }
-  }
-
-  private async *scanSegment(entry: FileStat, signal?: AbortSignal): AsyncIterable<string> {
-    if (entry.size === 0) return;
-    const source = createReadStream(join(this.root, 'events', entry.file), {
-      encoding: 'utf8',
-      end: entry.size - 1,
-      ...(signal === undefined ? {} : { signal }),
-    });
-    let pending = '',
-      bytes = 0;
-    try {
-      for await (const chunk of source) {
-        signal?.throwIfAborted();
-        const text = String(chunk);
-        bytes += Buffer.byteLength(text);
-        pending += text;
-        let offset = 0,
-          newline = pending.indexOf('\n');
-        while (newline !== -1) {
-          yield pending.slice(offset, newline);
-          offset = newline + 1;
-          newline = pending.indexOf('\n', offset);
-        }
-        pending = pending.slice(offset);
-      }
-      signal?.throwIfAborted();
-      if (pending !== '' || bytes !== entry.size)
-        throw new Error(`Incomplete trailing line in ${entry.file}`);
-    } finally {
-      source.destroy();
-    }
-  }
-
-  private decodeScanRecord(
+  private async indexSegment(
+    db: DatabaseSync,
     file: string,
-    lineNumber: number,
-    line: string,
-    position: number,
-  ): EventEnvelope {
-    let input: unknown;
-    try {
-      input = JSON.parse(line);
-      const event = decodeEventRecord(input);
-      validateEnvelope(event, position);
-      return event;
-    } catch (error) {
-      throw new Error(
-        `Corrupt event at ${file}:${lineNumber}${eventContext(input)}: ${(error as Error).message}`,
-        { cause: error },
+    raw: string,
+    previous: number,
+  ): Promise<number> {
+    if (raw.length > 0 && !raw.endsWith('\n'))
+      throw new Error(`Incomplete trailing line in ${file}`);
+    const info = await stat(join(this.root, 'events', file));
+    const insert = db.prepare('INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    let offset = 0,
+      position = previous;
+    for (const [lineNumber, line] of raw.split('\n').slice(0, -1).entries()) {
+      const event = decodeLine(file, lineNumber + 1, line, ++position);
+      const length = Buffer.byteLength(line + '\n');
+      insert.run(
+        position,
+        key(event.stream),
+        event.sequence,
+        file,
+        offset,
+        length,
+        info.size,
+        info.mtimeMs,
       );
+      offset += length;
+    }
+    return position;
+  }
+
+  private async indexedRead(
+    db: DatabaseSync,
+    query: string,
+    parameters: SQLInputValue[],
+    recover = true,
+  ): Promise<EventEnvelope[]> {
+    try {
+      return await this.readRecords(db, query, parameters);
+    } catch (error) {
+      if (!recover || this.options.readOnly) throw error;
+      await this.rebuild(db);
+      return this.readRecords(db, query, parameters);
     }
   }
 
-  async readAll(after: number, limit = Number.POSITIVE_INFINITY) {
-    const entries = await this.currentEntries();
-    const warm = this.cached;
-    if (warm !== undefined && sameEntries(warm.entries, entries))
-      return eventsAfter(warm.events, after, limit);
-    const manifest = await this.loadManifest();
-    if (manifest !== undefined && isCompleteIndex(manifest, entries)) {
+  private async readRecords(
+    db: DatabaseSync,
+    query: string,
+    parameters: SQLInputValue[],
+  ): Promise<EventEnvelope[]> {
+    const events: EventEnvelope[] = [];
+    const rows = db.prepare(query).all(...parameters);
+    // Release SQLite's shared lock before asynchronous segment I/O. Immutable
+    // locations preserve this snapshot while another process appends.
+    if (db.isTransaction) db.exec('COMMIT');
+    for (const row of rows) {
+      const { position, stream, sequence, file, offset, length, size, mtime } = row;
+      if (
+        typeof file !== 'string' ||
+        !segmentName.test(file) ||
+        typeof position !== 'number' ||
+        typeof offset !== 'number' ||
+        typeof length !== 'number' ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(length) ||
+        length <= 0 ||
+        typeof size !== 'number' ||
+        offset + length > size
+      )
+        throw new Error('Invalid journal index entry');
+      const cacheKey = JSON.stringify([file, offset, length, size, mtime]);
+      const cached = this.envelopeCache.get(cacheKey);
+      if (cached !== undefined) {
+        const info = await stat(join(this.root, 'events', file));
+        if (
+          info.size !== size ||
+          info.mtimeMs !== mtime ||
+          cached.globalPosition !== position ||
+          key(cached.stream) !== stream ||
+          cached.sequence !== sequence
+        )
+          throw new Error('Stale journal cache entry');
+        this.envelopeCache.delete(cacheKey);
+        this.envelopeCache.set(cacheKey, cached);
+        events.push(cached);
+        continue;
+      }
+      const handle = await open(join(this.root, 'events', file), 'r');
       try {
-        return await this.parseIndexedEntries(
-          manifest.segments
-            .flatMap((segment) =>
-              segment.events
-                .filter((event) => event.globalPosition > after)
-                .map((event) => ({ ...event, file: segment.file })),
-            )
-            .slice(0, limit),
-        );
-      } catch {
-        // See readStream(): never let a derived index change journal reads.
+        const info = await handle.stat();
+        if (info.size !== size || info.mtimeMs !== mtime)
+          throw new Error('Stale journal index entry');
+        const buffer = Buffer.alloc(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, offset);
+        if (bytesRead !== length || buffer.at(-1) !== 10)
+          throw new Error('Incomplete indexed record');
+        const event = decodeLine(file, position, buffer.toString('utf8'), position);
+        if (key(event.stream) !== stream || event.sequence !== sequence)
+          throw new Error('Indexed stream mismatch');
+        this.envelopeCache.set(cacheKey, event);
+        if (this.envelopeCache.size > 256)
+          this.envelopeCache.delete(this.envelopeCache.keys().next().value!);
+        events.push(event);
+      } finally {
+        await handle.close();
       }
     }
-    return eventsAfter((await this.scan(entries)).events, after, limit);
+    return events;
   }
 
-  async readLatest(beforeGlobalPosition?: number, limit = Number.POSITIVE_INFINITY) {
-    if (beforeGlobalPosition !== undefined && beforeGlobalPosition <= 0) return [];
-    if (limit <= 0) return [];
-    const { events } = await this.scan(await this.currentEntries());
-    const end = Math.min(
-      Math.max(0, (beforeGlobalPosition ?? events.length + 1) - 1),
-      events.length,
+  async readStream(stream: StreamRef): Promise<readonly EventEnvelope[]> {
+    return this.readOnlyIndex((db) =>
+      this.indexedRead(
+        db,
+        'SELECT * FROM records WHERE stream = ? ORDER BY sequence',
+        [key(stream)],
+        false,
+      ),
     );
-    return events.slice(Math.max(0, end - limit), end).reverse();
+  }
+
+  async readAll(
+    after: number,
+    limit = Number.POSITIVE_INFINITY,
+  ): Promise<readonly EventEnvelope[]> {
+    if (Number.isNaN(after) || limit <= 0) return [];
+    return this.readOnlyIndex((db) =>
+      this.indexedRead(
+        db,
+        'SELECT * FROM records WHERE position > ? ORDER BY position LIMIT ?',
+        [Math.max(0, Math.floor(after)), sqlLimit(limit)],
+        false,
+      ),
+    );
+  }
+
+  async readLatest(
+    before?: number,
+    limit = Number.POSITIVE_INFINITY,
+  ): Promise<readonly EventEnvelope[]> {
+    if ((before !== undefined && before <= 0) || limit <= 0) return [];
+    return this.readOnlyIndex((db) =>
+      this.indexedRead(
+        db,
+        'SELECT * FROM records WHERE position < ? ORDER BY position DESC LIMIT ?',
+        [before ?? this.head(db) + 1, sqlLimit(limit)],
+        false,
+      ),
+    );
   }
 
   async latestGlobalPosition(): Promise<number> {
-    const { events } = await this.scan(await this.currentEntries());
-    return events.at(-1)?.globalPosition ?? 0;
+    return this.readOnlyIndex(async (db) => {
+      const latest = await this.indexedRead(
+        db,
+        'SELECT * FROM records ORDER BY position DESC LIMIT 1',
+        [],
+        false,
+      );
+      return latest[0]?.globalPosition ?? 0;
+    });
+  }
+
+  async *scanAll(signal?: AbortSignal): AsyncIterable<EventEnvelope> {
+    signal?.throwIfAborted();
+    const head = await this.readOnlyIndex(async (db) => this.head(db));
+    let after = 0;
+    while (after < head) {
+      signal?.throwIfAborted();
+      const events = await this.readOnlyIndex((db) =>
+        this.indexedRead(
+          db,
+          'SELECT * FROM records WHERE position > ? AND position <= ? ORDER BY position LIMIT 100',
+          [after, head],
+          false,
+        ),
+      );
+      if (events.length === 0) throw new Error('Journal snapshot has a missing position');
+      for (const event of events) {
+        signal?.throwIfAborted();
+        yield event;
+        after = event.globalPosition;
+      }
+      await yieldScan(signal);
+    }
   }
 
   async waitForEventsAfter(
@@ -317,6 +508,7 @@ export class FileEventJournal implements EventJournal {
   }
 
   private ensureChangeWatcher(): Promise<void> {
+    if (this.options.readOnly) return Promise.resolve();
     if (this.changeWatcher !== undefined) return Promise.resolve();
     if (this.startingChangeWatcher !== undefined) return this.startingChangeWatcher;
     const starting = this.startChangeWatcher().finally(() => {
@@ -345,614 +537,40 @@ export class FileEventJournal implements EventJournal {
       // This advisory accelerator is optional; fallback rereads stay correct.
     }
   }
-
-  // Extends the cache in place rather than invalidating it, so a self-caused
-  // write doesn't force the next read (by this call or any other reader
-  // sharing this instance) to re-parse the entire on-disk history. Only a
-  // change this instance didn't make itself — another process writing to the
-  // same journal — falls through to scan()'s full re-read.
-  private async extendCache(
-    file: string,
-    prior: JournalSnapshot,
-    newEnvelopes: readonly EventEnvelope[],
-  ): Promise<JournalSnapshot> {
-    const priorEvents = prior.events;
-    const info = await stat(join(this.root, 'events', file));
-    const updatedEntry: FileStat = { file, size: info.size, mtimeMs: info.mtimeMs };
-    // nextSegmentFile() only returns a name that does not exist while the append
-    // lock is held, so the appended segment is always new: no search of the
-    // prior entries is needed.
-    const entries = [...prior.entries, updatedEntry];
-    let offset = 0;
-    const indexedEvents = newEnvelopes.map((event) => {
-      const length = Buffer.byteLength(`${encodeEventRecord(event)}\n`);
-      const indexed = {
-        globalPosition: event.globalPosition,
-        stream: key(event.stream),
-        offset,
-        length,
-      };
-      offset += length;
-      return indexed;
-    });
-    const segments = [
-      ...prior.segments,
-      {
-        ...updatedEntry,
-        startPosition: priorEvents.length + 1,
-        count: newEnvelopes.length,
-        events: indexedEvents,
-      },
-    ];
-    const events = [...priorEvents, ...newEnvelopes];
-    const next = {
-      entries,
-      events,
-      eventsByStream: extendEventsByStream(prior.eventsByStream, newEnvelopes),
-      segments,
-    };
-    this.adopt(next);
-    this.knownSegments.set(file, updatedEntry);
-    if (entries.length >= this.latestEntries.length) this.latestEntries = entries;
-    return next;
-  }
-
-  // Journals only grow, so the snapshot with more events is the newer one.
-  private adopt(snapshot: JournalSnapshot): void {
-    if (this.cached === undefined || snapshot.events.length >= this.cached.events.length)
-      this.cached = snapshot;
-  }
-
-  private manifestPath(): string {
-    return join(this.root, 'events', 'index-manifest.json');
-  }
-
-  private manifestTailPath(): string {
-    return join(this.root, 'events', 'index-manifest.tail.json');
-  }
-
-  // Persisted alongside the segments, so any reader of the same on-disk
-  // journal — not just this instance — can skip straight to the segments
-  // that can hold what it's looking for on a cold cache. appendToStream() extends its
-  // contents from the concrete envelopes it has just written while locked.
-  //
-  // The index covers every event ever recorded, so rewriting it per append costs
-  // O(journal) in serialisation and I/O (18 MB, ~65 ms of blocked event loop at
-  // 79k events). The segments added since the last full write go to a small tail
-  // file instead; the base is rewritten only when the tail has grown past
-  // manifestTailLimit, which amortises it to a constant per append.
-  private async persistManifest(snapshot: JournalSnapshot): Promise<void> {
-    const total = snapshot.segments.length;
-    const base = this.persistedBase;
-    if (
-      base !== undefined &&
-      total >= base.count &&
-      total - base.count <= manifestTailLimit &&
-      (await this.persistedBaseUnchanged(base))
-    ) {
-      const tail: PersistedTail = {
-        baseSegments: base.count,
-        segments: snapshot.segments.slice(base.count),
-      };
-      await writeFileAtomically(this.manifestTailPath(), JSON.stringify(tail));
-      return;
-    }
-    const manifest: PersistedIndex = { segments: snapshot.segments };
-    await writeFileAtomically(this.manifestPath(), JSON.stringify(manifest));
-    // The base now covers everything, so an older tail would only be ignored.
-    await rm(this.manifestTailPath(), { force: true });
-    const info = await stat(this.manifestPath());
-    this.persistedBase = { count: total, size: info.size, mtimeMs: info.mtimeMs };
-  }
-
-  // Another process may have compacted (or removed) the base since this
-  // instance wrote it; a tail relative to the old base would be ignored on load.
-  private async persistedBaseUnchanged(base: PersistedBase): Promise<boolean> {
-    try {
-      const info = await stat(this.manifestPath());
-      return info.size === base.size && info.mtimeMs === base.mtimeMs;
-    } catch {
-      return false;
-    }
-  }
-
-  private async loadManifest(): Promise<PersistedIndex | undefined> {
-    try {
-      const raw = await readFile(this.manifestPath(), 'utf8');
-      const parsed: unknown = JSON.parse(raw);
-      if (!isPersistedIndex(parsed)) return undefined;
-      const tail = await this.loadManifestTail(parsed.segments.length);
-      return tail.length === 0 ? parsed : { segments: [...parsed.segments, ...tail] };
-    } catch {
-      // Missing, corrupt, or foreign-shaped index: degrade to a full scan,
-      // which is rebuilt by the next append.
-      return undefined;
-    }
-  }
-
-  // A tail that does not extend exactly this base is ignored; the merged index
-  // then fails isCompleteIndex() and the reader falls back to the JSONL.
-  private async loadManifestTail(baseSegments: number): Promise<readonly SegmentInfo[]> {
-    try {
-      const parsed: unknown = JSON.parse(await readFile(this.manifestTailPath(), 'utf8'));
-      return isPersistedTail(parsed) && parsed.baseSegments === baseSegments ? parsed.segments : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private async scan(precomputedEntries?: readonly FileStat[]): Promise<JournalSnapshot> {
-    const entries = precomputedEntries ?? (await this.currentEntries());
-    const inFlight = this.inFlightScan;
-    if (inFlight !== undefined && sameEntries(inFlight.entries, entries)) return inFlight.run;
-    const run = this.scanUncoalesced(entries).finally(() => {
-      if (this.inFlightScan?.run === run) this.inFlightScan = undefined;
-    });
-    this.inFlightScan = { entries, run };
-    return run;
-  }
-
-  // Resolves with a listing that reflects every append committed before the
-  // call. A listing already running may have read the directory before the
-  // call, so it cannot answer it; every caller arriving while one runs shares a
-  // single follow-up listing. Any number of concurrent reads cost at most two.
-  private currentEntries(
-    options: { readonly exhaustive?: boolean } = {},
-  ): Promise<readonly FileStat[]> {
-    if (options.exhaustive === true) {
-      const running = this.runningListing;
-      return (running === undefined ? Promise.resolve() : running.then(noop, noop)).then(() =>
-        this.startListing(true),
-      );
-    }
-    if (this.queuedListing !== undefined) return this.queuedListing;
-    const running = this.runningListing;
-    if (running === undefined) return this.startListing(false);
-    const queued = running
-      .catch(() => undefined)
-      .then(() => {
-        this.queuedListing = undefined;
-        return this.startListing(false);
-      });
-    this.queuedListing = queued;
-    return queued;
-  }
-
-  private startListing(exhaustive: boolean): Promise<readonly FileStat[]> {
-    const run = this.listSegments(exhaustive).finally(() => {
-      if (this.runningListing === run) this.runningListing = undefined;
-    });
-    this.runningListing = run;
-    return run;
-  }
-
-  // Segments are immutable, contiguous, and named by the global position of
-  // their first event (the first segment of a day is `<day>.jsonl`). When the
-  // cache holds L events and is the newest listing, nothing newer exists exactly
-  // when no segment for position L+1 exists, which costs a few stats instead of
-  // a directory listing proportional to the whole history.
-  private async nothingNewerThanCache(): Promise<boolean> {
-    const cached = this.cached;
-    const last = cached?.entries.at(-1);
-    if (cached === undefined || last === undefined) return false;
-    if (Date.now() - this.lastFullListingMs > maxProbeOnlyMs) return false;
-    if (!sameEntries(cached.entries, this.latestEntries)) return false;
-    const next = String(cached.events.length + 1).padStart(20, '0');
-    // A writer names a segment from its own clock, so cover every day between the
-    // newest cached segment (or yesterday, for a clock running behind) and
-    // tomorrow. A wider gap cannot be probed cheaply, so list the directory.
-    const dayMs = 24 * 60 * 60 * 1000;
-    const lastDay = Date.parse(`${last.file.slice(0, 10)}T00:00:00Z`);
-    const firstDay = Math.min(lastDay, Date.UTC(...utcDayParts(Date.now() - dayMs)));
-    const lastProbedDay = Date.UTC(...utcDayParts(Date.now() + dayMs));
-    if (!Number.isFinite(lastDay) || (lastProbedDay - firstDay) / dayMs > maxProbedDays)
-      return false;
-    const days: string[] = [];
-    for (let at = firstDay; at <= lastProbedDay; at += dayMs)
-      days.push(new Date(at).toISOString().slice(0, 10));
-    const candidates = days.flatMap((d) => [`${d}~${next}.jsonl`, `${d}.jsonl`]);
-    const unknown = candidates.filter((name) => !this.knownSegments.has(name));
-    const found = await Promise.all(
-      unknown.map((name) =>
-        stat(join(this.root, 'events', name)).then(
-          () => true,
-          (error: NodeJS.ErrnoException) => {
-            if (error.code === 'ENOENT') return false;
-            throw error;
-          },
-        ),
-      ),
-    );
-    return !found.some(Boolean);
-  }
-
-  private async listSegments(exhaustive: boolean): Promise<readonly FileStat[]> {
-    const directory = join(this.root, 'events');
-    if (!exhaustive && (await this.nothingNewerThanCache())) return this.latestEntries;
-    const startedAtMs = Date.now();
-    let stamp: DirectoryStamp;
-    try {
-      const info = await stat(directory);
-      stamp = { mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, ino: info.ino };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      this.knownSegments.clear();
-      this.listing = undefined;
-      this.latestEntries = [];
-      return [];
-    }
-    const previous = this.listing;
-    if (
-      previous !== undefined &&
-      sameStamp(previous.stamp, stamp) &&
-      previous.startedAtMs - Math.max(stamp.mtimeMs, stamp.ctimeMs) > unchangedStampMinAgeMs &&
-      this.latestEntries.length === this.knownSegments.size
-    )
-      return this.latestEntries;
-    // The stamp is taken before the listing so a change during it cannot be hidden.
-    // One pass over the directory: names already known are only counted, and
-    // the set of present names is built only if a known segment has gone missing.
-    const listed = await readdir(directory);
-    const unseen: string[] = [];
-    let knownPresent = 0;
-    for (const name of listed) {
-      if (this.knownSegments.has(name)) knownPresent += 1;
-      else if (segmentName.test(name)) unseen.push(name);
-    }
-    let removed = false;
-    if (knownPresent !== this.knownSegments.size) {
-      const present = new Set(listed);
-      for (const name of this.knownSegments.keys())
-        if (!present.has(name)) {
-          this.knownSegments.delete(name);
-          removed = true;
-        }
-    }
-    unseen.sort();
-    for (let index = 0; index < unseen.length; index += statBatchSize)
-      await Promise.all(
-        unseen.slice(index, index + statBatchSize).map(async (file) => {
-          try {
-            const info = await stat(join(directory, file));
-            this.knownSegments.set(file, { file, size: info.size, mtimeMs: info.mtimeMs });
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          }
-        }),
-      );
-    this.listing = { stamp, startedAtMs };
-    this.lastFullListingMs = startedAtMs;
-    const added = unseen.flatMap((file) => this.knownSegments.get(file) ?? []);
-    const last = this.latestEntries.at(-1);
-    const consistent = this.latestEntries.length + added.length === this.knownSegments.size;
-    if (!removed && added.length === 0 && consistent) return this.latestEntries;
-    // Anything inconsistent with what has been seen is rebuilt from it, never patched.
-    this.latestEntries =
-      !removed && consistent && (last === undefined || added[0]!.file > last.file)
-        ? [...this.latestEntries, ...added]
-        : [...this.knownSegments.values()].sort((a, b) => (a.file < b.file ? -1 : 1));
-    return this.latestEntries;
-  }
-
-  // Reads exactly the indexed JSONL records. Byte offsets make tail reads and
-  // stream reads proportional to the matching events, not segment size.
-  private async parseIndexedEntries(
-    entries: readonly (IndexedEvent & Pick<SegmentInfo, 'file'>)[],
-  ): Promise<EventEnvelope[]> {
-    const directory = join(this.root, 'events');
-    const events: EventEnvelope[] = [];
-    const grouped = new Map<string, (IndexedEvent & Pick<SegmentInfo, 'file'>)[]>();
-    for (const entry of entries) {
-      const group = grouped.get(entry.file) ?? [];
-      group.push(entry);
-      grouped.set(entry.file, group);
-    }
-    for (const [file, indexedEvents] of grouped) {
-      const handle = await open(join(directory, file), 'r');
-      try {
-        for (const indexed of indexedEvents) {
-          const buffer = Buffer.alloc(indexed.length);
-          const { bytesRead } = await handle.read(buffer, 0, indexed.length, indexed.offset);
-          events.push(this.decodeIndexedRecord(file, indexed, buffer, bytesRead));
-        }
-      } finally {
-        await handle.close();
-      }
-    }
-    return events;
-  }
-
-  private decodeIndexedRecord(
-    file: string,
-    indexed: IndexedEvent,
-    buffer: Buffer,
-    bytesRead: number,
-  ): EventEnvelope {
-    if (bytesRead !== indexed.length || buffer.at(-1) !== 10)
-      throw new Error(`Incomplete indexed record in ${file}`);
-    let input: unknown;
-    try {
-      input = JSON.parse(buffer.toString('utf8'));
-      const event = decodeEventRecord(input);
-      validateEnvelope(event, indexed.globalPosition);
-      if (key(event.stream) !== indexed.stream) throw new Error('Indexed stream mismatch');
-      return event;
-    } catch (error) {
-      const context = eventContext(input);
-      throw new Error(
-        `Corrupt indexed event at ${file}:${indexed.globalPosition}${context}: ${(error as Error).message}`,
-        { cause: error },
-      );
-    }
-  }
-
-  private async scanUncoalesced(entries: readonly FileStat[]): Promise<JournalSnapshot> {
-    const directory = join(this.root, 'events');
-    const warm = this.cached;
-    if (warm !== undefined && sameEntries(warm.entries, entries)) return warm;
-    // Segments are immutable, so when the cached segments are an unchanged
-    // prefix of the listing only the segments after it need reading. A foreign
-    // append then costs one segment, not a re-parse of the whole history.
-    const prefix = warm;
-    const reuse =
-      prefix !== undefined &&
-      prefix.entries.length <= entries.length &&
-      sameEntries(prefix.entries, entries.slice(0, prefix.entries.length));
-    const events: EventEnvelope[] = reuse ? [...prefix.events] : [];
-    const segments: SegmentInfo[] = reuse ? [...prefix.segments] : [];
-    const toRead = reuse ? entries.slice(prefix.entries.length) : entries;
-    // Segments are one small file each, so a cold read is latency-bound, not
-    // CPU-bound. Reads run ahead of the parser in a bounded window; parsing and
-    // position validation stay strictly in listing order.
-    const reads = new Map<number, Promise<string>>();
-    let nextRead = 0;
-    for (const [at, entry] of toRead.entries()) {
-      for (; nextRead < toRead.length && nextRead < at + segmentReadBatch; nextRead += 1) {
-        const read = readFile(join(directory, toRead[nextRead]!.file), 'utf8');
-        read.catch(() => undefined); // surfaced when awaited in order, never unhandled
-        reads.set(nextRead, read);
-      }
-      const { file } = entry;
-      const raw = await reads.get(at)!;
-      reads.delete(at);
-      if (raw.length > 0 && !raw.endsWith('\n'))
-        throw new Error(`Incomplete trailing line in ${file}`);
-      const startPosition = events.length + 1;
-      const indexedEvents: IndexedEvent[] = [];
-      let offset = 0;
-      for (const [lineIndex, line] of raw.split('\n').slice(0, -1).entries()) {
-        let input: unknown;
-        try {
-          input = JSON.parse(line);
-          const event = decodeEventRecord(input);
-          validateEnvelope(event, events.length + 1);
-          events.push(event);
-          indexedEvents.push({
-            globalPosition: event.globalPosition,
-            stream: key(event.stream),
-            offset,
-            length: Buffer.byteLength(`${line}\n`),
-          });
-          offset += Buffer.byteLength(`${line}\n`);
-        } catch (error) {
-          const context = eventContext(input);
-          throw new Error(
-            `Corrupt event at ${file}:${lineIndex + 1}${context}: ${(error as Error).message}`,
-            { cause: error },
-          );
-        }
-      }
-      segments.push({
-        ...entry,
-        startPosition,
-        count: events.length - startPosition + 1,
-        events: indexedEvents,
-      });
-    }
-    const snapshot = { entries, events, eventsByStream: indexEventsByStream(events), segments };
-    this.adopt(snapshot);
-    return snapshot;
-  }
-}
-
-interface JournalSnapshot {
-  readonly entries: readonly FileStat[];
-  readonly events: EventEnvelope[];
-  readonly eventsByStream: ReadonlyMap<string, readonly EventEnvelope[]>;
-  readonly segments: readonly SegmentInfo[];
-}
-
-interface DirectoryStamp {
-  readonly mtimeMs: number;
-  readonly ctimeMs: number;
-  readonly ino: number;
 }
 
 const segmentName = /^\d{4}-\d{2}-\d{2}(?:~\d{20})?\.jsonl$/;
+const key = (stream: StreamRef): string => JSON.stringify([stream.kind, stream.id]);
+const sqlLimit = (limit: number): number =>
+  Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : -1;
 
-function sameStamp(a: DirectoryStamp, b: DirectoryStamp): boolean {
-  return a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs && a.ino === b.ino;
-}
-
-interface FileStat {
-  readonly file: string;
-  readonly size: number;
-  readonly mtimeMs: number;
-}
-
-// Rebuildable read model over each JSONL record. Byte positions are relative
-// to their segment and remain authoritative only while its file stat matches.
-interface SegmentInfo extends FileStat {
-  readonly startPosition: number;
-  readonly count: number;
-  readonly events: readonly IndexedEvent[];
-}
-
-interface IndexedEvent {
-  readonly globalPosition: number;
-  readonly stream: string;
-  readonly offset: number;
-  readonly length: number;
-}
-
-interface PersistedIndex {
-  readonly segments: readonly SegmentInfo[];
-}
-
-interface PersistedTail {
-  /** Segment count of the base this tail extends. */
-  readonly baseSegments: number;
-  readonly segments: readonly SegmentInfo[];
-}
-
-interface PersistedBase {
-  readonly count: number;
-  readonly size: number;
-  readonly mtimeMs: number;
-}
-
-function isPersistedTail(value: unknown): value is PersistedTail {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { baseSegments?: unknown }).baseSegments === 'number' &&
-    Array.isArray((value as { segments?: unknown }).segments) &&
-    (value as PersistedTail).segments.every(isSegmentInfo)
-  );
-}
-
-function isPersistedIndex(value: unknown): value is PersistedIndex {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Array.isArray((value as { segments?: unknown }).segments) &&
-    (value as PersistedIndex).segments.every(isSegmentInfo)
-  );
-}
-
-function isSegmentInfo(value: unknown): value is SegmentInfo {
-  if (typeof value !== 'object' || value === null) return false;
-  const segment = value as Partial<SegmentInfo>;
-  return (
-    typeof segment.file === 'string' &&
-    typeof segment.size === 'number' &&
-    typeof segment.mtimeMs === 'number' &&
-    typeof segment.startPosition === 'number' &&
-    typeof segment.count === 'number' &&
-    Array.isArray(segment.events) &&
-    segment.events.every(isIndexedEvent)
-  );
-}
-
-function isIndexedEvent(value: unknown): value is IndexedEvent {
-  if (typeof value !== 'object' || value === null) return false;
-  const event = value as Partial<IndexedEvent>;
-  return (
-    typeof event.globalPosition === 'number' &&
-    typeof event.stream === 'string' &&
-    typeof event.offset === 'number' &&
-    typeof event.length === 'number'
-  );
-}
-
-function isCompleteIndex(index: PersistedIndex, entries: readonly FileStat[]): boolean {
-  if (!sameEntries(index.segments, entries)) return false;
-  let position = 1;
-  return index.segments.every((segment) => {
-    let offset = 0;
-    const complete =
-      segment.startPosition === position &&
-      segment.count === segment.events.length &&
-      segment.events.every((event) => {
-        const matches =
-          event.globalPosition === position &&
-          event.offset === offset &&
-          Number.isSafeInteger(event.length) &&
-          event.length > 0;
-        position += 1;
-        offset += event.length;
-        return matches;
-      }) &&
-      offset === segment.size;
-    return complete;
-  });
-}
-
-function sameEntries(a: readonly FileStat[], b: readonly FileStat[]): boolean {
-  return (
-    a === b ||
-    (a.length === b.length &&
-      a.every((entry, index) => {
-        const other = b[index]!;
-        return (
-          entry.file === other.file && entry.size === other.size && entry.mtimeMs === other.mtimeMs
-        );
-      }))
-  );
-}
-
-function utcDayParts(ms: number): [number, number, number] {
-  const date = new Date(ms);
-  return [date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()];
-}
-
-function noop(): void {}
-
-const key = (stream: StreamRef) => `${stream.kind}:${stream.id}`;
-
-function indexEventsByStream(
-  events: readonly EventEnvelope[],
-): ReadonlyMap<string, readonly EventEnvelope[]> {
-  const indexed = new Map<string, EventEnvelope[]>();
-  for (const event of events) {
-    const streamKey = key(event.stream);
-    const streamEvents = indexed.get(streamKey);
-    if (streamEvents === undefined) indexed.set(streamKey, [event]);
-    else streamEvents.push(event);
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
   }
-  return indexed;
 }
 
-// Global positions are contiguous from 1 (validateEnvelope), so the events after
-// a position are a slice, not a filter over the whole history.
-function eventsAfter(
-  events: readonly EventEnvelope[],
-  after: number,
-  limit: number,
-): EventEnvelope[] {
-  if (Number.isNaN(after)) return [];
-  const start = Math.max(0, Math.floor(after));
-  return events.slice(start, start + limit);
-}
-
-// Copy-on-write: callers keep the per-stream arrays they were handed, so only
-// the streams that gained events get a new array. Cost is the number of
-// streams, not the number of events.
-function extendEventsByStream(
-  prior: ReadonlyMap<string, readonly EventEnvelope[]>,
-  appended: readonly EventEnvelope[],
-): ReadonlyMap<string, readonly EventEnvelope[]> {
-  const next = new Map(prior);
-  const gained = new Map<string, EventEnvelope[]>();
-  for (const event of appended) {
-    const streamKey = key(event.stream);
-    const group = gained.get(streamKey);
-    if (group === undefined) gained.set(streamKey, [event]);
-    else group.push(event);
+function decodeLine(file: string, line: number, raw: string, position: number): EventEnvelope {
+  let input: unknown;
+  try {
+    input = JSON.parse(raw);
+    const event = decodeEventRecord(input);
+    if (event.globalPosition !== position) throw new Error('Invalid event envelope position');
+    return event;
+  } catch (error) {
+    const eventId =
+      typeof input === 'object' && input !== null && 'eventId' in input
+        ? String(input.eventId)
+        : '';
+    throw new Error(
+      `Corrupt event at ${file}:${line} event ${eventId}: ${(error as Error).message}`,
+      { cause: error },
+    );
   }
-  for (const [streamKey, events] of gained)
-    next.set(streamKey, [...(prior.get(streamKey) ?? []), ...events]);
-  return next;
-}
-
-function validateEnvelope(event: EventEnvelope, expectedPosition: number): void {
-  if (event.globalPosition !== expectedPosition) throw new Error('Invalid event envelope position');
-}
-
-function eventContext(input: unknown): string {
-  if (typeof input !== 'object' || input === null || !('eventId' in input)) return '';
-  const eventId = input.eventId;
-  return typeof eventId === 'string' && eventId.length > 0 ? ` event ${eventId}` : '';
 }
 
 async function waitForEventsAfter(

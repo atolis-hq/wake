@@ -1,8 +1,7 @@
 import { correlationId } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
-import { existsSync } from 'node:fs';
 import type * as FsPromises from 'node:fs/promises';
-import { mkdtemp, readdir } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -18,13 +17,12 @@ import { createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 
-const { readdirMock, statMock } = vi.hoisted(() => ({ readdirMock: vi.fn(), statMock: vi.fn() }));
+const { readdirMock } = vi.hoisted(() => ({ readdirMock: vi.fn() }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readdirMock.mockImplementation(actual.readdir);
-  statMock.mockImplementation(actual.stat);
-  return { ...actual, readdir: readdirMock, stat: statMock };
+  return { ...actual, readdir: readdirMock };
 });
 
 const context = (seed: string) => ({
@@ -87,6 +85,11 @@ it.each([false, true])(
       );
     }
     const reader = new FileEventJournal(root, new FakeClock());
+    const calls = [
+      vi.spyOn(reader, 'readAll'),
+      vi.spyOn(reader, 'readStream'),
+      vi.spyOn(reader, 'latestGlobalPosition'),
+    ];
     const readerService = createOrchestrationService(
       reader,
       createWorkService(reader),
@@ -104,24 +107,16 @@ it.each([false, true])(
           })
         : undefined,
     );
-    const segments = (await readdir(join(root, 'events'))).filter((name) =>
-      name.endsWith('.jsonl'),
-    ).length;
     readdirMock.mockClear();
-    statMock.mockClear();
 
     const pending = await readerService.listPendingActivations();
     await readerService.expireTimedOutWaits(context('expire'));
 
     expect(pending).toHaveLength(instances);
-    // One cold listing plus the gate's Work synchronisation; never one per instance.
-    expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(6);
-    // Each segment is stat'ed once, when first seen, and never again. Probes for
-    // the not-yet-written next segment stat names that do not exist.
+    // Gate work is batched even though journal reads no longer list events.
     expect(
-      statMock.mock.calls.filter(
-        ([path]) => String(path).endsWith('.jsonl') && existsSync(String(path)),
-      ).length,
-    ).toBeLessThanOrEqual(segments);
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
+    expect(calls.reduce((total, spy) => total + spy.mock.calls.length, 0)).toBeLessThanOrEqual(6);
   },
 );
