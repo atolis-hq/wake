@@ -103,8 +103,10 @@ wake-home/
     container-home/     # persistent sandbox-home state
 ```
 
-The journal under `.wake/events/` is authoritative and must be retained.
-Projections and checkpoints are rebuildable; `container-home/` holds sandbox
+The journal under `.wake/events/` is authoritative and must be retained. The
+`index-manifest.json` and `index-manifest.tail.json` files beside its segments
+are a derived read index; deleting them only makes the next cold start re-read
+every segment. Projections and checkpoints are rebuildable; `container-home/` holds sandbox
 auth state. See [Architecture](architecture.md) before removing any durable
 data.
 
