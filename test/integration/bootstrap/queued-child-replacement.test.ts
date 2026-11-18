@@ -1,4 +1,4 @@
-import { correlationId } from '@atolis-hq/eventing';
+import { correlationId, type EventData, type StreamRef } from '@atolis-hq/eventing';
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
@@ -29,6 +29,8 @@ import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runn
 
 it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
   'replaces a settled stack with a %s upstream and two children that never started',
+  // One end-to-end scenario: replacement, retirement, backfill and restart share its fixtures.
+  // eslint-disable-next-line complexity
   async (status) => {
     const home = await mkdtemp(join(tmpdir(), 'wake-replacement-'));
     const context = (commandId: string) => ({
@@ -48,35 +50,37 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
         requiresApproval: false,
         on: { done: { then: 'done' }, failed: { then: 'done' } },
       };
-      const root = await createCompositionRoot(home, {
-        config: parseRootConfig({
-          surfaces: { api: { conversationMessages: { enabled: true } } },
-          execution: {
-            agentRunners: { fake: { kind: 'fake' } },
-            runnerPools: { standard: ['fake'] },
-            defaultRunnerPool: 'standard',
-          },
-          orchestration: {
-            default: 'parent',
-            workflows: {
-              parent: {
-                delegation: {
-                  workflows: ['child'],
-                  maxDepth: 1,
-                  maxDescendants: 6,
-                  maxConcurrentRuns: 1,
-                },
-                stages: { work: stage },
-              },
-              child: { stages: { work: stage } },
+      const compose = (journal: InMemoryEventJournal) =>
+        createCompositionRoot(home, {
+          config: parseRootConfig({
+            surfaces: { api: { conversationMessages: { enabled: true } } },
+            execution: {
+              agentRunners: { fake: { kind: 'fake' } },
+              runnerPools: { standard: ['fake'] },
+              defaultRunnerPool: 'standard',
             },
-          },
-        }),
-        journal: new InMemoryEventJournal({ now: () => new Date() }),
-        checkpoints: new InMemoryCheckpointStore(),
-        projections: new InMemoryProjectionStore(),
-        decorateRunner: () => runner,
-      });
+            orchestration: {
+              default: 'parent',
+              workflows: {
+                parent: {
+                  delegation: {
+                    workflows: ['child'],
+                    maxDepth: 1,
+                    maxDescendants: 6,
+                    maxConcurrentRuns: 1,
+                  },
+                  stages: { work: stage },
+                },
+                child: { stages: { work: stage } },
+              },
+            },
+          }),
+          journal,
+          checkpoints: new InMemoryCheckpointStore(),
+          projections: new InMemoryProjectionStore(),
+          decorateRunner: () => runner,
+        });
+      const root = await compose(new InMemoryEventJournal({ now: () => new Date() }));
       const parentWork = workId('queued-replacement');
       await root.work.create(
         { workItemId: parentWork, objective: 'Deliver stack' },
@@ -391,6 +395,70 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
       expect((await root.execution.list()).every((run) => run.status === RunStatus.Succeeded)).toBe(
         true,
       );
+      // Further control-plane passes never start a retired child's claimed workflow.
+      await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
+      await root.orchestration.reconcileChildCompletions(context('redispatch-pass'));
+      for (const child of original.children.slice(1))
+        expect(await root.orchestration.get(child.workflowInstanceId)).toBeNull();
+
+      // Backfill: replay a journal in the shape written before the retirement fact existed.
+      const legacy = new InMemoryEventJournal({ now: () => new Date() });
+      const streams = new Map<string, { stream: StreamRef; events: EventData[] }>();
+      for (const envelope of await root.journal.readAll(0)) {
+        if (envelope.event.eventType === 'orchestration.delegation-child-superseded') continue;
+        const key = envelope.stream.kind + ':' + envelope.stream.id;
+        const entry = streams.get(key) ?? { stream: envelope.stream, events: [] };
+        entry.events.push(envelope.event);
+        streams.set(key, entry);
+      }
+      for (const { stream, events } of streams.values())
+        await legacy.appendToStream(stream, 0, events);
+      const superseded = async (journal: InMemoryEventJournal) =>
+        (await journal.readAll(0)).flatMap(({ event }) =>
+          event.eventType === 'orchestration.delegation-child-superseded' ? [event.payload] : [],
+        );
+      expect(await superseded(legacy)).toEqual([]);
+      const backfilled = await compose(legacy);
+      await backfilled.orchestration.reconcileChildCompletions(context('backfill'));
+      const expected = original.children.slice(1).map((child, index) => ({
+        cohortId: 'original',
+        childWorkItemId: child.workItemId,
+        replacement: {
+          cohortId: 'repair',
+          assignmentId: repaired!.children[index + 1]!.assignmentId,
+          childWorkItemId: repaired!.children[index + 1]!.workItemId,
+        },
+      }));
+      // One fact per never-started original; the started original gets none.
+      expect(await superseded(legacy)).toEqual(expected);
+      const settled = (await legacy.readAll(0)).length;
+      await backfilled.orchestration.reconcileChildCompletions(context('backfill-again'));
+      const restarted = await compose(legacy);
+      await restarted.orchestration.reconcileChildCompletions(context('backfill-restart'));
+      expect((await legacy.readAll(0)).length).toBe(settled);
+      // Board and work detail agree with live acceptance, including after a projection rebuild.
+      await restarted.projectionSubscriptions.catchUpOnce();
+      const rebuilt = (await restarted.projections.read<BoardProjectionView>(
+        boardProjection.name,
+        'global',
+      ))!.value;
+      for (const child of original.children.slice(1))
+        expect(rebuilt.cards[child.workItemId]).toMatchObject({
+          condition: 'finished',
+          superseded: true,
+        });
+      expect(board.cards[original.children[1]!.workItemId]).toEqual(
+        rebuilt.cards[original.children[1]!.workItemId],
+      );
+      const rebuiltDetail = (await (
+        await createSurfaceApplications(restarted)
+      ).api.work.detail(key))!.data.delegation!.children;
+      for (const child of original.children.slice(1))
+        expect(rebuiltDetail.find((entry) => entry.workItemId === child.workItemId)).toMatchObject({
+          status: 'superseded',
+          supersededBy: { cohortId: 'repair' },
+        });
+      expect(await restarted.orchestration.hasLiveDelegatedWork(parentWork)).toBe(true);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
