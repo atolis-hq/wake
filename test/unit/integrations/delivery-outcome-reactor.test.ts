@@ -16,7 +16,7 @@ import {
 import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { projectionStorageAddress } from '../../../packages/eventing-filesystem/src/storage-name.js';
 import { deliveryStream } from '../../../src/integrations/contracts/streams.js';
 import { DeliveryOutcomeReactor } from '../../../src/integrations/delivery/application/delivery-outcome-reactor.js';
@@ -272,9 +272,12 @@ it('projects live journal envelopes into canonical pending delivery records idem
   const reactor = createReactor(
     journal,
     {
-      async get() {
+      async get(workflowInstanceId: string) {
+        // Each instance is still on the activation that requested the delivery, but
+        // has not recorded its wait yet, so the confirmation must stay pending.
         return {
-          pendingActivation: { activationId: 'unrelated', status: 'active' },
+          pendingActivation: { activationId: `${workflowInstanceId}:activity:1`, status: 'active' },
+          acceptedOutcomes: [],
         } as never;
       },
       async acceptOutcome() {
@@ -713,7 +716,8 @@ it('keeps the producer id on a pending confirmation across reconciliation', asyn
     {
       async get() {
         return {
-          pendingActivation: { activationId: 'unrelated', status: 'active' },
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+          acceptedOutcomes: [],
         } as never;
       },
       async acceptOutcome() {
@@ -907,3 +911,103 @@ it.each(['confirmed', 'failed', 'reconciled'] as const)(
     expect(await states.read('reactor:delivery-outcomes', 'pending-confirmations')).toBeNull();
   },
 );
+
+// Regression: the pending list kept every confirmation whose activation had
+// already settled (non-gating publications are never awaited), so a long-lived
+// home re-examined all deliveries since its first day on every runner pass
+// (746 events, each costing orchestration and projection scans, on a live home).
+it('drops a confirmation whose activation already settled instead of keeping it pending forever', async () => {
+  const states = new InMemoryProcessorStateStore();
+  const pendingEvent = (index: number) => ({
+    eventId: `agent-run:run-${index}:delivery.confirmed:1`,
+    eventType: DeliveryEventType.Confirmed,
+    correlationId: `agent-run:run-${index}`,
+    recordedAt: '2026-08-09T00:00:01.000Z',
+    payload: {
+      intentEventId: `agent-run:run-${index}`,
+      intentGlobalPosition: index + 1,
+      workflowInstanceId: `primary:work-${index}`,
+      activationId: `primary:work-${index}:activity:1`,
+      occurrenceOrdinal: 1,
+      externalId: `external-${index}`,
+    },
+  });
+  const total = 300;
+  await states.write({
+    consumer: 'reactor:delivery-outcomes',
+    key: 'pending-confirmations',
+    value: { events: Array.from({ length: total }, (_, index) => pendingEvent(index)) },
+  });
+  let gets = 0;
+  const projections = new InMemoryProjectionStore();
+  const listed = vi.spyOn(projections, 'list');
+  const reactor = createReactor(
+    new InMemoryEventJournal(clock),
+    {
+      async get(workflowInstanceId: string) {
+        gets += 1;
+        // The instance moved on: this activation's outcome was accepted long ago.
+        return {
+          pendingActivation: {
+            activationId: `${workflowInstanceId}:activity:2`,
+            status: 'waiting',
+          },
+          acceptedOutcomes: [`${workflowInstanceId}:activity:1`],
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('A settled activation must not be resolved again');
+      },
+    },
+    projections,
+    states,
+  );
+
+  await reactor.reconcileOnce();
+
+  const afterFirstPass = await states.read<{ readonly events: readonly unknown[] }>(
+    'reactor:delivery-outcomes',
+    'pending-confirmations',
+  );
+  expect(afterFirstPass?.value.events).toEqual([]);
+  expect(gets).toBe(total);
+
+  await reactor.reconcileOnce();
+  // Nothing left to examine: later passes cost O(pending), not O(deliveries ever).
+  expect(gets).toBe(total);
+  // Intent lookups are keyed reads, not scans of every delivery intent per event.
+  expect(listed).not.toHaveBeenCalled();
+});
+
+it('keeps a confirmation pending while its activation is current but its wait is not recorded yet', async () => {
+  const journal = new InMemoryEventJournal(clock);
+  await journal.appendToStream(deliveryStream(eventId('intent-1')), 0, [
+    confirmedEvent({ intentEventId: 'intent-1' }),
+  ]);
+  const states = new InMemoryProcessorStateStore();
+  const reactor = createReactor(
+    journal,
+    {
+      async get() {
+        return {
+          pendingActivation: { activationId: 'primary:work-1:activity:1', status: 'active' },
+          acceptedOutcomes: [],
+        } as never;
+      },
+      async acceptOutcome() {
+        throw new Error('Not waiting yet');
+      },
+    },
+    new InMemoryProjectionStore(),
+    states,
+  );
+
+  await reactor.react((await journal.readAll(0))[0]!);
+  await reactor.reconcileOnce();
+
+  const stored = await states.read<{ readonly events: readonly unknown[] }>(
+    'reactor:delivery-outcomes',
+    'pending-confirmations',
+  );
+  expect(stored?.value.events).toHaveLength(1);
+});

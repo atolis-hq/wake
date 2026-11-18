@@ -7,6 +7,11 @@ export interface RunnerPipelineStages {
   readonly runTriggers: () => Promise<void>;
   readonly maintain?: () => Promise<void>;
   readonly deliver: (signal: AbortSignal) => Promise<void>;
+  /**
+   * Sweeps that may block on slow external I/O. They run after delivery so they
+   * cannot delay an outbound intent that gates a workflow.
+   */
+  readonly afterDelivery?: () => Promise<void>;
 }
 
 export interface RunnerPipeline {
@@ -38,9 +43,11 @@ export function createRunnerPipeline(stages: RunnerPipelineStages): RunnerPipeli
     if (await isPaused()) return { kind: 'paused' };
     await stages.maintain?.();
     if (await isPaused()) return { kind: 'paused' };
-    return (
-      (await runDeliveryPhase(stages, isPaused, signal, beforeDelivery)) ?? { kind: 'no-work' }
-    );
+    const delivered = await runDeliveryPhase(stages, isPaused, signal, beforeDelivery);
+    if (delivered !== undefined) return delivered;
+    if (await isPaused()) return { kind: 'paused' };
+    await stages.afterDelivery?.();
+    return { kind: 'no-work' };
   };
   // The one-shot and resident hosts share this pipeline. Serializing all callers prevents them from racing the same run
   // claim, checkpoint, and workspace lifecycle within one Wake process.

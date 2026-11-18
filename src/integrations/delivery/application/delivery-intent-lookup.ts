@@ -2,14 +2,26 @@ import type { ProjectionStore } from '@atolis-hq/eventing';
 import { IntegrationStreamKind } from '../../contracts/streams.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind } from '../contracts/vocabulary.js';
+import { deliveryProjectionKey } from './delivery-projector.js';
+
+// A keyed read: the projection is keyed by intent id, so scanning every intent
+// per lookup made each pending outcome cost O(all deliveries ever).
+async function deliveryIntent(
+  projections: ProjectionStore,
+  intentEventId: string,
+): Promise<DeliveryIntentView | undefined> {
+  const stored = await projections.read<DeliveryIntentView | null>(
+    IntegrationStreamKind.Delivery,
+    deliveryProjectionKey(intentEventId),
+  );
+  return stored?.value?.intentEventId === intentEventId ? stored.value : undefined;
+}
 
 export async function isPublicationOnlyDelivery(
   projections: ProjectionStore,
   intentEventId: string,
 ): Promise<boolean> {
-  const intent = (await projections.list<DeliveryIntentView>(IntegrationStreamKind.Delivery)).find(
-    (entry) => entry.value.intentEventId === intentEventId,
-  )?.value;
+  const intent = await deliveryIntent(projections, intentEventId);
   return (
     intent !== undefined &&
     isReplyPublication(intent.payload) &&
@@ -21,9 +33,7 @@ export async function conversationDeliveryIntent(
   projections: ProjectionStore,
   intentEventId: string,
 ) {
-  const intent = (await projections.list<DeliveryIntentView>(IntegrationStreamKind.Delivery)).find(
-    (candidate) => candidate.value.intentEventId === intentEventId,
-  )?.value;
+  const intent = await deliveryIntent(projections, intentEventId);
   if (
     intent === undefined ||
     !isAgentRunPublication(intent.payload) ||

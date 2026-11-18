@@ -22,7 +22,6 @@ import { activationId, ActivityOutcomeKind } from '../../../activities/index.js'
 import { type ConversationService } from '../../../conversations/index.js';
 import { brandedStringSchema, offsetIsoTimestampSchema } from '../../../kernel/index.js';
 import {
-  ActivityActivationStatus,
   workflowInstanceId,
   type OrchestrationService,
   type WorkflowInstanceId,
@@ -34,8 +33,7 @@ import {
 } from '../contracts/events.js';
 import { DeliveryResultKind } from '../contracts/vocabulary.js';
 import { conversationDeliveryIntent, isPublicationOnlyDelivery } from './delivery-intent-lookup.js';
-
-const deliveryResultSignalKind = 'delivery-result';
+import { classifyDeliveryWait, DeliveryWait } from './delivery-wait.js';
 
 export const DeliveryOutcomeProcessorConsumer = 'reactor:delivery-outcomes';
 const pendingConsumer = DeliveryOutcomeProcessorConsumer;
@@ -187,7 +185,11 @@ export class DeliveryOutcomeReactor {
       workflowInstanceId: workflowInstanceId(delivery.payload.workflowInstanceId),
       activationId: activationId(delivery.payload.activationId),
     };
-    if (!(await this.isAwaitingThisDelivery(command, delivery.payload.intentEventId))) return false;
+    const waiting = await this.awaitingThisDelivery(command, delivery.payload.intentEventId);
+    // An outcome for an activation that already settled can never be accepted, so
+    // keeping it pending would only make every later pass re-examine it.
+    if (waiting === DeliveryWait.Settled) return true;
+    if (waiting === DeliveryWait.NotYet) return false;
     await this.orchestration.acceptOutcome(
       { ...command, outcome },
       {
@@ -229,18 +231,13 @@ export class DeliveryOutcomeReactor {
     );
   }
 
-  private async isAwaitingThisDelivery(
+  private async awaitingThisDelivery(
     command: { readonly workflowInstanceId: WorkflowInstanceId; readonly activationId: string },
     intentEventId: string,
-  ): Promise<boolean> {
+  ): Promise<DeliveryWait> {
     // A terminal delivery can only resolve the activation that waited for this exact intent.
     const view = await this.orchestration.get(command.workflowInstanceId);
-    return (
-      view?.pendingActivation?.activationId === command.activationId &&
-      view.pendingActivation.status === ActivityActivationStatus.Waiting &&
-      view.waitingFor?.signalKind === deliveryResultSignalKind &&
-      view.waitingFor.intentEventId === intentEventId
-    );
+    return classifyDeliveryWait(view, command.activationId, intentEventId);
   }
 
   private async loadPending(): Promise<readonly PendingDeliveryOutcome[]> {

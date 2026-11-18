@@ -71,8 +71,11 @@ export class OrchestrationRepository {
   }
 
   async load(id: string) {
-    const { events: own, sequence } = await this.history(id);
-    const inherited = ((await this.state.get()).inherited.get(id) ?? []).filter((entry) => {
+    // One freshness check per load: every per-instance sweep calls this once per
+    // instance, and each journal state read costs a filesystem probe.
+    const state = await this.state.get();
+    const { events: own, sequence } = historyOf(state, id);
+    const inherited = (state.inherited.get(id) ?? []).filter((entry) => {
       const fact = entry.event;
       if (
         entry.stream.id === id ||
@@ -105,9 +108,7 @@ export class OrchestrationRepository {
   }
 
   async history(id: string) {
-    const state = await this.state.get();
-    if (state.failures.has(id)) throw state.failures.get(id);
-    return { sequence: state.sequences.get(id) ?? 0, events: state.own.get(id) ?? [] };
+    return historyOf(await this.state.get(), id);
   }
 
   /** The state for reads that span every instance, which fail while any instance is malformed. */
@@ -158,6 +159,11 @@ export class OrchestrationRepository {
   async list(): Promise<readonly ListedInstance[]> {
     return (await this.healthyState()).instances;
   }
+}
+
+function historyOf(state: OrchestrationState, id: string) {
+  if (state.failures.has(id)) throw state.failures.get(id);
+  return { sequence: state.sequences.get(id) ?? 0, events: state.own.get(id) ?? [] };
 }
 
 function isWorkflowEvent(

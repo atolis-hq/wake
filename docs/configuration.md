@@ -825,13 +825,26 @@ fields are for deterministic testing, not normal operation.
 
 ### Temporary runner memory profile
 
-For a resident-memory investigation, set `WAKE_MEMORY_PROFILE=runner` in the
-host shell and run `wake-dev sandbox update`. The sandbox receives the flag
-only for that container generation and writes three small JSONL records per
-runner execution to `.wake/logs/start.log`: before start, after the external
-process is returned, and after its result settles. Each record contains only
-the run ID, runner name, timestamp, PID, and Node memory counters; it never
-includes a prompt, provider payload, command arguments, or runner output.
+For a resident-memory or runner-latency investigation, set
+`WAKE_MEMORY_PROFILE=runner` in the host shell and run `wake-dev sandbox update`.
+The sandbox receives the flag only for that container generation and writes
+JSONL records to `.wake/logs/start.log`:
+
+- `wake.runner-memory`: three records per runner execution (before start, after
+  the external process is returned, and after its result settles), carrying the
+  run ID and runner name.
+- `wake.runtime-memory`: a `<phase>.before` / `<phase>.settled` pair around each
+  step of the resident loop. Phases are `intake.poll`; `runner.triggers` and its
+  `.artifact-context`, `.reconcile` and `.run` steps; `runner.maintenance` and
+  its `.merged-waits`, `.watches`, `.artifacts`, `.merged-deliveries`,
+  `.outcomes` and `.provider.<adapter>.reconciler` steps; `runner.deliver`; and
+  `runner.provider-maintenance` (post-delivery sweeps that may wait on external
+  APIs, such as GitHub label sync). Subtracting the two `at` timestamps gives the
+  duration of each step, so the slow step of a long runner cycle is visible.
+
+Every record contains only phase or run identifiers, a timestamp, the PID, and
+Node memory counters; it never includes a prompt, provider payload, command
+arguments, or runner output.
 
 Unset the variable and run `wake-dev sandbox update` again to remove the
 diagnostic mode.

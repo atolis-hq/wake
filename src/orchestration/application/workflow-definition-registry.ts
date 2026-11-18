@@ -15,8 +15,18 @@ import { type WorkflowName } from '../contracts/identifiers.js';
 import { OrchestrationStreamKind, workflowDefinitionsStream } from '../contracts/streams.js';
 import type { WorkflowInstanceView } from '../contracts/views.js';
 
-export const workflowDefinitionFingerprint = (definition: CompiledWorkflow): string =>
-  createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+// Compiled definitions are immutable config; every instance load resolves one,
+// so hashing the serialised definition each time was a measurable share of a
+// busy runner pass.
+const fingerprints = new WeakMap<CompiledWorkflow, string>();
+
+export const workflowDefinitionFingerprint = (definition: CompiledWorkflow): string => {
+  const known = fingerprints.get(definition);
+  if (known !== undefined) return known;
+  const fingerprint = createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+  fingerprints.set(definition, fingerprint);
+  return fingerprint;
+};
 
 export const workflowDefinitionKey = (name: WorkflowName, fingerprint: string): string =>
   `${name}:${fingerprint}`;
