@@ -490,6 +490,20 @@ it.each([
         );
         await root.orchestration.reconcileChildCompletions(context('reconcile-' + run.runId));
       };
+      // Result facts recorded for a child, oldest first; review recovery retires then re-selects.
+      const selectedHeads = async (id: string) =>
+        (await journal.readAll(0))
+          .map(selectOrchestrationEvent)
+          .filter((entry) => entry !== null)
+          .flatMap(({ event }) =>
+            event.eventType === OrchestrationEventType.DelegationResultSelected &&
+            event.payload.cohortId === 'stack' &&
+            event.payload.childWorkItemId === child(id).workItemId
+              ? event.payload.outputs.map((output) =>
+                  'revision' in output.reference ? output.reference.revision : undefined,
+                )
+              : [],
+          );
       const review = async (id: string, reject = false) => {
         const entry = child(id);
         if (
@@ -746,6 +760,8 @@ it.each([
             ),
           ).toEqual(retried);
         }
+        // The pending (or unreviewed) recovery leaves the retired result unselected.
+        if (settledHead) expect(await selectedHeads('two')).toEqual([attestedTwo]);
         releaseParent();
         await vi.waitFor(async () =>
           expect(
@@ -781,6 +797,9 @@ it.each([
           context('accept-fresh-review'),
         );
         await root.orchestration.reconcileChildCompletions(context('refresh-dependent'));
+        // A settled cohort is never advanced again; its recovered head must still become the
+        // selected result, or delivery selection reports the output as not qualifying.
+        if (settledHead) expect(await selectedHeads('two')).toEqual([attestedTwo, revised]);
         expect(
           (await root.orchestration.deliveryTree(parentWork))
             .at(-1)!

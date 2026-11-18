@@ -507,6 +507,36 @@ it('denies waiving a required assignment and compares the expected selection rev
   ).toBe('no-selection');
 });
 
+it('names which qualification failed when a selected output is not a qualifying result', async () => {
+  const fixture = build();
+  const fingerprint = await startParent(fixture);
+  await delegate(fixture, fingerprint, 'c1', [{ id: 'a', repo: 'repo-a', revision: sha('a') }]);
+  const caller = await callerOf(fixture);
+  const attempt = async (childWorkItemId: WorkItemId, outputName: string, requestId: string) => {
+    const error = await fixture.service
+      .selectDelivery(
+        caller,
+        {
+          requestId,
+          expectedRevision: 0,
+          entries: [{ cohortId: 'c1', assignmentId: 'a', output: { childWorkItemId, outputName } }],
+        },
+        context(requestId),
+      )
+      .then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+    expect(error).toBeInstanceOf(DeliveryRejectionError);
+    expect((error as DeliveryRejectionError).code).toBe('output-mismatch');
+    return (error as DeliveryRejectionError).message;
+  };
+  // A child whose result was retired (or never selected) is reported as having no selected result.
+  expect(await attempt(workId('77'), 'change', 'no-result')).toContain(
+    'the child has no selected result',
+  );
+});
+
 it('replays a duplicate selection, candidate and QA without a second fact', async () => {
   const fixture = build();
   const { children, caller } = await selectedTwoRepos(fixture);

@@ -23,6 +23,7 @@ import type {
   DelegationRecovery,
   DelegationReservation,
   DelegationResult,
+  DelegationReviewRefresh,
 } from '../contracts/delegation.js';
 import { DelegationConflictError } from '../contracts/delegation.js';
 import { OrchestrationEventType } from '../contracts/events.js';
@@ -73,6 +74,11 @@ import { readDeliveryFacts } from './delivery-facts-reader.js';
 import type { OrchestrationRepository } from './orchestration-repository.js';
 import type { PrerequisiteReadiness } from './prerequisite-readiness.js';
 import { prerequisiteRefreshPrompt } from './refresh-prerequisites.js';
+import {
+  currentReviewRefreshes,
+  reviewRefreshVerdict,
+  ReviewRefreshVerdict,
+} from './review-refresh-facts.js';
 import type { StartWorkflow } from './start-workflow.js';
 import type { WorkflowDefinitionRegistry } from './workflow-definition-registry.js';
 
@@ -451,6 +457,7 @@ export class DelegatedWork {
 
   async reconcile(context: CommandContext): Promise<void> {
     const events = await this.ledger.events();
+    await this.reselectRecoveredResults(this.artifacts, events, context);
     const reservations = unsettledReservations(events);
     if (reservations.length === 0) return;
     const artifacts = this.artifacts;
@@ -1009,7 +1016,18 @@ export class DelegatedWork {
       await this.failChild(reservation, child, 'Invalid qualifying output contract', context);
       return;
     }
-    await this.ledger.appendOnce(
+    await this.recordResult(root, reservation, child, workflow, outputs, context);
+  }
+
+  private recordResult(
+    root: WorkflowInstanceId,
+    reservation: DelegationReservation,
+    child: DelegationReservation['children'][number],
+    workflow: WorkflowInstanceView,
+    outputs: DelegationResult['outputs'],
+    context: CommandContext,
+  ): Promise<void> {
+    return this.ledger.appendOnce(
       root,
       context,
       `result:${child.grantId}:${workflow.acceptedOutcomes.at(-1)}:${outputs.map(({ reference }) => ('revision' in reference ? reference.revision : reference.revisionId)).join(':')}`,
@@ -1017,6 +1035,70 @@ export class DelegatedWork {
         eventType: OrchestrationEventType.DelegationResultSelected,
         payload: { cohortId: reservation.cohortId, childWorkItemId: child.workItemId, outputs },
       },
+    );
+  }
+
+  /**
+   * Review recovery retires a child's selected result (the recorded head is no longer the
+   * reviewed one). A live cohort re-selects it in `advanceChild`; a settled cohort is never
+   * advanced again, so once the fresh review is accepted its refreshed head is selected here,
+   * through the same provider qualification, and delivery selection can see the current output.
+   */
+  private async reselectRecoveredResults(
+    artifacts: DelegationArtifacts,
+    events: Awaited<ReturnType<DelegationLedger['events']>>,
+    context: CommandContext,
+  ): Promise<void> {
+    const refreshes = currentReviewRefreshes(events);
+    if (refreshes.size === 0) return;
+    for (const reservation of reservationsOf(events)) {
+      if (!isSettled(events, reservation)) continue;
+      const current = new Set(
+        selectedResults(events, reservation).map((result) => result.childWorkItemId),
+      );
+      for (const child of reservation.children) {
+        const refresh = refreshes.get(child.workflowInstanceId);
+        if (
+          refresh === undefined ||
+          current.has(child.workItemId) ||
+          !wasSelected(events, reservation, child.workItemId)
+        )
+          continue;
+        try {
+          await this.reselectRecovered(artifacts, reservation, child, refresh.request, context);
+        } catch (error) {
+          // A drifting head or unavailable provider evidence leaves the result retired and visible.
+          console.warn(
+            `Recovered result for ${child.workItemId} could not be selected`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+    }
+  }
+
+  private async reselectRecovered(
+    artifacts: DelegationArtifacts,
+    reservation: DelegationReservation,
+    child: DelegationReservation['children'][number],
+    refresh: DelegationReviewRefresh,
+    context: CommandContext,
+  ): Promise<void> {
+    if ((await this.deliveryAvailability(reservation.parentWorkItemId)).reason !== undefined)
+      return;
+    const verdict = reviewRefreshVerdict((await this.repository.load(refresh.requestId)).view);
+    if (verdict.kind !== ReviewRefreshVerdict.Accepted) return;
+    const workflow = (await this.repository.load(child.workflowInstanceId)).view;
+    if (workflow === null || workflow.status !== WorkflowStatus.Completed) return;
+    const outputs = await artifacts.qualifyingOutputs(workflow, child.outputs);
+    if (outputs === null || !hasRequiredOutputs(child, outputs)) return;
+    await this.recordResult(
+      reservation.parentWorkflowInstanceId,
+      reservation,
+      child,
+      workflow,
+      outputs,
+      context,
     );
   }
 
@@ -1149,6 +1231,19 @@ export class DelegatedWork {
       }
     }
   }
+}
+
+function wasSelected(
+  events: Awaited<ReturnType<DelegationLedger['events']>>,
+  reservation: DelegationReservation,
+  childWorkItemId: string,
+): boolean {
+  return events.some(
+    ({ event }) =>
+      event.eventType === OrchestrationEventType.DelegationResultSelected &&
+      event.payload.cohortId === reservation.cohortId &&
+      event.payload.childWorkItemId === childWorkItemId,
+  );
 }
 
 /** Recorded blockers plus the dependents that can no longer start. */
