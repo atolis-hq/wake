@@ -37,12 +37,18 @@ or reconciles an effect — that is each provider's own delivery adapter.
 Delivery is intentionally not a generic multi-sink fanout router: one intent
 is addressed to one Resource and therefore one provider adapter.
 
-- `deliverNext` MUST pick the first pending-or-ambiguous intent its injected
-  intent source returns; when none exists, it MUST record no facts and
-  return nothing.
-- The intent source exposes actionable intents in requesting journal order.
-  Delivery processes one such intent per call; a terminal failure for one
-  intent must leave later intents independently actionable in their order.
+- `deliverNext` MUST pick the most urgent pending-or-ambiguous intent its
+  injected intent source returns, excluding any intent id the caller passes in
+  `skip`; when none exists, it MUST record no facts and return nothing.
+  Workflow-gating intents (`pr.merge`, `pr.approve`, `issue.complete`) are more
+  urgent than publications (status, reply, agent-run), and intents of equal
+  urgency are taken oldest first by requesting journal position, regardless of
+  the order the source lists them in.
+- Delivery processes one intent per call; a terminal failure for one intent
+  must leave later intents independently actionable in their order. A runner
+  pass drains a bounded batch by calling `deliverNext` repeatedly, passing the
+  intents it has already attempted in `skip` so no intent is retried (or its
+  reconciliation attempts consumed) twice in one pass.
 - An intent whose Resource cannot be resolved MUST fail the call outright
   (not record a per-intent outcome fact); this is a hard error for the
   cycle, not a delivery outcome.

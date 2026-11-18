@@ -105,6 +105,11 @@ import {
 } from './projection-runtime.js';
 import { createCapabilityResourceTransitionEvidence } from './resource-transition-evidence.js';
 
+// A pass delivers up to this many intents, or stops after this long, whichever
+// comes first, so provider I/O cannot hold the runner loop indefinitely.
+const maxDeliveriesPerPass = 10;
+const maxDeliveryPassMs = 15_000;
+
 export interface IntegrationRuntime {
   readonly triggers: TriggerService;
   readonly projectionSubscriptions: RuntimeProjectionSubscriptions;
@@ -436,36 +441,47 @@ export async function composeIntegrationRuntime(
     isPaused: input.isPaused,
     runTriggers: () =>
       observeMemory(memoryProfile, 'runner.triggers', async () => {
-        await input.reconcileArtifactContext?.();
-        await triggers.reconcile({
-          commandId: input.ids.next('command'),
-          correlationId: correlationId('trigger-recovery'),
-          occurredAt: input.clock.now().toISOString(),
-          actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-        });
-        for (const trigger of input.config.controlPlane.triggers)
-          await triggers.run(trigger, {
+        await observeMemory(memoryProfile, 'runner.triggers.artifact-context', async () =>
+          input.reconcileArtifactContext?.(),
+        );
+        await observeMemory(memoryProfile, 'runner.triggers.reconcile', () =>
+          triggers.reconcile({
             commandId: input.ids.next('command'),
-            correlationId: correlationId('trigger-tick'),
+            correlationId: correlationId('trigger-recovery'),
             occurredAt: input.clock.now().toISOString(),
             actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
-          });
+          }),
+        );
+        for (const trigger of input.config.controlPlane.triggers)
+          await observeMemory(memoryProfile, 'runner.triggers.run', () =>
+            triggers.run(trigger, {
+              commandId: input.ids.next('command'),
+              correlationId: correlationId('trigger-tick'),
+              occurredAt: input.clock.now().toISOString(),
+              actor: { kind: EventActorKind.System, id: ControlStreamKind.Global },
+            }),
+          );
       }),
     maintain: () =>
       observeMemory(memoryProfile, 'runner.maintenance', async () => {
-        await recoverMergedWaits();
-        await watchReconciler.reconcileOnce();
-        await artifacts.reconcileOnce();
-        await reconcileMergedDeliveries({
-          journal: input.journal,
-          projections: input.projections,
-          orchestration: input.orchestration,
-          pullRequests: input.pullRequests,
-        });
-        await outcomes.reconcileOnce();
+        const step = <T>(name: string, operation: () => Promise<T>) =>
+          observeMemory(memoryProfile, `runner.maintenance.${name}`, operation);
+        await step('merged-waits', recoverMergedWaits);
+        await step('watches', () => watchReconciler.reconcileOnce());
+        await step('artifacts', () => artifacts.reconcileOnce());
+        await step('merged-deliveries', () =>
+          reconcileMergedDeliveries({
+            journal: input.journal,
+            projections: input.projections,
+            orchestration: input.orchestration,
+            pullRequests: input.pullRequests,
+          }),
+        );
+        await step('outcomes', () => outcomes.reconcileOnce());
         for (const provider of providers) {
-          await provider.reconciler?.reconcileOnce();
-          await provider.maintenance?.runOnce();
+          await step(`provider.${provider.adapter}.reconciler`, async () =>
+            provider.reconciler?.reconcileOnce(),
+          );
         }
       }),
     deliver: (signal) =>
@@ -473,9 +489,32 @@ export async function composeIntegrationRuntime(
         // Delivery reads its outbox from a projection. Projection writes do
         // not append journal facts, so catch up this one dependency directly
         // instead of waiting for unrelated resident projection consumers.
-        for (const definition of deliveryProjectionDefinitions)
-          await projectionSubscriptions.catchUp(definition, signal);
-        await delivery.deliverNext(signal);
+        // One intent per pass left a merge waiting behind every earlier comment
+        // for as many whole runner cycles; drain a bounded batch, most urgent first.
+        const attempted = new Set<string>();
+        const startedAt = performance.now();
+        while (
+          attempted.size < maxDeliveriesPerPass &&
+          performance.now() - startedAt < maxDeliveryPassMs &&
+          !signal.aborted
+        ) {
+          for (const definition of deliveryProjectionDefinitions)
+            await projectionSubscriptions.catchUp(definition, signal);
+          const intent = await delivery.deliverNext(signal, { skip: attempted });
+          if (intent === null) break;
+          attempted.add(intent.intentEventId);
+        }
+      }),
+    afterDelivery: () =>
+      observeMemory(memoryProfile, 'runner.provider-maintenance', async () => {
+        // Provider maintenance reconciles external state (e.g. GitHub labels) over
+        // the network; it must never hold back a delivery that gates a workflow.
+        for (const provider of providers)
+          await observeMemory(
+            memoryProfile,
+            `runner.provider-maintenance.${provider.adapter}`,
+            async () => provider.maintenance?.runOnce(),
+          );
       }),
   });
   const requestImmediatePoll = createImmediatePollRequester(

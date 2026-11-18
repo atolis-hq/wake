@@ -14,6 +14,7 @@ import {
 import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
+import { nextDeliverable } from './delivery-ordering.js';
 
 export interface DeliveryServiceDependencies {
   readonly journal: EventJournal;
@@ -87,12 +88,17 @@ export class DeliveryService {
     );
   }
 
-  async deliverNext(signal: AbortSignal): Promise<DeliveryIntentView | null> {
-    const intent = (await this.dependencies.intents()).find(
-      (item) =>
-        (item.state === DeliveryState.Pending || item.state === DeliveryState.Ambiguous) &&
-        item.escalation === undefined,
-    );
+  /**
+   * Delivers the most urgent deliverable intent: workflow-gating intents (merge,
+   * approve, issue completion) before publication, oldest first within each
+   * class. `skip` excludes intents already attempted in the current pass so a
+   * pass drains distinct intents and never retries one back-to-back.
+   */
+  async deliverNext(
+    signal: AbortSignal,
+    options: { readonly skip?: ReadonlySet<string> } = {},
+  ): Promise<DeliveryIntentView | null> {
+    const intent = nextDeliverable(await this.dependencies.intents(), options.skip);
     if (intent === undefined) return null;
     const resource = await this.dependencies.resource(intent.resourceId);
     if (resource === null) throw new Error(`Delivery resource not found: ${intent.resourceId}`);

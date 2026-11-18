@@ -15,6 +15,36 @@ describe('RunnerPipeline', () => {
     expect(maintain).toHaveBeenCalledOnce();
   });
 
+  it('delivers before sweeps that wait on external I/O, so they cannot delay a gating intent', async () => {
+    const order: string[] = [];
+    const pipeline = createRunnerPipeline({
+      runTriggers: async () => void order.push('triggers'),
+      maintain: async () => void order.push('maintain'),
+      deliver: async () => void order.push('deliver'),
+      afterDelivery: async () => void order.push('after-delivery'),
+    });
+
+    await pipeline.run({ maxProgress: 1 });
+
+    expect(order).toEqual(['triggers', 'maintain', 'deliver', 'after-delivery']);
+  });
+
+  it('skips post-delivery sweeps while paused', async () => {
+    let paused = false;
+    const afterDelivery = vi.fn(async () => undefined);
+    const pipeline = createRunnerPipeline({
+      isPaused: async () => paused,
+      runTriggers: async () => undefined,
+      deliver: async () => {
+        paused = true;
+      },
+      afterDelivery,
+    });
+
+    await expect(pipeline.run({ maxProgress: 1 })).resolves.toEqual({ kind: 'paused' });
+    expect(afterDelivery).not.toHaveBeenCalled();
+  });
+
   it('consumes trigger occurrences while paused without maintenance or delivery', async () => {
     const runTriggers = vi.fn(async () => undefined);
     const maintain = vi.fn(async () => undefined);

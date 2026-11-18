@@ -718,7 +718,13 @@ it('repairs red checks, observes the pushed green head, and requests merge throu
   const { root } = await setup(definition, true);
   await until(root, () => waiting(root));
   await observeChecks(root, 'failing');
-  await tick(root);
+  // Delivery drains every pending intent in a pass, so the merge outcome can be
+  // accepted in the pass that observes the failure; the repair follows within the
+  // bounded ticks of `until` rather than in exactly one.
+  await until(
+    root,
+    async () => (await root.orchestration.get(iid))?.retryCounts['pr.merge:failing'] === 1,
+  );
   expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
   await observeChecks(root, 'passing', 'fixed-head');
   await until(root, async () =>

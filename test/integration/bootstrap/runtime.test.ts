@@ -763,6 +763,64 @@ describe('target composition root', () => {
     expect(deliveries).toBe(1);
   });
 
+  // One intent per runner pass left every later intent waiting a whole cycle
+  // (46 s on a long-lived home) behind the ones before it.
+  it('drains every pending intent in one composed runner pass, not one per pass', async () => {
+    const clock = { now: () => new Date('2026-08-10T00:00:00.000Z') };
+    const journal = new InMemoryEventJournal(clock);
+    const delivered: string[] = [];
+    const runtime = await createCompositionRoot('C:/wake-drain-delivery', {
+      config: fakeProviderRootConfig(),
+      journal,
+      projections: new InMemoryProjectionStore(),
+      checkpoints: new InMemoryCheckpointStore(),
+      clock,
+      decorateDeliveryAdapter: (adapter) => ({
+        async deliver(intent, signal) {
+          delivered.push(intent.intentEventId);
+          return adapter.deliver(intent, signal);
+        },
+        reconcile: adapter.reconcile.bind(adapter),
+      }),
+    });
+    const intentIds: string[] = [];
+    for (const name of ['drain-1', 'drain-2', 'drain-3']) {
+      const resource = await runtime.resources.discover(
+        {
+          resourceId: resId(name),
+          kind: resourceKind('issue'),
+          externalKey: { adapter: 'fake', key: name },
+          capabilities: [],
+        },
+        commandContext(clock, name),
+      );
+      intentIds.push(`${name}-intent`);
+      await journal.appendToStream({ kind: 'resource', id: resource.resourceId }, 1, [
+        {
+          eventId: eventId(`${name}-intent`),
+          eventType: DeliveryIntentEventType.StatusPublishRequested,
+          schemaVersion: 1,
+          occurredAt: clock.now().toISOString(),
+          correlationId: correlationId(name),
+          causationId: causationId(name),
+          actor: { kind: EventActorKind.System, id: 'test' },
+          source: { kind: EventSourceKind.Internal, id: 'test' },
+          payload: {
+            workflowInstanceId: `workflow-${name}`,
+            activationId: `activation-${name}`,
+            resourceId: resource.resourceId,
+            body: name,
+          },
+        },
+      ]);
+    }
+    await runtime.projectionSubscriptions.catchUpOnce();
+
+    await runtime.runnerPipeline.run({ maxProgress: 1 });
+
+    expect(delivered).toEqual(intentIds);
+  });
+
   it('delivers from its targeted projection while an unrelated projection is blocked and the scheduler advances', async () => {
     const clock = { now: () => new Date('2026-08-29T00:00:00.000Z') };
     const journal = new InMemoryEventJournal(clock);

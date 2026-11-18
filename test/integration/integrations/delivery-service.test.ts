@@ -126,6 +126,74 @@ describe('DeliveryService', () => {
     ]);
   });
 
+  // A merge waited 13 minutes behind comments because intents were taken in
+  // projection order and only one was delivered per runner pass.
+  it('delivers workflow-gating intents before publications, oldest first within each class', async () => {
+    const journal = new InMemoryEventJournal(new FakeClock());
+    const delivered: string[] = [];
+    const intent = (
+      id: string,
+      globalPosition: number,
+      kind: DeliveryIntentView['kind'],
+      payload: DeliveryIntentView['payload'],
+    ): DeliveryIntentView => ({
+      intentEventId: eventId(id),
+      globalPosition,
+      workflowInstanceId: `workflow-${id}`,
+      activationId: `activation-${id}`,
+      kind,
+      resourceId: resId(id),
+      payload,
+      state: DeliveryState.Pending,
+      attempts: 0,
+      occurrenceOrdinal: 0,
+    });
+    const comment = (id: string, globalPosition: number) =>
+      intent(id, globalPosition, DeliveryIntentKind.StatusPublish, {
+        kind: DeliveryIntentKind.StatusPublish,
+        body: id,
+      });
+    // Projection order is not delivery order: the merge was requested last.
+    const intents = [
+      comment('comment-2', 2),
+      comment('comment-1', 1),
+      intent('merge', 9, DeliveryIntentKind.PrMerge, {
+        kind: DeliveryIntentKind.PrMerge,
+        revision: 'abc',
+        method: MergeMethod.Merge,
+        autoMerge: false,
+      }),
+      intent('complete', 8, DeliveryIntentKind.IssueComplete, {
+        kind: DeliveryIntentKind.IssueComplete,
+      }),
+    ];
+    const service = new DeliveryService({
+      journal,
+      intents: async () => intents,
+      resource: async (id) => ({ resourceId: id, adapter: 'github' }),
+      adapter: () => ({
+        deliver: async (delivering: { readonly intentEventId: string }) => {
+          delivered.push(delivering.intentEventId);
+          return { kind: DeliveryResultKind.Confirmed, externalId: delivering.intentEventId };
+        },
+        reconcile: async () => ({ kind: DeliveryResultKind.NotFound }),
+      }),
+      now: () => '2026-07-31T12:00:00.000Z',
+    });
+
+    const attempted = new Set<string>();
+    for (let pass = 0; pass < intents.length; pass += 1) {
+      const next = await service.deliverNext(new AbortController().signal, { skip: attempted });
+      attempted.add(next!.intentEventId);
+    }
+
+    expect(delivered).toEqual(['complete', 'merge', 'comment-1', 'comment-2']);
+    // Everything in this pass has been attempted, so nothing more is offered.
+    await expect(
+      service.deliverNext(new AbortController().signal, { skip: attempted }),
+    ).resolves.toBeNull();
+  });
+
   it('durably fails an intent whose resource provider is unavailable without recording an attempt', async () => {
     const journal = new InMemoryEventJournal(new FakeClock());
     const intent: DeliveryIntentView = {
