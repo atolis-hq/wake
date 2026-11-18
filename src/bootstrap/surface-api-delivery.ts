@@ -1,4 +1,8 @@
-import { DelegationOutputKind, WorkflowArtifactOutputKind } from '../orchestration/index.js';
+import {
+  DelegationOutputKind,
+  WorkflowArtifactOutputKind,
+  WorkflowStatus,
+} from '../orchestration/index.js';
 import {
   presentResource,
   toWorkItemKey,
@@ -58,19 +62,9 @@ export async function presentDelivery(
               parentWorkItemKey: toWorkItemKey(cohort.parentWorkItemId),
               objective: child.objective,
               workflowName: child.workflowName,
-              status: child.workflow?.status ?? 'registration-pending',
+              ...presentStatus(child, availability.reason),
               cohortId: cohort.cohortId,
-              ...(child.prerequisiteBlocker === undefined
-                ? {}
-                : { prerequisiteBlocker: child.prerequisiteBlocker }),
               ...presentPlacement(child, selected, staleKeys),
-              ...((availability.reason ?? child.prerequisiteBlocker ?? child.workflow?.blockReason)
-                ? {
-                    blockReason: (availability.reason ??
-                      child.prerequisiteBlocker ??
-                      child.workflow?.blockReason)!,
-                  }
-                : {}),
               resources: resources
                 .filter((entry) => entry !== null)
                 .map(presentResource(root.resolveResourceLink)),
@@ -83,6 +77,28 @@ export async function presentDelivery(
 }
 
 type Cohorts = Awaited<ReturnType<CompositionRoot['orchestration']['deliveryTree']>>;
+
+/** A retired never-started child is terminal: it names its replacement and carries no blocker. */
+function presentStatus(child: Cohorts[number]['children'][number], availabilityReason?: string) {
+  if (child.supersededBy !== undefined)
+    return {
+      status: WorkflowStatus.Superseded,
+      supersededBy: {
+        workItemKey: toWorkItemKey(child.supersededBy.childWorkItemId),
+        cohortId: child.supersededBy.cohortId,
+        assignmentId: child.supersededBy.assignmentId,
+      },
+    };
+  const blockReason =
+    availabilityReason ?? child.prerequisiteBlocker ?? child.workflow?.blockReason;
+  return {
+    status: child.workflow?.status ?? 'registration-pending',
+    ...(child.prerequisiteBlocker === undefined
+      ? {}
+      : { prerequisiteBlocker: child.prerequisiteBlocker }),
+    ...(blockReason ? { blockReason } : {}),
+  };
+}
 
 function presentHeader(
   work: WorkItemView,

@@ -127,7 +127,11 @@ child whose assignment names `replaces` (cohort and assignment); it must keep ev
 criterion, the repository and the outputs, start from the unmerged contribution when the
 original is unmerged, target the original integration base, and only replace a terminal
 (completed or superseded) child or a child with no instance in an unsuccessfully settled
-cohort. Children with unresolved runs cannot be replaced; correcting a running child is
+cohort. A replaced child with no instance has nothing to supersede, so the same append that
+accepts the replacement records `delegation-child-superseded` on the root stream naming the
+replacement; reconciliation backfills it idempotently for earlier replacements. A retired child
+is terminal: it is never started, never counts as live work, and work detail reports it as
+`superseded` with `supersededBy`. Children with unresolved runs cannot be replaced; correcting a running child is
 unsupported and says so
 (`replacement-unsupported`). Selecting a replacement names the output it replaces, compared
 with the current selection. An output replaced in the selection makes every selected result

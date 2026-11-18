@@ -318,6 +318,22 @@ const eventSchemas = {
       .object({ childWorkItemId: brandedStringSchema(workItemId), reason: z.string().min(1) })
       .strict(),
   ),
+  [OrchestrationEventType.DelegationChildSuperseded]: workflowEnvelope(
+    OrchestrationEventType.DelegationChildSuperseded,
+    z
+      .object({
+        cohortId: z.string().min(1),
+        childWorkItemId: brandedStringSchema(workItemId),
+        replacement: z
+          .object({
+            cohortId: z.string().min(1),
+            assignmentId: z.string().min(1),
+            childWorkItemId: brandedStringSchema(workItemId),
+          })
+          .strict(),
+      })
+      .strict(),
+  ),
   [OrchestrationEventType.DelegationInputsRefreshed]: workflowEnvelope(
     OrchestrationEventType.DelegationInputsRefreshed,
     delegationInputsSchema,

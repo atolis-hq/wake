@@ -344,6 +344,31 @@ it.each([WorkflowStatus.Completed, WorkflowStatus.Superseded])(
       expect(board.cards[originalChild.workItemId]!.superseded).toBe(
         status === WorkflowStatus.Superseded ? true : undefined,
       );
+      // Never-started originals are retired with the replacement, not left as ready cards.
+      const detail = (await applications.api.work.detail(key))!.data.delegation!.children;
+      for (const [index, child] of original.children.slice(1).entries()) {
+        const replacement = repaired!.children[index + 1]!;
+        expect(board.cards[child.workItemId]).toMatchObject({
+          condition: 'finished',
+          superseded: true,
+        });
+        expect(detail.find((entry) => entry.workItemId === child.workItemId)).toMatchObject({
+          status: 'superseded',
+          supersededBy: {
+            workItemKey: toWorkItemKey(replacement.workItemId),
+            cohortId: 'repair',
+            assignmentId: replacement.assignmentId,
+          },
+        });
+      }
+      // Each retirement is journaled exactly once, and reconciliation never repeats it.
+      const retirements = async () =>
+        (await root.journal.readAll(0)).filter(
+          ({ event }) => event.eventType === 'orchestration.delegation-child-superseded',
+        ).length;
+      expect(await retirements()).toBe(2);
+      await root.orchestration.reconcileChildCompletions(context('reconcile-again'));
+      expect(await retirements()).toBe(2);
       for (const child of repaired!.children.slice(1)) {
         expect(board.cards[child.workItemId]).toMatchObject({
           condition: 'ready',

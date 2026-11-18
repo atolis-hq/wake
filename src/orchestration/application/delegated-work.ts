@@ -50,16 +50,20 @@ import {
   type DelegationAttentionDependencies,
 } from './delegation-attention.js';
 import {
+  childSupersededDraft,
   currentChildBlockers,
   delegationDraft,
   delegationEventId,
   DelegationLedger,
   isJoined,
   isSettled,
+  replacedChildren,
   reservationsOf,
   reservedEvent,
   selectedResults,
+  supersededChildren,
   unsettledReservations,
+  type ReplacedChild,
 } from './delegation-ledger.js';
 import { DelegationPrerequisites } from './delegation-prerequisites.js';
 import {
@@ -149,6 +153,7 @@ export class DelegatedWork {
     const events = await this.ledger.events();
     const reservations = reservationsOf(events).filter((entry) => entry.rootWorkItemId === root);
     const read = await this.prerequisites.read();
+    const replacements = supersededChildren(events);
     return Promise.all(
       reservations.map(async (reservation) => ({
         ...reservation,
@@ -170,6 +175,7 @@ export class DelegatedWork {
                 : read.recordedReason(child.workItemId)) ?? childBlocker(events, child.workItemId),
             consumedInputs: read.inputs(child.workItemId),
             workflow: read.workflow(child.workflowInstanceId) ?? null,
+            supersededBy: replacements.get(child.workItemId),
           })),
         ),
       })),
@@ -394,7 +400,8 @@ export class DelegatedWork {
       );
       for (const child of reservation.children)
         await this.prepareChild(artifacts, parent, child, context);
-      if (await this.commit(identity.root, sequence, reservation, context)) {
+      const retired = await this.neverStarted(replacedChildren(all, reservation), rootFacts);
+      if (await this.commit(identity.root, sequence, reservation, context, retired)) {
         await this.reconcile(context);
         return reservation;
       }
@@ -449,8 +456,48 @@ export class DelegatedWork {
     );
   }
 
+  /** Originals that never started and are not yet retired; started ones are superseded by `abandon`. */
+  private async neverStarted(
+    replaced: readonly ReplacedChild[],
+    events: Awaited<ReturnType<DelegationLedger['events']>>,
+  ): Promise<readonly ReplacedChild[]> {
+    const retired = supersededChildren(events);
+    const pending: ReplacedChild[] = [];
+    for (const entry of replaced) {
+      if (retired.has(entry.child.workItemId)) continue;
+      if ((await this.repository.load(entry.child.workflowInstanceId)).view === null)
+        pending.push(entry);
+    }
+    return pending;
+  }
+
+  /** Retires originals of replacements accepted before the retirement fact existed. */
+  private async retireReplacedChildren(
+    events: Awaited<ReturnType<DelegationLedger['events']>>,
+    context: CommandContext,
+  ): Promise<void> {
+    const reservations = reservationsOf(events);
+    for (const reservation of reservations) {
+      const root = reservedEvent(events, reservation).stream.id as WorkflowInstanceId;
+      for (const replaced of await this.neverStarted(
+        replacedChildren(reservations, reservation),
+        events,
+      )) {
+        await this.ledger.appendOnce(root, context, 'child-superseded:' + replaced.child.grantId, {
+          eventType: OrchestrationEventType.DelegationChildSuperseded,
+          payload: {
+            cohortId: replaced.cohortId,
+            childWorkItemId: replaced.child.workItemId,
+            replacement: replaced.replacement,
+          },
+        });
+      }
+    }
+  }
+
   async reconcile(context: CommandContext): Promise<void> {
     const events = await this.ledger.events();
+    await this.retireReplacedChildren(events, context);
     const reservations = unsettledReservations(events);
     if (reservations.length === 0) return;
     const artifacts = this.artifacts;
@@ -606,8 +653,10 @@ export class DelegatedWork {
     expectedSequence: number,
     reservation: DelegationReservation,
     context: CommandContext,
+    retired: readonly ReplacedChild[] = [],
   ): Promise<boolean> {
     try {
+      // Retiring never-started originals shares the append, so acceptance and retirement are one outcome.
       await this.repository.append(root, expectedSequence, [
         delegationDraft(
           context,
@@ -615,6 +664,7 @@ export class DelegatedWork {
           { eventType: OrchestrationEventType.DelegationReserved, payload: reservation },
           root,
         ),
+        ...retired.map((replaced) => childSupersededDraft(context, root, replaced)),
       ]);
       return true;
     } catch (error) {

@@ -322,8 +322,8 @@ function projectDelegation(
   view: BoardProjectionView,
   event: WorkflowEvent,
 ): BoardProjectionView | undefined {
-  if (isWorkflowEventType(event, OrchestrationEventType.DelegationReserved))
-    return projectDelegationReserved(view, event);
+  const registered = projectReservationFact(view, event);
+  if (registered !== undefined) return registered;
   if (isWorkflowEventType(event, OrchestrationEventType.DelegationResultSelected))
     return updateCohort(
       view,
@@ -368,6 +368,17 @@ function projectDelegation(
     isWorkflowEventType(event, OrchestrationEventType.DelegationFailed)
   )
     return projectDelegationSettled(view, event);
+  return undefined;
+}
+
+function projectReservationFact(
+  view: BoardProjectionView,
+  event: WorkflowEvent,
+): BoardProjectionView | undefined {
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationReserved))
+    return projectDelegationReserved(view, event);
+  if (isWorkflowEventType(event, OrchestrationEventType.DelegationChildSuperseded))
+    return projectChildSuperseded(view, event.event.payload.childWorkItemId);
   return undefined;
 }
 
@@ -451,6 +462,20 @@ function queuedReservationCards(
     };
   }
   return cards;
+}
+
+/** A never-started child has no instance to supersede, so its card is retired from the fact itself. */
+function projectChildSuperseded(view: BoardProjectionView, childId: string): BoardProjectionView {
+  const card = view.cards[childId];
+  if (card === undefined || card.stage !== undefined) return view;
+  const { blockReason: _blockReason, ...rest } = withoutPrerequisiteWait(card);
+  return {
+    ...view,
+    cards: {
+      ...view.cards,
+      [childId]: { ...rest, condition: BoardCondition.Finished, superseded: true },
+    },
+  };
 }
 
 function projectPrerequisiteBlocked(

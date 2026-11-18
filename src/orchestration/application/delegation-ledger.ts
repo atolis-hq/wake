@@ -3,6 +3,7 @@ import {
   WrongExpectedSequenceError,
   type CommandContext,
 } from '@atolis-hq/eventing';
+import type { WorkItemId } from '../../work/index.js';
 import type { DelegationReservation, DelegationResult } from '../contracts/delegation.js';
 import {
   OrchestrationEventType,
@@ -174,4 +175,80 @@ export function currentChildBlockers(events: readonly WorkflowOrchestrationEvent
       blockers.delete(event.payload.childWorkItemId);
   }
   return blockers;
+}
+
+export interface ReplacedChild {
+  readonly cohortId: string;
+  readonly child: DelegationReservation['children'][number];
+  readonly replacement: {
+    readonly cohortId: string;
+    readonly assignmentId: string;
+    readonly childWorkItemId: WorkItemId;
+  };
+}
+
+/** The original children a reservation's replacement assignments take over. */
+export function replacedChildren(
+  reservations: readonly DelegationReservation[],
+  reservation: DelegationReservation,
+): readonly ReplacedChild[] {
+  return reservation.children.flatMap((replacement) => {
+    const { replaces } = replacement;
+    if (replaces === undefined) return [];
+    const original = reservations
+      .filter(
+        (entry) =>
+          entry.rootWorkItemId === reservation.rootWorkItemId &&
+          entry.cohortId === replaces.cohortId,
+      )
+      .flatMap((entry) => entry.children)
+      .find(
+        (child) => child.assignmentId === replaces.assignmentId && child.replaces === undefined,
+      );
+    return original === undefined
+      ? []
+      : [
+          {
+            cohortId: replaces.cohortId,
+            child: original,
+            replacement: {
+              cohortId: reservation.cohortId,
+              assignmentId: replacement.assignmentId,
+              childWorkItemId: replacement.workItemId,
+            },
+          },
+        ];
+  });
+}
+
+/** Never-started children already retired by a replacement, keyed by child work item. */
+export function supersededChildren(
+  events: readonly WorkflowOrchestrationEvent[],
+): ReadonlyMap<string, ReplacedChild['replacement']> {
+  const retired = new Map<string, ReplacedChild['replacement']>();
+  for (const { event } of events)
+    if (event.eventType === OrchestrationEventType.DelegationChildSuperseded)
+      retired.set(event.payload.childWorkItemId, event.payload.replacement);
+  return retired;
+}
+
+/** Deterministic id per original grant, so acceptance and backfill can never both record it. */
+export function childSupersededDraft(
+  context: CommandContext,
+  id: WorkflowInstanceId,
+  replaced: ReplacedChild,
+): WorkflowOrchestrationEventData {
+  return delegationDraft(
+    context,
+    'child-superseded:' + replaced.child.grantId,
+    {
+      eventType: OrchestrationEventType.DelegationChildSuperseded,
+      payload: {
+        cohortId: replaced.cohortId,
+        childWorkItemId: replaced.child.workItemId,
+        replacement: replaced.replacement,
+      },
+    },
+    id,
+  );
 }

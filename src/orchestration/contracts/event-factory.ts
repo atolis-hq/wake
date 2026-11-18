@@ -26,6 +26,8 @@ export function createOrchestrationEventData(
     case OrchestrationEventType.DelegationPrerequisiteBlocked:
     case OrchestrationEventType.DelegationChildBlocked:
       return createEventData(input);
+    case OrchestrationEventType.DelegationChildSuperseded:
+      return createEventData(input);
     case OrchestrationEventType.DelegationFailed:
     case OrchestrationEventType.DelegationReconciliationFailed:
       return createEventData(input);
