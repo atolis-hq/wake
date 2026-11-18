@@ -82,10 +82,7 @@ export function reviseSelection(
 function selected(facts: DeliveryFacts, entry: Entry, requirement: Requirement): SelectedEntry {
   const output = qualifying(facts, entry.output);
   if (output === undefined)
-    throw reject(
-      DeliveryRejection.OutputMismatch,
-      `${outputKey(entry.output)} is not a qualifying result`,
-    );
+    throw reject(DeliveryRejection.OutputMismatch, unqualified(facts, entry.output));
   if (entry.output.childWorkItemId === requirement.child.workItemId) {
     if (entry.replaces !== undefined)
       throw reject(
@@ -94,6 +91,14 @@ function selected(facts: DeliveryFacts, entry: Entry, requirement: Requirement):
       );
   } else assertReplacement(facts, requirement, entry);
   return entryOf(entry, requirement, output);
+}
+
+/** Names which part of the qualification failed: no selected result, or no such output in it. */
+function unqualified(facts: DeliveryFacts, key: DeliveryOutputKey): string {
+  const reason = facts.results.some((result) => result.childWorkItemId === key.childWorkItemId)
+    ? `the child's selected result has no output named ${key.outputName}`
+    : 'the child has no selected result (it has not qualified yet, or review recovery retired its result and the current head is not yet re-reviewed and selected)';
+  return `${outputKey(key)} is not a qualifying result: ${reason}`;
 }
 
 function entryOf(entry: Entry, requirement: Requirement, output: Output): SelectedEntry {

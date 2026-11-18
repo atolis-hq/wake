@@ -1224,6 +1224,14 @@ an old, failed, or mismatched review does not qualify. Verified upstream review
 refreshes use the existing downstream input-refresh path, which reruns the branch
 activity and configured gates. A stale finished outcome remains fenced.
 
+Requesting a review retires the child's selected result, because its recorded head is no
+longer the reviewed one. In a live cohort ordinary reconciliation selects the result again
+at the refreshed head. A settled cohort is not advanced any more, so once the fresh review
+is accepted Wake selects the refreshed head as that child's result through the same
+provider qualification (child-owned PR, exact-head attestation, descendant of the attested
+revision, required checks). Delivery selection then accepts the output; until then it is
+rejected with `output-mismatch` and a message saying the child has no selected result.
+
 For an already stuck downstream member, use `action: refresh`, the child ID, and
 `JSON.stringify(consumedInputs.consumed)` from inspection as `expectedRevision`.
 Wake reselects and verifies the configured prerequisites, records new inputs, and
