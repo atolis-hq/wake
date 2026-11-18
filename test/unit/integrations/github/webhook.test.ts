@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -74,6 +74,17 @@ describe('GitHub webhooks', () => {
       }
     },
   );
+
+  it('recovers a lock abandoned by a crashed process instead of failing deliveries', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));
+    await mkdir(join(root, 'locks'), { recursive: true });
+    const lock = join(root, 'locks', 'github-webhook-github-atolis-hq--wake.lock');
+    await writeFile(lock, '');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(lock, old, old);
+    const store = new GitHubWebhookStateStore(root, adapterId('github'));
+    await expect(store.serialise('atolis-hq', 'wake', async () => 'ok')).resolves.toBe('ok');
+  });
 
   it('defaults to disabled and does not accept delivery', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-webhook-'));

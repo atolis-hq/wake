@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AdapterId } from '../../contracts/identifiers.js';
 import {
@@ -104,8 +104,25 @@ async function acquireLock(path: string): Promise<void> {
       await handle.close();
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || Date.now() >= deadline) throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      // A crash mid-operation leaves the lock behind; the guarded sections take
+      // milliseconds, so an old lock is abandoned and must not fail deliveries forever.
+      if (await isStale(path)) {
+        await unlink(path).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
+  }
+}
+
+const staleLockMs = 30_000;
+
+async function isStale(path: string): Promise<boolean> {
+  try {
+    return Date.now() - (await stat(path)).mtimeMs > staleLockMs;
+  } catch {
+    return false;
   }
 }
