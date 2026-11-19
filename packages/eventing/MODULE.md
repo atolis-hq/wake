@@ -41,3 +41,8 @@ the key's own position). Cross-stream or in-process indexes are a
 `foldedJournalView`, which folds only the events after the position it holds.
 There is intentionally no "re-derive from `readAll(0)`" helper;
 `test/architecture/journal-read-patterns.test.ts` enforces the allowed call sites.
+
+`readLatestMatching` is an optional portable journal capability for stream-ID OR
+exact top-level string payload matching. Implementations return unique envelopes
+in descending global position order, bounded by an exclusive before-position.
+Adapters without this capability remain supported by application fallbacks.

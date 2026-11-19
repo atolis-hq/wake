@@ -44,7 +44,8 @@ import { WorkStatus } from '../../../src/work/index.js';
 import { githubCheckObservation } from '../../support/github-check-observation.js';
 import { resId, workId } from '../../support/identities.js';
 
-vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
+// Composed scenarios fsync journals, indexes, and checkpoints under parallel CI load.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(

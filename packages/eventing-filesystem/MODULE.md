@@ -42,13 +42,39 @@ cross-process append lock. Every read reflects every append committed before the
 call, including appends by other processes; there is no validity window and no
 caller-selected freshness mode.
 
-Segments are immutable. Each is published by atomic rename to a name that is
-never reused, and nothing rewrites or deletes one, so a segment seen once is
-never stat'ed again. A listing is one directory stat, one `readdir` and a stat of
-only the names not seen before; an unchanged directory is recognised from its own
-stamp once that stamp is older than timestamp granularity, and a younger stamp is
-always re-listed. Concurrent reads share one follow-up listing that begins after
-the call, so any number of them cost at most two listings and none can be
-answered by a listing that predates its call. `fs.watch` only wakes
+Segments are immutable and published by atomic rename. JSONL remains the sole
+history authority; no migration or segment rewrite is needed. The rebuildable
+`journal-index.sqlite` stores byte locations in paged global-position and
+stream-sequence B-trees. It uses Node's built-in SQLite with a 2 MiB page cache
+and a 256-envelope LRU cache. Reads validate requested locations against file
+stats and decoded positions, streams, and sequences.
+
+Hot readers capture index rows in a short read-only SQLite transaction and
+release it before asynchronous JSONL I/O. Only appends and recovery take the
+cross-process journal lock. A persisted directory
+stamp detects unindexed segment publications, including unexpected clock dates.
+A recovery marker is written before publishing a segment and removed only after
+the index commits. Missing, corrupt, dirty, or stale indexes rebuild from JSONL;
+only recovery lists the event directory. Explicit read-only diagnostic adapters
+never create locks or files; their fallback index lives in memory. Index-write failure cannot fail an
+already committed append. Snapshot scans capture the head, read at most 100
+events per batch, and yield between batches. `fs.watch` only wakes
 `waitForEventsAfter`; correctness never depends on it. Local filesystems and
 same-kernel bind mounts are supported; NFS-style negative lookup caching is not.
+
+The index also stores stream IDs and hashed top-level string payload attributes.
+The optional Eventing `readLatestMatching` capability combines stream-ID and
+payload-attribute matches with OR semantics, descending positions, deduplication,
+and an exclusive cursor. The Work detail event feed uses this capability through
+Bootstrap, preserving cross-stream matches without scanning unrelated history.
+
+Trigger-maintained record and attribute counts are checked against the committed
+head before reads and appends. Positive contiguous positions, independent counts,
+and a schema-version seal detect interior omissions and missing index schema
+without a full-table count. Recovery rebuilds all lookup tables from JSONL.
+
+Read-only SQLite connections are reused in a pool of at most four paths, with
+a 2 MiB page cache per connection. Every read validates the database inode and
+starts a fresh snapshot; pooling does not introduce a freshness window. Replaced
+or invalid indexes close their pooled connection. Windows uses transient
+connections to preserve file-deletion semantics.

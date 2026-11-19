@@ -151,7 +151,9 @@ export async function runHostCommand(
     command.kind === 'audit' ||
     (command.kind === 'validate-state' && !command.rebuildProjections)
   ) {
-    const stores = composePersistence(resolveWakePaths(wakeRoot), new SystemClock(), {});
+    const stores = composePersistence(resolveWakePaths(wakeRoot), new SystemClock(), {
+      readOnlyJournal: true,
+    });
     return runWakeReadCommand(
       command,
       {

@@ -3,6 +3,13 @@ import type { JournalChangeSignal } from '../subscriptions/journal-change-signal
 
 export class WrongExpectedSequenceError extends Error {}
 
+/** Match a stream ID OR an exact top-level string payload attribute. */
+export interface JournalEventFilter {
+  readonly streamId: string;
+  readonly payloadField: string;
+  readonly payloadValue: string;
+}
+
 export interface EventJournal {
   appendToStream(
     stream: StreamRef,
@@ -15,6 +22,11 @@ export interface EventJournal {
   scanAll?(signal?: AbortSignal): AsyncIterable<EventEnvelope>;
   readAll(afterGlobalPosition: number, limit?: number): Promise<readonly EventEnvelope[]>;
   readLatest?(beforeGlobalPosition?: number, limit?: number): Promise<readonly EventEnvelope[]>;
+  readLatestMatching?(
+    filter: JournalEventFilter,
+    beforeGlobalPosition?: number,
+    limit?: number,
+  ): Promise<readonly EventEnvelope[]>;
   // Cheap enough to call on every tick: implementations must answer this
   // without re-reading or re-copying the full event history, so callers can
   // gate an expensive full-collection re-derivation on "did this move" first.

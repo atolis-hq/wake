@@ -226,17 +226,11 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
                 return workItemKey;
               }
             })();
-      const events = await recentEvents(
+      const events = await filteredRecentEvents(
         root.journal,
+        workItemId,
         query.cursor?.position,
         query.limit + 1,
-        (event) =>
-          workItemId === undefined ||
-          event.stream.id === workItemId ||
-          (typeof event.event.payload === 'object' &&
-            event.event.payload !== null &&
-            'workItemId' in event.event.payload &&
-            event.event.payload.workItemId === workItemId),
       );
       const visible = events.slice(0, query.limit);
       const newest = visible[0];
@@ -262,6 +256,32 @@ function createEventApplications(root: CompositionRoot, now: () => string) {
       };
     },
   };
+}
+
+async function filteredRecentEvents(
+  journal: EventJournal,
+  workItemId: string | undefined,
+  before: number | undefined,
+  limit: number,
+): Promise<readonly EventEnvelope[]> {
+  if (workItemId !== undefined && journal.readLatestMatching !== undefined)
+    return journal.readLatestMatching(
+      { streamId: workItemId, payloadField: 'workItemId', payloadValue: workItemId },
+      before,
+      limit,
+    );
+  return recentEvents(
+    journal,
+    before,
+    limit,
+    (event) =>
+      workItemId === undefined ||
+      event.stream.id === workItemId ||
+      (typeof event.event.payload === 'object' &&
+        event.event.payload !== null &&
+        'workItemId' in event.event.payload &&
+        event.event.payload.workItemId === workItemId),
+  );
 }
 
 async function recentEvents(

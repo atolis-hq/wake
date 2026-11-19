@@ -39,7 +39,9 @@ Defines no canonical event or relation semantics.
 
 Supervised processors report volatile health and preserve durable checkpoints.
 Bootstrap exposes composition and reconciliation diagnostics without mutating
-facts.
+facts. Host-only diagnostic roots select the read-only journal adapter, including
+in-memory recovery when a derived index is absent, so reads create no runtime
+files or locks.
 
 ## Extension rules
 
@@ -50,3 +52,7 @@ host or Eventing filesystem adapters.
 ## Scenarios
 
 E2E-CONFIG-001, E2E-OPS-INIT-001, E2E-OPS-001.
+
+The filtered event application used by Work detail selects the journal
+`readLatestMatching` capability when available, preserving stream-ID and payload
+work-item matches, cursor semantics, and provenance without a global tail scan.

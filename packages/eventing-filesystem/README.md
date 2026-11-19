@@ -34,3 +34,42 @@ and never infers processor state from record contents. This is a fresh-storage
 format: the adapter does not read, migrate, or write prior projection paths.
 All supported imports come from `@atolis-hq/eventing-filesystem`; internal
 codecs and storage helpers are not public API.
+
+The journal stores a derived `journal-index.sqlite` beside `events/`, using
+Node 24's built-in SQLite. Global-position and stream-sequence B-trees point to
+JSONL byte ranges; event bodies are decoded only for requested records, with a
+256-envelope LRU cache. The SQLite page cache is limited to 2 MiB. JSONL stays
+authoritative and unchanged, including on existing installations: missing or
+invalid indexes rebuild automatically. `journal-index.dirty` marks interrupted
+publications and forces recovery under the journal lock. Old manifest files are
+ignored. Index files must never be treated as a backup of event history.
+
+Hot reads use a read-only SQLite snapshot and release it before segment I/O, so
+readers do not take the append lock. Set `readOnly: true` in journal options for
+diagnostics that must never create runtime files: missing or invalid indexes
+then rebuild only in memory. Bootstrap uses this mode for host-side doctor,
+validate-state and audit reads.
+
+From the repository root, run `npm run benchmark:journal` for the on-demand
+100k/500k scaling benchmark (one event per segment, 4 KiB payloads). It reports
+p50/p95 append, head, tail, bounded replay, fixed-size stream and fresh-process
+read times, with recovery measured separately. The default maximum ratio is
+1.5, configurable with `JOURNAL_BENCHMARK_RATIO`. It is intentionally outside
+`verify` and `verify:agent`.
+
+The index also stores stream IDs and hashed top-level string payload attributes.
+The optional Eventing `readLatestMatching` capability combines stream-ID and
+payload-attribute matches with OR semantics, descending positions, deduplication,
+and an exclusive cursor. The Work detail event feed uses this capability through
+Bootstrap, preserving cross-stream matches without scanning unrelated history.
+
+Trigger-maintained record and attribute counts are checked against the committed
+head before reads and appends. Positive contiguous positions, independent counts,
+and a schema-version seal detect interior omissions and missing index schema
+without a full-table count. Recovery rebuilds all lookup tables from JSONL.
+
+Read-only SQLite connections are reused in a pool of at most four paths, with
+a 2 MiB page cache per connection. Every read validates the database inode and
+starts a fresh snapshot; pooling does not introduce a freshness window. Replaced
+or invalid indexes close their pooled connection. Windows uses transient
+connections to preserve file-deletion semantics.

@@ -11,13 +11,12 @@ import { createWorkService, type WorkItemId } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
 
-const { readdirMock, statMock } = vi.hoisted(() => ({ readdirMock: vi.fn(), statMock: vi.fn() }));
+const { readdirMock } = vi.hoisted(() => ({ readdirMock: vi.fn() }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>();
   readdirMock.mockImplementation(actual.readdir);
-  statMock.mockImplementation(actual.stat);
-  return { ...actual, readdir: readdirMock, stat: statMock };
+  return { ...actual, readdir: readdirMock };
 });
 
 const context = (seed: string) => ({
@@ -55,33 +54,47 @@ it(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'wake-delivery-snapshot-'));
     const { rootId, ids } = await seed(root, 120);
-    const reader = createWorkService(new FileEventJournal(root, new FakeClock()));
+    const journal = new FileEventJournal(root, new FakeClock());
+    const calls = [
+      vi.spyOn(journal, 'readAll'),
+      vi.spyOn(journal, 'readStream'),
+      vi.spyOn(journal, 'latestGlobalPosition'),
+    ];
+    const reader = createWorkService(journal);
     readdirMock.mockClear();
-    statMock.mockClear();
 
     const snapshot = await reader.deliverySnapshot();
     const answers = ids.map((id) => snapshot.availability(id));
 
     expect(answers.every((answer) => answer.reason === undefined)).toBe(true);
     expect(new Set(answers.map((answer) => answer.rootWorkItemId))).toEqual(new Set([rootId]));
-    expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
     expect(
-      statMock.mock.calls.filter(([path]) => String(path).endsWith('.jsonl')).length,
-    ).toBeLessThanOrEqual(2 * 121);
+      readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+    ).toHaveLength(0);
+    expect(calls.reduce((total, spy) => total + spy.mock.calls.length, 0)).toBeLessThanOrEqual(2);
   },
 );
 
 it('gates many instances without per-instance journal reads', { timeout: 60_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-delivery-gate-'));
   const { rootId, ids } = await seed(root, 120);
-  const reader = createWorkService(new FileEventJournal(root, new FakeClock()));
+  const journal = new FileEventJournal(root, new FakeClock());
+  const calls = [
+    vi.spyOn(journal, 'readAll'),
+    vi.spyOn(journal, 'readStream'),
+    vi.spyOn(journal, 'latestGlobalPosition'),
+  ];
+  const reader = createWorkService(journal);
   const gate = new DelegationGate({} as never, reader);
   const views = ids.map((workItemId) => ({ workItemId })) as WorkflowInstanceView[];
   readdirMock.mockClear();
 
   const open = await gate.filterAvailable(views, (view) => view);
   expect(open).toHaveLength(120);
-  expect(readdirMock.mock.calls.length).toBeLessThanOrEqual(2);
+  expect(
+    readdirMock.mock.calls.filter(([path]) => String(path) === join(root, 'events')),
+  ).toHaveLength(0);
+  expect(calls.reduce((total, spy) => total + spy.mock.calls.length, 0)).toBeLessThanOrEqual(2);
 
   // Another host freezes the root; the very next batch sees it without any validity window.
   await createWorkService(new FileEventJournal(root, new FakeClock())).freeze(
