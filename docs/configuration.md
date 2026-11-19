@@ -336,7 +336,7 @@ including an explicit empty list. Unreadable templates produce a doctor failure
 instead of a tool-list notice. An omitted stage pool uses
 `execution.defaultRunnerPool`.
 
-Pools are tried in order, skipping runners currently paused as quota-ineligible
+Pools are tried in order, skipping runners paused for quota, authentication, or operator action,
 or unable to accept Wake's trusted per-run MCP configuration. A missing runner
 named by a pool is an error; Wake does not silently switch to another pool or
 run an artifact-capable activity without its Wake tools.

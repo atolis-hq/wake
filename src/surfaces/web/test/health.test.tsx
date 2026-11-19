@@ -57,6 +57,25 @@ describe('adapter health table', () => {
     expect(screen.queryByText(/journal: ok/)).toBeNull();
   });
 
+  it('shows authentication pause details and the operator resume action', async () => {
+    render(
+      <MemoryRouter initialEntries={['/health']}>
+        <App client={client(true)} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Runner availability' }));
+    expect(
+      await screen.findByText(
+        'authentication: runner authentication required; restore credentials and resume the runner',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('tabpanel', { name: 'Runner availability' })).getByRole('button', {
+        name: 'Unpause',
+      }),
+    ).toBeTruthy();
+  });
+
   it('offers confirmed recovery only for the failed maintenance lease the operator observed', async () => {
     const calls: unknown[] = [];
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -122,7 +141,7 @@ function json(body: unknown): Response {
   });
 }
 
-function client() {
+function client(authenticationPaused = false) {
   const asOf = '2026-07-31T10:00:00.000Z';
   return new WakeApiClient(async (input) => {
     const url = String(input);
@@ -158,7 +177,22 @@ function client() {
           meta: { asOf },
         }
       : url.endsWith('/runners')
-        ? { items: [], page: { nextCursor: null, hasMore: false }, meta: { asOf } }
+        ? {
+            items: authenticationPaused
+              ? [
+                  {
+                    runnerId: 'claude',
+                    status: 'paused',
+                    available: false,
+                    detail:
+                      'authentication: runner authentication required; restore credentials and resume the runner',
+                    updatedAt: asOf,
+                  },
+                ]
+              : [],
+            page: { nextCursor: null, hasMore: false },
+            meta: { asOf },
+          }
         : url.endsWith('/control-plane/status')
           ? { data: { dispatchPaused: false, updatedAt: asOf }, meta: { asOf } }
           : { data: {}, meta: { asOf } };

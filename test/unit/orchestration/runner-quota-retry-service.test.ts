@@ -158,3 +158,54 @@ it.each([false, true])(
     }
   },
 );
+
+it('keeps a watch child in its existing group slot across authentication recovery', async () => {
+  const { service, instance } = await startedWorkflow();
+  const childId = workflowInstanceId(
+    `${instance.workflowInstanceId}:watch:pr-review:trigger:first`,
+  );
+  const child = await service.requestChild(
+    {
+      parentWorkflowInstanceId: instance.workflowInstanceId,
+      watchId: 'pr-review',
+      triggerId: 'first',
+      causalCycleId: 'cycle',
+      requestId: childId,
+      workflowName: workflowName('default'),
+      maxPerGroup: 1,
+    },
+    context('watch-child'),
+  );
+  if ('kind' in child) throw new Error('expected child workflow');
+  const retried = await service.retryRunnerQuotaFailure(
+    childId,
+    {
+      activationId: child.pendingActivation!.activationId,
+      runId: 'auth-run',
+      runnerName: 'claude',
+      message: 'runner authentication required; restore credentials and resume the runner',
+    },
+    context('auth-retry'),
+  );
+  expect(retried?.workflowInstanceId).toBe(childId);
+  expect(retried?.parentWorkflowInstanceId).toBe(instance.workflowInstanceId);
+  expect(retried?.retryCounts).toEqual({});
+  expect(retried?.lastOutcome).toBeUndefined();
+  // The original claim still occupies exactly one slot; no replacement child was requested.
+  expect(
+    await service.requestChild(
+      {
+        parentWorkflowInstanceId: instance.workflowInstanceId,
+        watchId: 'pr-review',
+        triggerId: 'second',
+        causalCycleId: 'cycle',
+        requestId: workflowInstanceId(
+          `${instance.workflowInstanceId}:watch:pr-review:trigger:second`,
+        ),
+        workflowName: workflowName('default'),
+        maxPerGroup: 2,
+      },
+      context('second-child'),
+    ),
+  ).not.toHaveProperty('kind', 'group-budget-exhausted');
+});

@@ -157,7 +157,7 @@ export function createExecutionApplications(
                 runnerId,
                 status: 'paused',
                 available: false,
-                detail: 'runner is paused',
+                detail: `${stored!.value.runnerPauses[runnerId]!.cause}: ${stored!.value.runnerPauses[runnerId]!.reason}`,
                 updatedAt: sampledAt,
               }
             : { runnerId, status: 'available', available: true, updatedAt: sampledAt },

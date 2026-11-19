@@ -10,6 +10,7 @@ import {
   ActivityRunnerTransportStatus,
   AgentResultStatus,
   ClaudeAuthenticationFailureKind,
+  RunnerAuthenticationMessage,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
@@ -469,7 +470,7 @@ function agentOutcome(
       kind: ActivityOutcomeKind.Blocked,
       data: {
         reason: ActivityFailureCode.RunnerAuthenticationRequired,
-        message: result.failure.message,
+        message: RunnerAuthenticationMessage,
       },
     };
   if (result.transport !== ActivityRunnerTransportStatus.Succeeded)

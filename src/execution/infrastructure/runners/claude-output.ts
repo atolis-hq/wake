@@ -1,4 +1,7 @@
-import { ClaudeAuthenticationFailureKind } from '../../../activities/index.js';
+import {
+  ClaudeAuthenticationFailureKind,
+  RunnerAuthenticationMessage,
+} from '../../../activities/index.js';
 import type { AgentRunnerResult, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 
@@ -44,7 +47,7 @@ export function classifyClaudeFailure(input: {
   if (structured?.is_error === true && typeof structured.result === 'string') {
     const message = structured.result.trim();
     if (claudeAuthenticationPattern.test(message))
-      return { kind: ClaudeAuthenticationFailureKind, message };
+      return { kind: ClaudeAuthenticationFailureKind, message: RunnerAuthenticationMessage };
     if (claudeQuotaPattern.test(message) || reportsClaudeRateLimit(structured))
       return { kind: ProviderQuotaExceededFailureKind, message };
     return undefined;

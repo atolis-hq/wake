@@ -1,11 +1,13 @@
 import { correlationId, EventActorKind, EventSourceKind } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it } from 'vitest';
+import { RunnerAuthenticationMessage } from '../../../src/activities/index.js';
 import { createRunnerQuotaReporter } from '../../../src/bootstrap/runner-quota-reporter.js';
 import {
   ControlEventType,
   ControlStreamKind,
   createControlPlaneEventData,
+  RunnerPauseCause,
 } from '../../../src/control-plane/index.js';
 import { FakeClock, SequentialIds } from '../../e2e/support/world.js';
 
@@ -33,4 +35,20 @@ it('preserves the generated command identity on durable runner quota pauses', as
       },
     }),
   );
+});
+
+it('records a sanitized authentication pause with no automatic deadline', async () => {
+  const clock = new FakeClock();
+  const journal = new InMemoryEventJournal(clock);
+  await createRunnerQuotaReporter(
+    journal,
+    clock,
+    new SequentialIds(),
+    RunnerPauseCause.Authentication,
+  )({ runnerName: 'claude', message: 'invalid api key: SECRET' });
+  expect((await journal.readAll(0))[0]!.event.payload).toEqual({
+    runnerName: 'claude',
+    cause: RunnerPauseCause.Authentication,
+    reason: RunnerAuthenticationMessage,
+  });
 });

@@ -1,5 +1,8 @@
 import { expect, it } from 'vitest';
-import { ClaudeAuthenticationFailureKind } from '../../../src/activities/index.js';
+import {
+  ClaudeAuthenticationFailureKind,
+  RunnerAuthenticationMessage,
+} from '../../../src/activities/index.js';
 import { ProviderQuotaExceededFailureKind } from '../../../src/execution/index.js';
 import { classifyClaudeFailure } from '../../../src/execution/infrastructure/runners/claude.js';
 
@@ -12,14 +15,14 @@ it.each(['Rate limit exceeded', 'Usage limit reached', 'Too many requests (429)'
   },
 );
 
-it('classifies expired OAuth separately from quota, preserving the real message', () => {
+it('classifies expired OAuth separately from quota, sanitizing the provider message', () => {
   const message = 'Failed to authenticate: OAuth session expired and could not be refreshed';
   expect(
     classifyClaudeFailure({
       stdout: JSON.stringify({ is_error: true, result: message }),
       stderr: '',
     }),
-  ).toEqual({ kind: ClaudeAuthenticationFailureKind, message });
+  ).toEqual({ kind: ClaudeAuthenticationFailureKind, message: RunnerAuthenticationMessage });
 });
 
 it('preserves plain stderr quota handling', () => {
@@ -84,5 +87,5 @@ it('keeps an authentication failure ahead of a 429 status', () => {
       stdout: JSON.stringify({ is_error: true, result: message, api_error_status: 429 }),
       stderr: '',
     }),
-  ).toEqual({ kind: ClaudeAuthenticationFailureKind, message });
+  ).toEqual({ kind: ClaudeAuthenticationFailureKind, message: RunnerAuthenticationMessage });
 });

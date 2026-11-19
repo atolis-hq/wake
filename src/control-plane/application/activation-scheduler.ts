@@ -1,9 +1,10 @@
 import { createInProcessSerialiser } from './in-process-scheduler-serialiser.js';
+import { advancementWasDurablyApplied, blockIsolatedWorkflow } from './workflow-isolation.js';
 
 import {
-  isRunnerQuotaOutcome,
+  isRunnerUnavailableOutcome,
   reportUnappliedRunnerQuotaRetry,
-  runnerQuotaMessage,
+  runnerUnavailableMessage,
 } from './runner-quota-outcome.js';
 
 /* eslint-disable complexity, max-lines-per-function */
@@ -27,11 +28,7 @@ import type {
   ExecutionPort,
   OrchestrationPort,
 } from './activation-scheduler-ports.js';
-import {
-  advancementWasDurablyApplied,
-  blockIsolatedWorkflow,
-  runDispatchLoop,
-} from './advance-once-dispatch.js';
+import { runDispatchLoop } from './advance-once-dispatch.js';
 import {
   findUnresolvedSucceededTerminal,
   findUnresolvedTerminal,
@@ -168,14 +165,14 @@ export function createActivationScheduler(
       if (await isDispatchPaused()) return { kind: 'paused' };
       try {
         if (recovery.run.status === RunStatus.Succeeded) {
-          if (isRunnerQuotaOutcome(recovery.run.outcome!)) {
+          if (isRunnerUnavailableOutcome(recovery.run.outcome!)) {
             const retried = await orchestration.retryRunnerQuotaFailure?.(
               recovery.item.workflow.workflowInstanceId,
               {
                 activationId: recovery.item.activation.activationId,
                 runId: recovery.run.runId,
                 runnerName: recovery.run.runner?.name ?? 'unknown-runner',
-                message: runnerQuotaMessage(recovery.run.outcome!),
+                message: runnerUnavailableMessage(recovery.run.outcome!),
               },
               context(recovery.run.runId),
             );

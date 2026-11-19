@@ -7,16 +7,16 @@ import {
   agentActivityDefinition,
   BuiltInActivityName,
   createAgentActivity,
+  RunnerAuthenticationMessage,
 } from '../../../src/activities/index.js';
 import { createClaudeRunner, RunStatus } from '../../../src/execution/index.js';
 import { parseAgentRunnerResponse } from '../../../src/execution/infrastructure/agent-runner-adapter.js';
 import { formatAgentRunComment } from '../../../src/integrations/github/application/agent-run-comment.js';
 import {
-  acceptActivityOutcome,
   compileWorkflow,
   foldWorkflowInstance,
-  orchestrationActivityOutcome,
   orchestrationGroupId,
+  requestRunnerQuotaRetry,
   startInstance,
   workflowInstanceId,
   workflowInstanceStream,
@@ -24,7 +24,7 @@ import {
 } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 
-it('routes a real Claude auth failure to human intervention with its message and no retries', async () => {
+it('recovers a real Claude auth failure without routing a workflow outcome or consuming retries', async () => {
   const activities = new ActivityRegistry();
   activities.register(agentActivityDefinition);
   const definition = compileWorkflow(
@@ -75,7 +75,7 @@ it('routes a real Claude auth failure to human intervention with its message and
       new AbortController().signal,
     )
   ).result;
-  const message = 'Failed to authenticate: OAuth session expired and could not be refreshed';
+  const message = RunnerAuthenticationMessage;
   expect(result).toMatchObject({ transport: RunStatus.Failed, failure: { message } });
   const response = parseAgentRunnerResponse(result);
   expect(response).toMatchObject({ outcome: 'BLOCKED', displayBody: message });
@@ -107,17 +107,21 @@ it('routes a real Claude auth failure to human intervention with its message and
     kind: 'blocked',
     data: { reason: 'runner-authentication-required', message },
   });
-  const decision = acceptActivityOutcome(definition, state, {
+  const decision = requestRunnerQuotaRetry(state, {
     activationId: state.pendingActivation!.activationId,
-    outcome: orchestrationActivityOutcome(outcome),
+    runId: 'auth-run',
+    runnerName: 'claude',
+    message: RunnerAuthenticationMessage,
     occurredAt,
     causationId: 'auth-result',
   });
-  if (decision.kind !== 'append') throw new Error('expected blocked route');
+  if (decision.kind !== 'append') throw new Error('expected infrastructure retry');
   const waiting = fold([...started.events, ...decision.events]);
-  expect(waiting.status).toBe('waiting');
+  expect(waiting.status).toBe('active');
+  expect(waiting.lastOutcome).toBeUndefined();
+  expect(waiting.pendingActivation?.activationId).not.toBe(state.pendingActivation!.activationId);
   expect(waiting.retryCounts).toEqual({});
-  expect(decision.events.map((event) => event.eventType)).not.toContain(
+  expect(decision.events.map((event) => event.eventType)).toContain(
     'orchestration.activity-retried-for-runner-quota',
   );
 });

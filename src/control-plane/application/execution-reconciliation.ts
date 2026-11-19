@@ -1,6 +1,6 @@
 import { RunStatus, type RunView } from '../../execution/index.js';
 import type { ActivityActivationView, WorkflowInstanceView } from '../../orchestration/index.js';
-import { isRunnerQuotaOutcome } from './runner-quota-outcome.js';
+import { isRunnerUnavailableOutcome } from './runner-quota-outcome.js';
 
 interface ExecutionRunLookup {
   list(activationId?: ActivityActivationView['activationId']): Promise<readonly RunView[]>;
@@ -11,7 +11,7 @@ export function isHeldRecoverable(run: RunView): boolean {
   return (
     run.status === RunStatus.Succeeded &&
     run.outcome !== undefined &&
-    isRunnerQuotaOutcome(run.outcome)
+    isRunnerUnavailableOutcome(run.outcome)
   );
 }
 

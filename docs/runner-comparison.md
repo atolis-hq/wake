@@ -94,7 +94,7 @@ provider action. Keep those decisions in workflow configuration.
 Execution may select a compatible terminal session for a primary-stage
 Activation when its session policy permits resumption. A compatible session is
 from the same CLI adapter kind; a `fresh` policy never resumes one. If the
-first runner is quota-paused, Wake falls sideways to the next configured member
+first runner is paused, Wake falls sideways to the next configured member
 of that same pool. It never silently changes to a different pool.
 Artifact-capable agent runs also require trusted ephemeral MCP injection:
 Claude and Codex receive Wake's run-bound configuration directly, while Cursor
@@ -117,3 +117,9 @@ Mount only credential files that a runner needs through
 directory. The generated `SETUP.md` explains the supported narrow mounts and
 their read-only trade-offs. Run `wake sandbox setup` to configure credentials
 inside the sandbox and `wake smoke` to exercise the configured default pool.
+
+Runner authentication failures pause the runner until an operator restores credentials
+and resumes it. The runners API and Health UI show the pause cause and reason. Wake
+retries the interrupted activation within its original pool without spending workflow
+retry or watch budget. An exhausted pool leaves its activation pending while other
+eligible work continues; authentication pauses have no timed resume or probe loop.
