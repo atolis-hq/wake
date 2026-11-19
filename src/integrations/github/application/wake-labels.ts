@@ -5,7 +5,7 @@ import {
   type OrchestrationService,
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
-import type { ResourceService } from '../../../resources/index.js';
+import { ResourceCorrelationRole, type ResourceService } from '../../../resources/index.js';
 import { WorkStatus, type WorkItemId, type WorkService } from '../../../work/index.js';
 import {
   GitHubWakeStatusLabel,
@@ -48,7 +48,7 @@ export interface GitHubWakeLabelReconcileFailure {
 
 export function createGitHubWakeLabelReconciler(input: {
   readonly orchestration: Pick<OrchestrationService, 'listAll'>;
-  readonly resources: Pick<ResourceService, 'correlationsForWork' | 'get'>;
+  readonly resources: Pick<ResourceService, 'correlationsForWork' | 'correlations' | 'get'>;
   readonly work: Pick<WorkService, 'get'>;
   readonly getLabels: (owner: string, repo: string, number: number) => Promise<readonly string[]>;
   readonly setLabels: (
@@ -97,6 +97,16 @@ export function createGitHubWakeLabelReconciler(input: {
         );
         const desired = desiredWakeLabels(workflow, watching);
         for (const correlation of await input.resources.correlationsForWork(workflow.workItemId)) {
+          // Delegated children can publish here, but only the active owner drives labels.
+          const owners = await input.resources.correlations(correlation.resourceId);
+          if (
+            !owners.some(
+              (owner) =>
+                owner.role === ResourceCorrelationRole.Primary &&
+                owner.workItemId === workflow.workItemId,
+            )
+          )
+            continue;
           const resource = await input.resources.get(correlation.resourceId);
           if (resource?.externalKey.adapter !== 'github') continue;
           const locator = parseGitHubIssueKey(resource.externalKey.key);

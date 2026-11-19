@@ -141,6 +141,7 @@ function integrationIntentView(
         activationId: integrationIntent.event.payload.activationId,
         kind: DeliveryIntentKind.AgentRunPublish,
         resourceId: integrationIntent.event.payload.resourceId,
+        awaitingMergeResourceId: integrationIntent.event.payload.awaitingMergeResourceId,
         payload: {
           kind: DeliveryIntentKind.AgentRunPublish,
           report: integrationIntent.event.payload.report,
@@ -163,6 +164,7 @@ function integrationIntentView(
       activationId: integrationIntent.event.payload.activationId,
       kind: status ? DeliveryIntentKind.StatusPublish : DeliveryIntentKind.ReplyPublish,
       resourceId: integrationIntent.event.payload.resourceId,
+      awaitingMergeResourceId: integrationIntent.event.payload.awaitingMergeResourceId,
       payload: status
         ? { kind: DeliveryIntentKind.StatusPublish, body: integrationIntent.event.payload.body }
         : {

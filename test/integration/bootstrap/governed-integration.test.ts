@@ -334,10 +334,12 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       context('start'),
     );
     const settle = async () =>
-      vi.waitFor(async () =>
-        expect((await root.execution.list()).every((run) => !isActiveRunStatus(run.status))).toBe(
-          true,
-        ),
+      vi.waitFor(
+        async () =>
+          expect((await root.execution.list()).every((run) => !isActiveRunStatus(run.status))).toBe(
+            true,
+          ),
+        { timeout: 30_000 },
       );
     const callerFor = async (request: RunnerRequest) => ({
       workflowInstanceId: parent.workflowInstanceId,

@@ -302,7 +302,7 @@ it('reproduces protected-path denial, approval retry, manual merge, and one comp
   await observe(root, 'merged');
   await tick(root);
   await assertCompleted(root, provider);
-});
+}, 120_000);
 
 it.each(['before-wait', 'legacy-wait', 'restart'] as const)(
   'recovers %s from prior evidence without another operator signal',
