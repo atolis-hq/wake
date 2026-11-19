@@ -2,8 +2,7 @@ import type { EventJournal } from '@atolis-hq/eventing';
 import { z } from 'zod';
 import type { ResourceId, ResourceService } from '../../../resources/index.js';
 import { adapterId } from '../../contracts/identifiers.js';
-import { integrationStream } from '../../contracts/streams.js';
-import { GitHubEventType, selectGitHubAdapterEvent } from '../contracts/events.js';
+import { latestPullRequestObservation } from './latest-pull-request-observation.js';
 
 const checkRun = z.object({ name: z.string(), conclusion: z.string().nullable().optional() });
 const status = z.object({ context: z.string(), state: z.string() });
@@ -26,16 +25,11 @@ export function createFailingCheckNamesReader(
     } catch {
       return undefined;
     }
-    const events = await journal.readStream(integrationStream(adapter));
-    for (const event of [...events].reverse()) {
-      const observed = selectGitHubAdapterEvent(event);
-      if (observed?.event.eventType !== GitHubEventType.WorkObserved) continue;
-      const payload = observed.event.payload;
-      if (payload.kind !== 'pull-request' || payload.externalKey !== resource.externalKey.key)
-        continue;
-      if (payload.headRevision !== headRevision) return undefined;
-      return namesFromEvidence(payload.raw);
-    }
+    const observed = await latestPullRequestObservation(journal, adapter, resource.externalKey.key);
+    if (observed === undefined) return undefined;
+    const payload = observed.event.payload;
+    if (payload.headRevision !== headRevision) return undefined;
+    return namesFromEvidence(payload.raw);
     return undefined;
   };
 }
