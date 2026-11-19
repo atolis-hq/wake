@@ -37,6 +37,7 @@ import {
   ExecutionCancellationReason,
   GitWorkspaceProvider,
   RecoveryService,
+  RunRepository,
   RunStatus,
   TranscriptStore,
   createExecutionService,
@@ -411,7 +412,10 @@ async function createApplicationServices(
     triggers: config.controlPlane.triggers,
     now: () => clock.now().toISOString(),
   });
+  // One run fold serves execution and recovery instead of one full journal fold each.
+  const runs = new RunRepository(journal);
   const execution = createExecutionService(journal, activities, config.execution, {
+    runs,
     clock,
     ids,
     runners,
@@ -468,7 +472,7 @@ async function createApplicationServices(
     createLocalProcessInspector(),
     activities,
     config.execution,
-    orchestration,
+    { blocker: orchestration, runs },
   );
   const controlPlane = createControlPlaneService({ journal, clock, ids });
   const isRuntimePaused = async () =>

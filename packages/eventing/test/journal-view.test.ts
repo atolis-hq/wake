@@ -72,7 +72,7 @@ it('reads only the events after the position it already holds, however long the 
   await journal.appendToStream(stream, 200, [draft('event-200')]);
   expect(await view.get()).toBe(201);
 
-  expect(readAll.mock.calls).toEqual([[200]]);
+  expect(readAll.mock.calls.map(([after]) => after)).toEqual([200]);
 });
 
 it('refreshes after another journal instance appends without a local notification', async () => {
@@ -93,4 +93,26 @@ it('refreshes after another journal instance appends without a local notificatio
   eventCount = 1;
 
   expect(await view.get()).toBe(1);
+});
+
+it('catches up in bounded pages so a long journal is never decoded into memory at once', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const total = 5_000;
+  await journal.appendToStream(
+    stream,
+    0,
+    Array.from({ length: total }, (_, index) => draft(`event-${index}`)),
+  );
+  const readAll = vi.spyOn(journal, 'readAll');
+  const extend = vi.fn((value: number, events: readonly unknown[]) => value + events.length);
+  const view = foldedJournalView(journal, { initial: 0, extend });
+
+  expect(await view.get()).toBe(total);
+
+  expect(readAll.mock.calls.every(([, limit]) => limit !== undefined)).toBe(true);
+  expect(Math.max(...extend.mock.calls.map(([, events]) => events.length))).toBeLessThan(total);
+  expect(extend.mock.calls.length).toBeGreaterThan(1);
+  const folds = extend.mock.calls.length;
+  expect(await view.get()).toBe(total);
+  expect(extend).toHaveBeenCalledTimes(folds);
 });

@@ -19,6 +19,8 @@ import { confirmCancellation, requestCancellation } from './run-liveness-service
 import type { RunRepository } from './run-repository.js';
 
 export interface ExecutionDependencies {
+  /** Shared run fold; each RunRepository holds its own copy of every run. */
+  readonly runs?: RunRepository;
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly workspaces?: WorkspaceProvider;

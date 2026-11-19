@@ -3,6 +3,9 @@ import type { EventJournal } from '../store/event-journal.js';
 
 export const JOURNAL_CHANGE_FALLBACK_MS = 30_000;
 
+/** Bounds how many decoded envelopes a fold holds at once while catching up. */
+export const JOURNAL_VIEW_PAGE_SIZE = 2_000;
+
 export interface JournalView<Value> {
   get(): Promise<Value>;
 }
@@ -43,12 +46,17 @@ export function foldedJournalView<Value>(
           continue;
         }
         const run = (async () => {
-          const events = await journal.readAll(state.position);
-          if (events.length > 0)
-            state = {
-              position: events.at(-1)!.globalPosition,
-              value: fold.extend(state.value, events),
-            };
+          // Catch up in pages: one unbounded read would hold every decoded
+          // envelope of a long journal at once on first use.
+          for (;;) {
+            const events = await journal.readAll(state.position, JOURNAL_VIEW_PAGE_SIZE);
+            if (events.length > 0)
+              state = {
+                position: events.at(-1)!.globalPosition,
+                value: fold.extend(state.value, events),
+              };
+            if (events.length < JOURNAL_VIEW_PAGE_SIZE) break;
+          }
           return state.value;
         })().finally(() => {
           if (running === run) running = undefined;
