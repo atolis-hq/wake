@@ -54,3 +54,37 @@ it('does not create a ledger when clearing an absent tag', async () => {
     code: 'ENOENT',
   });
 });
+
+it.each(['begin', 'write', 'recordBad', 'recover'] as const)(
+  'preserves concurrent updater %s changes when clearing a bad tag',
+  async (operation) => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-update-ledger-'));
+    const ledger = createUpdateLedger(root);
+    await ledger.write('v1');
+    await ledger.begin('v2');
+    await ledger.recordBad('rejected');
+    await ledger.recordBad('other');
+    const updater = createUpdateLedger(root);
+
+    const [cleared] = await Promise.all([
+      clearBadUpdateTag(root, 'rejected'),
+      operation === 'recover' ? updater.recover() : updater[operation]('v3'),
+    ]);
+
+    expect(cleared).toBe(true);
+    expect(JSON.parse(await readFile(join(root, '.wake', 'update-ledger.json'), 'utf8'))).toEqual({
+      lastHealthyTag: operation === 'write' ? 'v3' : 'v1',
+      ...(operation === 'begin' ? { pendingTag: 'v3' } : {}),
+      ...(operation === 'recordBad' ? { pendingTag: 'v2' } : {}),
+      badTags: operation === 'recordBad' ? ['other', 'v3'] : ['other'],
+    });
+  },
+);
+
+it('retains all rejected releases recorded concurrently by separate ledger instances', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-update-ledger-'));
+  const tags = Array.from({ length: 12 }, (_, index) => `v${index}`);
+  await Promise.all(tags.map((tag) => createUpdateLedger(root).recordBad(tag)));
+  const state = JSON.parse(await readFile(join(root, '.wake', 'update-ledger.json'), 'utf8'));
+  expect(state.badTags.sort()).toEqual(tags.sort());
+});

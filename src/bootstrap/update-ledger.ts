@@ -1,3 +1,4 @@
+import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -23,31 +24,42 @@ export function createUpdateLedger(wakeRoot: string): UpdateLedger {
       return (await readState(path)).lastHealthyTag ?? null;
     },
     async begin(tag) {
-      const state = await readState(path);
-      await writeState(path, { ...state, pendingTag: tag });
+      return withLedgerLock(path, async () => {
+        const state = await readState(path);
+        await writeState(path, { ...state, pendingTag: tag });
+      });
     },
     async write(tag) {
-      const state = await readState(path);
-      await writeState(path, {
-        lastHealthyTag: tag,
-        ...(state.badTags === undefined ? {} : { badTags: state.badTags }),
+      return withLedgerLock(path, async () => {
+        const state = await readState(path);
+        await writeState(path, {
+          lastHealthyTag: tag,
+          ...(state.badTags === undefined ? {} : { badTags: state.badTags }),
+        });
       });
     },
     async isBad(tag) {
       return (await readState(path)).badTags?.includes(tag) ?? false;
     },
     async recordBad(tag) {
-      const state = await readState(path);
-      await writeState(path, { ...state, badTags: [...new Set([...(state.badTags ?? []), tag])] });
+      return withLedgerLock(path, async () => {
+        const state = await readState(path);
+        await writeState(path, {
+          ...state,
+          badTags: [...new Set([...(state.badTags ?? []), tag])],
+        });
+      });
     },
     async recover() {
-      const state = await readState(path);
-      if (state.pendingTag === undefined) return null;
-      await writeState(path, {
-        ...(state.lastHealthyTag === undefined ? {} : { lastHealthyTag: state.lastHealthyTag }),
-        ...(state.badTags === undefined ? {} : { badTags: state.badTags }),
+      return withLedgerLock(path, async () => {
+        const state = await readState(path);
+        if (state.pendingTag === undefined) return null;
+        await writeState(path, {
+          ...(state.lastHealthyTag === undefined ? {} : { lastHealthyTag: state.lastHealthyTag }),
+          ...(state.badTags === undefined ? {} : { badTags: state.badTags }),
+        });
+        return state.lastHealthyTag ?? null;
       });
-      return state.lastHealthyTag ?? null;
     },
   };
 }
@@ -78,8 +90,15 @@ async function writeState(path: string, state: UpdateLedgerState): Promise<void>
 /** Clears one rejected release while preserving healthy and pending state. */
 export async function clearBadUpdateTag(wakeRoot: string, tag: string): Promise<boolean> {
   const path = join(wakeRoot, '.wake', 'update-ledger.json');
-  const state = await readState(path);
-  if (!state.badTags?.includes(tag)) return false;
-  await writeState(path, { ...state, badTags: state.badTags.filter((badTag) => badTag !== tag) });
-  return true;
+  return withLedgerLock(path, async () => {
+    const state = await readState(path);
+    if (!state.badTags?.includes(tag)) return false;
+    await writeState(path, { ...state, badTags: state.badTags.filter((badTag) => badTag !== tag) });
+    return true;
+  });
+}
+
+/** All read-modify-write operations share a process-safe lock. Reads use atomic snapshots. */
+function withLedgerLock<Value>(path: string, operation: () => Promise<Value>): Promise<Value> {
+  return withFileLock(path + '.lock', operation, { waitMs: 30_000, retryIntervalMs: 50 });
 }
