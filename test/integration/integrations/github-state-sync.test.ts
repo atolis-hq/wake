@@ -383,6 +383,11 @@ it('reconciles target workflow markers to correlated GitHub resources without re
       },
     },
     resources: {
+      async correlations() {
+        return [
+          { workItemId: workId('label-work'), role: ResourceCorrelationRole.Primary },
+        ] as never;
+      },
       async correlationsForWork() {
         return [{ resourceId: resId('label-resource') }] as never;
       },
@@ -437,6 +442,11 @@ it('replaces a failed status label with working for an active primary workflow',
       },
     },
     resources: {
+      async correlations() {
+        return [
+          { workItemId: workId('active-work'), role: ResourceCorrelationRole.Primary },
+        ] as never;
+      },
       async correlationsForWork() {
         return [{ resourceId: resId('active-resource') }] as never;
       },
@@ -499,6 +509,11 @@ it('reflects only the primary workflow in labels, adding a watching marker while
       },
     },
     resources: {
+      async correlations() {
+        return [
+          { workItemId: workId('watch-work'), role: ResourceCorrelationRole.Primary },
+        ] as never;
+      },
       async correlationsForWork() {
         return [{ resourceId: resId('watch-resource') }] as never;
       },
@@ -567,6 +582,11 @@ it('drops the watching marker once every watch child has completed', async () =>
       },
     },
     resources: {
+      async correlations() {
+        return [
+          { workItemId: workId('watch-work'), role: ResourceCorrelationRole.Primary },
+        ] as never;
+      },
       async correlationsForWork() {
         return [{ resourceId: resId('watch-resource') }] as never;
       },
@@ -616,6 +636,11 @@ it('skips a closed WorkItem entirely, never calling getLabels for it', async () 
       },
     },
     resources: {
+      async correlations() {
+        return [
+          { workItemId: workId('closed-work'), role: ResourceCorrelationRole.Primary },
+        ] as never;
+      },
       async correlationsForWork() {
         return [{ resourceId: resId('closed-resource') }] as never;
       },

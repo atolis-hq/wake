@@ -62,6 +62,100 @@ function openWorkItem(): WorkItemView {
 }
 
 describe('createGitHubWakeLabelReconciler', () => {
+  it.each([false, true])(
+    'keeps parent labels through a two-child run (children first: %s)',
+    async (childrenFirst) => {
+      const parent = workItemId('work-' + ulid('11'));
+      const children = [workItemId('work-' + ulid('12')), workItemId('work-' + ulid('13'))];
+      const resource = resourceId('resource-' + ulid('11'));
+      const owner = correlation({ resourceId: resource, workItemId: parent });
+      let active = true;
+      let labels: readonly string[] = ['keep-me'];
+      let reads = 0;
+      let writes = 0;
+      let workflows: WorkflowInstanceView[] = [];
+      const reconciler = createGitHubWakeLabelReconciler({
+        orchestration: { listAll: async () => workflows },
+        resources: {
+          correlationsForWork: async (id) => [
+            {
+              ...owner,
+              workItemId: id,
+              role:
+                id === parent ? ResourceCorrelationRole.Primary : ResourceCorrelationRole.Secondary,
+            },
+          ],
+          correlations: async () =>
+            active
+              ? [
+                  owner,
+                  ...children.map((id) => ({
+                    ...owner,
+                    workItemId: id,
+                    role: ResourceCorrelationRole.Secondary,
+                  })),
+                ]
+              : [],
+          get: async () => githubResource({ resourceId: resource, key: 'atolis-hq/wake#550' }),
+        },
+        work: { get: async () => openWorkItem() },
+        getLabels: async () => {
+          reads += 1;
+          return labels;
+        },
+        setLabels: async (_owner, _repo, _number, next) => {
+          writes += 1;
+          labels = next;
+        },
+      });
+      const parentWorkflow = {
+        ...openWorkflow({ workItemId: parent, issue: 550 }),
+        status: WorkflowStatus.Blocked,
+        currentStage: stageName('recover'),
+      };
+      const watch = {
+        ...openWorkflow({ workItemId: parent, issue: 553 }),
+        parentWorkflowInstanceId: parentWorkflow.workflowInstanceId,
+      };
+      for (const status of [
+        WorkflowStatus.Active,
+        WorkflowStatus.Waiting,
+        WorkflowStatus.Blocked,
+        WorkflowStatus.Completed,
+      ]) {
+        const childWorkflows = children.map((id, index) => ({
+          ...openWorkflow({ workItemId: id, issue: 551 + index }),
+          status,
+          workflowName: workflowName('child-impl'),
+        }));
+        workflows = childrenFirst
+          ? [...childWorkflows, parentWorkflow, watch]
+          : [parentWorkflow, watch, ...childWorkflows];
+        await reconciler.runOnce();
+        expect(labels).toEqual([
+          'keep-me',
+          'wake:status.blocked',
+          'wake:stage.recover',
+          'wake:workflow.default',
+          'wake:watching',
+        ]);
+      }
+      expect(reads).toBe(1);
+      expect(writes).toBe(1);
+      workflows = workflows.filter((workflow) => workflow.workItemId !== parent);
+      await reconciler.runOnce();
+      expect(reads).toBe(1);
+      active = false;
+      workflows = [openWorkflow({ workItemId: parent, issue: 550 })];
+      await reconciler.runOnce();
+      expect(reads).toBe(1);
+      active = true;
+      await reconciler.runOnce();
+      expect(labels).not.toContain('wake:watching');
+      expect(reads).toBe(2);
+    },
+  );
+
   it.each([
     ['approved', 'awaiting-approval'],
     ['orchestration.watch-gate-verdict', 'awaiting-approval'],
@@ -84,6 +178,9 @@ describe('createGitHubWakeLabelReconciler', () => {
         ],
       },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
         get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
       },
@@ -106,6 +203,9 @@ describe('createGitHubWakeLabelReconciler', () => {
     const reconciler = createGitHubWakeLabelReconciler({
       orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
         get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
       },
@@ -130,6 +230,9 @@ describe('createGitHubWakeLabelReconciler', () => {
     const input = {
       orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id: WorkItemId) => [
           correlation({ resourceId: resource, workItemId: id }),
         ],
@@ -157,6 +260,9 @@ describe('createGitHubWakeLabelReconciler', () => {
     const reconciler = createGitHubWakeLabelReconciler({
       orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
         get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
       },
@@ -184,6 +290,9 @@ describe('createGitHubWakeLabelReconciler', () => {
     const reconciler = createGitHubWakeLabelReconciler({
       orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
         get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
       },
@@ -212,6 +321,9 @@ describe('createGitHubWakeLabelReconciler', () => {
     const reconciler = createGitHubWakeLabelReconciler({
       orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })] },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({ resourceId: id, workItemId: item }),
+        ],
         correlationsForWork: async (id) => [correlation({ resourceId: resource, workItemId: id })],
         get: async (id) => githubResource({ resourceId: id, key: 'atolis-hq/wake#550' }),
       },
@@ -249,6 +361,12 @@ describe('createGitHubWakeLabelReconciler', () => {
         ],
       },
       resources: {
+        correlations: async (id: ReturnType<typeof resourceId>) => [
+          correlation({
+            resourceId: id,
+            workItemId: id === failingResource ? failingItem : okItem,
+          }),
+        ],
         correlationsForWork: async (id) => [
           correlation({
             resourceId: id === failingItem ? failingResource : okResource,
@@ -294,6 +412,9 @@ describe('createGitHubWakeLabelReconciler', () => {
           listAll: async () => [openWorkflow({ workItemId: item, issue: 550 })],
         },
         resources: {
+          correlations: async (id: ReturnType<typeof resourceId>) => [
+            correlation({ resourceId: id, workItemId: item }),
+          ],
           correlationsForWork: async (id) => [
             correlation({ resourceId: resource, workItemId: id }),
           ],
