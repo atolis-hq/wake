@@ -35,6 +35,7 @@ import { projectTerminalAgentRunReport } from './terminal-agent-run-report.js';
 
 import { agentRunReportInput, mergeWaitComment } from './agent-run-publication-report.js';
 import { labelledForSharedResource, resourceForTarget } from './agent-run-publication-target.js';
+import { awaitedMergeResource } from './merge-publication-eligibility.js';
 
 /** Projects terminal agent runs into one durable outbound intent per configured resource. */
 export class AgentRunPublicationReactor {
@@ -151,6 +152,7 @@ export class AgentRunPublicationReactor {
       target,
     );
     if (resource === undefined) return;
+    const awaitingMergeResourceId = await awaitedMergeResource(this.dependencies.journal, workflow);
     const published = await labelledForSharedResource(
       this.dependencies.work,
       workflow.workItemId,
@@ -173,6 +175,7 @@ export class AgentRunPublicationReactor {
             workflowInstanceId: run.workflowInstanceId,
             activationId: run.activationId,
             resourceId: resource.resourceId,
+            ...(awaitingMergeResourceId !== undefined ? { awaitingMergeResourceId } : {}),
             ...(this.dependencies.conversations === undefined
               ? {}
               : {
@@ -215,6 +218,7 @@ export class AgentRunPublicationReactor {
       target,
     );
     if (resource === undefined) return;
+    const awaitingMergeResourceId = await awaitedMergeResource(this.dependencies.journal, workflow);
     const stream = resourceStream(resource.resourceId);
     const facts = await this.dependencies.journal.readStream(stream);
     const eventId = `merge-wait:${event.event.eventId}`;
@@ -232,6 +236,7 @@ export class AgentRunPublicationReactor {
           workflowInstanceId: workflow.workflowInstanceId,
           activationId: workflow.pendingActivation.activationId,
           resourceId: resource.resourceId,
+          ...(awaitingMergeResourceId !== undefined ? { awaitingMergeResourceId } : {}),
           body,
           publicationOnly: true,
         },
