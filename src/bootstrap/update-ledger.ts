@@ -74,3 +74,12 @@ async function writeState(path: string, state: UpdateLedgerState): Promise<void>
   await writeFile(temporary, `${JSON.stringify(state)}\n`, 'utf8');
   await rename(temporary, path);
 }
+
+/** Clears one rejected release while preserving healthy and pending state. */
+export async function clearBadUpdateTag(wakeRoot: string, tag: string): Promise<boolean> {
+  const path = join(wakeRoot, '.wake', 'update-ledger.json');
+  const state = await readState(path);
+  if (!state.badTags?.includes(tag)) return false;
+  await writeState(path, { ...state, badTags: state.badTags.filter((badTag) => badTag !== tag) });
+  return true;
+}

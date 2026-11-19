@@ -91,10 +91,10 @@ import {
   createSelfUpdateApplication,
   type SelfUpdateQuiescePort,
 } from './self-update-application.js';
-import { classifyCandidateBuildFailure } from './self-update-build-failure.js';
+import { buildCandidateWithRetry } from './self-update-build-failure.js';
 import { createSelfUpdateFailureLog } from './self-update-failure-log.js';
 import { createSourceUpdatePort } from './source-update-port.js';
-import { createUpdateLedger } from './update-ledger.js';
+import { clearBadUpdateTag, createUpdateLedger } from './update-ledger.js';
 import {
   UpdateMaintenancePhase,
   createUpdateMaintenanceLease,
@@ -868,6 +868,13 @@ function createOperationalApplications(root: CompositionRoot) {
     },
     // eslint-disable-next-line complexity -- update source and loop options are validated at this CLI boundary.
     selfUpdate: async (arguments_: readonly string[]) => {
+      const values = withoutOperationalWakeRoot(arguments_);
+      if (values[0] === 'clear-bad') {
+        const tag = values[1];
+        if (values.length !== 2 || tag === undefined || tag.startsWith('-'))
+          throw new Error('Usage: wake self-update clear-bad <tag>');
+        return { tag, cleared: await clearBadUpdateTag(root.paths.wakeRoot, tag) };
+      }
       const sourceRoot = optionalOperationalOption(arguments_, '--source');
       const configuredSource = root.config.host.development.mode === 'source';
       const repoRoot = sourceRoot ?? root.config.host.development.repoRoot;
@@ -903,18 +910,15 @@ function createOperationalApplications(root: CompositionRoot) {
         source: updatePort,
         rollout: {
           async prepare(prepareTag) {
-            try {
-              await buildSandboxTag(root, dockerCli, `${imageRepository}:${prepareTag}`, {
-                development: updateDevelopment,
-                buildVersion: prepareTag,
-              });
-            } catch (error) {
-              throw classifyCandidateBuildFailure(
-                error,
-                root.config.host.selfUpdate.npm.package,
-                prepareTag,
-              );
-            }
+            await buildCandidateWithRetry(
+              () =>
+                buildSandboxTag(root, dockerCli, `${imageRepository}:${prepareTag}`, {
+                  development: updateDevelopment,
+                  buildVersion: prepareTag,
+                }),
+              root.config.host.selfUpdate.npm.package,
+              prepareTag,
+            );
           },
           async deploy(deployTag) {
             await deploySandboxTag(
