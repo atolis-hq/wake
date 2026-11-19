@@ -1,6 +1,6 @@
 import { createEventData } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
@@ -63,6 +63,38 @@ it('continues after a persistence failure and withholds the provider cursor', as
 
   expect(committed).toBe(0);
   expect(await delegate.readAll(0)).toHaveLength(1);
+});
+
+// The integration stream grows without bound; a poll that re-reads it per draft
+// costs drafts x history and outlives its deadline on a long-lived journal.
+it('reads the integration stream once per poll however many drafts it persists', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const readStream = vi.spyOn(journal, 'readStream');
+  const ids = Array.from({ length: 12 }, (_, index) => `github:issue:owner/repo#${index}:revision`);
+  const service = new PollService(
+    journal,
+    provider({
+      async poll() {
+        return [...ids, ids[0]!].map((id) => draft(id));
+      },
+      async markPollPersisted() {},
+    }),
+  );
+
+  await expect(service.pollOnce(new AbortController().signal)).resolves.toEqual({
+    appended: 12,
+    failed: 0,
+  });
+  expect(readStream.mock.calls.length).toBeLessThanOrEqual(1);
+  expect(await journal.readAll(0)).toHaveLength(12);
+
+  // A repeat poll of already-persisted evidence is a single read and no appends.
+  readStream.mockClear();
+  await expect(service.pollOnce(new AbortController().signal)).resolves.toEqual({
+    appended: 0,
+    failed: 0,
+  });
+  expect(readStream.mock.calls.length).toBeLessThanOrEqual(1);
 });
 
 function provider(source: {

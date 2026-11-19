@@ -67,6 +67,7 @@ import { commandContext } from './inbound-context.js';
 import { applyReviewSignal } from './inbound-review-signals.js';
 import { applyWatchGateVerdictSignal } from './inbound-watch-gate-signals.js';
 import { gitHubIntakeFacts, gitHubIntakeRules } from './intake-policy.js';
+import { latestPullRequestObservation } from './latest-pull-request-observation.js';
 import { observePullRequest } from './pull-request-translation.js';
 import { isWorkControlAuthorized } from './work-control-authorization.js';
 
@@ -235,18 +236,7 @@ export class InboundTranslator {
   private async latestPullRequestObservation(
     externalKey: string,
   ): Promise<GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved> | undefined> {
-    let latest: GitHubAdapterEventOf<typeof GitHubEventType.WorkObserved> | undefined;
-    for (const envelope of await this.journal!.readStream(integrationStream(this.adapter))) {
-      const owned = selectGitHubAdapterEvent(envelope);
-      if (
-        owned !== null &&
-        isGitHubAdapterEventType(owned, GitHubEventType.WorkObserved) &&
-        owned.event.payload.kind === 'pull-request' &&
-        owned.event.payload.externalKey === externalKey
-      )
-        latest = owned;
-    }
-    return latest;
+    return latestPullRequestObservation(this.journal!, this.adapter, externalKey);
   }
 
   private async reconcileOnce(): Promise<void> {
@@ -482,24 +472,46 @@ export class InboundTranslator {
     });
   }
 
-  private async failureRecorded(sourceEventId: string): Promise<boolean> {
-    return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
-      const owned = selectGitHubAdapterEvent(event);
-      return (
-        owned?.event.eventType === GitHubEventType.InboundTranslationFailed &&
+  /**
+   * Adapter facts that name a source event, oldest first. The integration stream
+   * grows without bound, so this uses the payload index rather than reading it.
+   */
+  private async factsAbout(sourceEventId: string): Promise<GitHubAdapterEvent[]> {
+    const journal = this.journal!;
+    const stream = integrationStream(this.adapter);
+    const envelopes =
+      journal.readLatestMatching === undefined
+        ? await journal.readStream(stream)
+        : // An empty stream id leaves only the payload match.
+          (
+            await journal.readLatestMatching({
+              streamId: '',
+              payloadField: 'sourceEventId',
+              payloadValue: sourceEventId,
+            })
+          )
+            .filter((event) => event.stream.kind === stream.kind && event.stream.id === stream.id)
+            .reverse();
+    return envelopes.flatMap((envelope) => {
+      const owned = selectGitHubAdapterEvent(envelope);
+      return owned !== null &&
+        'sourceEventId' in owned.event.payload &&
         owned.event.payload.sourceEventId === sourceEventId
-      );
+        ? [owned]
+        : [];
     });
   }
 
+  private async failureRecorded(sourceEventId: string): Promise<boolean> {
+    return (await this.factsAbout(sourceEventId)).some(
+      (owned) => owned.event.eventType === GitHubEventType.InboundTranslationFailed,
+    );
+  }
+
   private async retryRecorded(sourceEventId: string): Promise<boolean> {
-    return (await this.journal!.readStream(integrationStream(this.adapter))).some((event) => {
-      const owned = selectGitHubAdapterEvent(event);
-      return (
-        owned?.event.eventType === GitHubEventType.InboundTranslationRetried &&
-        owned.event.payload.sourceEventId === sourceEventId
-      );
-    });
+    return (await this.factsAbout(sourceEventId)).some(
+      (owned) => owned.event.eventType === GitHubEventType.InboundTranslationRetried,
+    );
   }
 
   private async recordTranslationRecovery(event: GitHubAdapterEvent): Promise<void> {
@@ -917,13 +929,9 @@ export class InboundTranslator {
   }
 
   private async recordedAdmissionIdentity(sourceEventId: string) {
-    const event = (await this.journal!.readStream(integrationStream(this.adapter)))
-      .map(selectGitHubAdapterEvent)
-      .find(
-        (candidate) =>
-          candidate?.event.eventType === GitHubEventType.AdmissionStarted &&
-          candidate.event.payload.sourceEventId === sourceEventId,
-      );
+    const event = (await this.factsAbout(sourceEventId)).find(
+      (candidate) => candidate.event.eventType === GitHubEventType.AdmissionStarted,
+    );
     if (event?.event.eventType !== GitHubEventType.AdmissionStarted) return undefined;
     return {
       resourceId: event.event.payload.resourceId,

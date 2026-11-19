@@ -1,4 +1,4 @@
-import type { EventJournal } from '@atolis-hq/eventing';
+import { WrongExpectedSequenceError, type EventData, type EventJournal } from '@atolis-hq/eventing';
 import type { ProviderInstance } from '../contracts/provider.js';
 import { integrationStream } from '../contracts/streams.js';
 
@@ -22,23 +22,63 @@ export class PollService {
     const drafts = await this.instance.source.poll(signal, options);
     let appended = 0;
     let failed = 0;
+    // Read the stream once per poll: it grows without bound, and re-reading it for
+    // every draft makes a poll's cost drafts x history, which outlives its deadline.
+    const ledger = new StreamLedger(this.journal, integrationStream(adapter));
     for (const draft of drafts) {
       // A run past its deadline may be leaked; it must not persist or advance state.
       if (signal.aborted) return { appended, failed: failed + 1 };
       try {
         if (!this.instance.eventTypes.includes(draft.eventType))
           throw new Error(`Provider ${adapter} emitted an unknown event type`);
-        const stream = integrationStream(adapter);
-        const existing = await this.journal.readStream(stream);
-        if (existing.some((event) => event.event.eventId === draft.eventId)) continue;
-        await this.journal.appendToStream(stream, existing.length, [draft]);
-        appended += 1;
+        if (await ledger.append(draft)) appended += 1;
       } catch (error) {
         failed += 1;
+        ledger.invalidate();
         console.error(`Polling ${adapter} could not persist ${draft.eventId}`, error);
       }
     }
     if (failed === 0 && !signal.aborted) await this.instance.source.markPollPersisted?.();
     return { appended, failed };
+  }
+}
+
+/** Tracks one stream's event ids and tail so repeated appends need a single read. */
+class StreamLedger {
+  private known: { readonly ids: Set<string>; sequence: number } | undefined;
+
+  constructor(
+    private readonly journal: EventJournal,
+    private readonly stream: ReturnType<typeof integrationStream>,
+  ) {}
+
+  invalidate(): void {
+    this.known = undefined;
+  }
+
+  /** Returns false when the event is already in the stream. */
+  async append(draft: EventData): Promise<boolean> {
+    this.known ??= await this.load();
+    if (this.known.ids.has(draft.eventId)) return false;
+    try {
+      await this.journal.appendToStream(this.stream, this.known.sequence, [draft]);
+    } catch (error) {
+      // Another writer moved the stream; reload once and re-check the draft.
+      if (!(error instanceof WrongExpectedSequenceError)) throw error;
+      this.known = await this.load();
+      if (this.known.ids.has(draft.eventId)) return false;
+      await this.journal.appendToStream(this.stream, this.known.sequence, [draft]);
+    }
+    this.known.ids.add(draft.eventId);
+    this.known.sequence += 1;
+    return true;
+  }
+
+  private async load() {
+    const existing = await this.journal.readStream(this.stream);
+    return {
+      ids: new Set(existing.map((event) => event.event.eventId)),
+      sequence: existing.length,
+    };
   }
 }

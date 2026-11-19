@@ -1021,7 +1021,8 @@ it('does not publish cursors from a journal read that finishes after abort', asy
       ...fakeClient({ issues: [issue(5, 'Issue')], issueComments: {} }),
       async listPullRequests() {
         if (partial) throw new Error('GitHub unavailable');
-        return [];
+        // PR evidence is what makes the poll consult the journal.
+        return [issue(6, 'A PR')] as never;
       },
     },
     undefined,
