@@ -1003,12 +1003,8 @@ export class OrchestrationService {
   }
 
   recoverPolicyBlockedMerges(evidence: ResourceTransitionEvidence, context: CommandContext) {
-    return recoverPolicyBlockedMerges(
-      new OrchestrationRepository(this.journal),
-      this.startWorkflow,
-      evidence,
-      context,
-    );
+    // The shared repository folds incrementally; a fresh one replays the journal per call.
+    return recoverPolicyBlockedMerges(this.repository, this.startWorkflow, evidence, context);
   }
 
   listResourceTransitionMatches(
