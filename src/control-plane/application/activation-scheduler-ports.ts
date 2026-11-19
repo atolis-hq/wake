@@ -96,6 +96,10 @@ export interface OrchestrationPort {
 }
 
 export interface ExecutionPort {
+  validateRunnerEligibility?(
+    activation: ActivityActivationView,
+    ineligibleRunners: ReadonlySet<string>,
+  ): void | Promise<void>;
   recoverActive?(owner: string): Promise<readonly RunView[]>;
   attempt(
     activation: ActivityActivationView,

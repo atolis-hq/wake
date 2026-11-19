@@ -28,7 +28,11 @@ export const ControlEventType = {
   RunnerResumed: 'control-plane.runner-resumed',
 } as const;
 
-export const RunnerPauseCause = { Manual: 'manual', Quota: 'quota' } as const;
+export const RunnerPauseCause = {
+  Manual: 'manual',
+  Quota: 'quota',
+  Authentication: 'authentication',
+} as const;
 
 export const ControlEventNamespace = 'control-plane.' as const;
 

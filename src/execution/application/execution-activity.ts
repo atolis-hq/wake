@@ -1,5 +1,9 @@
 import { type EventJournal } from '@atolis-hq/eventing';
-import { type ActivityExecutionContext, type ActivityRegistry } from '../../activities/index.js';
+import {
+  ClaudeAuthenticationFailureKind,
+  type ActivityExecutionContext,
+  type ActivityRegistry,
+} from '../../activities/index.js';
 import { type Clock, type IdGenerator } from '../../kernel/index.js';
 import type { ExecutionActivation, ExecutionAttemptContext } from '../contracts/commands.js';
 import type { ExecutionConfig } from '../contracts/config.js';
@@ -26,6 +30,7 @@ export interface ExecutionDependencies {
   }) => Promise<ExecutionMcpConfiguration>;
   readonly transcriptRecorder?: ActivityExecutionContext['transcriptRecorder'];
   readonly logOperationalError?: ActivityExecutionContext['logOperationalError'];
+  readonly reportRunnerAuthentication?: (input: { readonly runnerName: string }) => Promise<void>;
   readonly reportRunnerQuota?: (input: {
     readonly runnerName: string;
     readonly message: string;
@@ -242,6 +247,11 @@ function runnerResultReporter(
       payload: { transport: result.transport, agent: parseAgentRunnerResponse(result) },
     });
     await appendIdempotently(runtime.repository, currentRunId, loaded.sequence, event);
+    if (
+      result.failure?.kind === ClaudeAuthenticationFailureKind &&
+      request.runnerName !== undefined
+    )
+      await runtime.dependencies.reportRunnerAuthentication?.({ runnerName: request.runnerName });
     if (
       result.failure?.kind === ProviderQuotaExceededFailureKind &&
       request.runnerName !== undefined

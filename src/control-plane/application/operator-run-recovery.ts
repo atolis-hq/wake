@@ -7,7 +7,7 @@ import {
   type WorkflowInstanceView,
 } from '../../orchestration/index.js';
 import { findUnresolvedTerminal } from './execution-reconciliation.js';
-import { isRunnerQuotaOutcome, runnerQuotaMessage } from './runner-quota-outcome.js';
+import { isRunnerUnavailableOutcome, runnerUnavailableMessage } from './runner-quota-outcome.js';
 
 /** Both operator surfaces recover from authoritative Run evidence, just as the scheduler does. */
 export async function recoverOperatorRun(
@@ -59,14 +59,14 @@ async function applyTerminalRecovery(
   context: CommandContext,
 ): Promise<void> {
   if (run.status === RunStatus.Succeeded && run.outcome !== undefined) {
-    if (isRunnerQuotaOutcome(run.outcome)) {
+    if (isRunnerUnavailableOutcome(run.outcome)) {
       await orchestration.retryRunnerQuotaFailure(
         item.workflow.workflowInstanceId,
         {
           activationId: item.activation.activationId,
           runId: run.runId,
           runnerName: run.runner?.name ?? 'unknown-runner',
-          message: runnerQuotaMessage(run.outcome),
+          message: runnerUnavailableMessage(run.outcome),
         },
         context,
       );

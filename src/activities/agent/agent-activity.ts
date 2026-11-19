@@ -10,6 +10,7 @@ import {
   ActivityRunnerTransportStatus,
   AgentResultStatus,
   ClaudeAuthenticationFailureKind,
+  RunnerAuthenticationMessage,
 } from '../contracts/vocabulary.js';
 import { translateAgentResult, type AgentActivityOutcome } from './agent-result.js';
 
@@ -101,7 +102,17 @@ async function runnerResult(
     context.reportRunnerStarted?.();
     const execution = await context.runner!.start(request, context.signal);
     if (execution.identity !== undefined) await context.reportExternalExecution(execution.identity);
-    return await execution.result;
+    const result = await execution.result;
+    if (
+      result.transport !== ActivityRunnerTransportStatus.Succeeded &&
+      result.failure?.kind === ClaudeAuthenticationFailureKind
+    )
+      return {
+        ...result,
+        output: RunnerAuthenticationMessage,
+        failure: { kind: ClaudeAuthenticationFailureKind, message: RunnerAuthenticationMessage },
+      };
+    return result;
   } catch (error) {
     await finalisePrompt(context, workItemId, request);
     throw error;
@@ -469,7 +480,7 @@ function agentOutcome(
       kind: ActivityOutcomeKind.Blocked,
       data: {
         reason: ActivityFailureCode.RunnerAuthenticationRequired,
-        message: result.failure.message,
+        message: RunnerAuthenticationMessage,
       },
     };
   if (result.transport !== ActivityRunnerTransportStatus.Succeeded)

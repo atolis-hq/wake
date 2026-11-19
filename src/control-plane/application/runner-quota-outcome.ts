@@ -1,21 +1,27 @@
 import {
   ActivityFailureCode,
   ActivityOutcomeKind,
+  RunnerAuthenticationMessage,
   type ActivityOutcome,
 } from '../../activities/index.js';
 
-export function isRunnerQuotaOutcome(outcome: ActivityOutcome): boolean {
+// Authentication uses the existing durable infrastructure retry protocol, whose event retains its quota name.
+export function isRunnerUnavailableOutcome(outcome: ActivityOutcome): boolean {
   return (
-    outcome.kind === ActivityOutcomeKind.Failed &&
+    (outcome.kind === ActivityOutcomeKind.Failed || outcome.kind === ActivityOutcomeKind.Blocked) &&
     typeof outcome.data === 'object' &&
     outcome.data !== null &&
     'reason' in outcome.data &&
-    (outcome.data as { reason?: unknown }).reason === ActivityFailureCode.RunnerQuotaExceeded
+    ((outcome.data as { reason?: unknown }).reason === ActivityFailureCode.RunnerQuotaExceeded ||
+      (outcome.data as { reason?: unknown }).reason ===
+        ActivityFailureCode.RunnerAuthenticationRequired)
   );
 }
 
-export function runnerQuotaMessage(outcome: ActivityOutcome): string {
-  const data = outcome.data as { message?: unknown };
+export function runnerUnavailableMessage(outcome: ActivityOutcome): string {
+  const data = outcome.data as { message?: unknown; reason?: unknown };
+  if (data.reason === ActivityFailureCode.RunnerAuthenticationRequired)
+    return RunnerAuthenticationMessage;
   return typeof data.message === 'string' ? data.message : 'runner reported quota exhaustion';
 }
 

@@ -17,6 +17,7 @@ import {
 } from '../artifacts/index.js';
 import {
   DispatchPolicy,
+  RunnerPauseCause,
   createActivationScheduler,
   createActivationSchedulerSubscriber,
   createControlPlaneService,
@@ -429,6 +430,12 @@ async function createApplicationServices(
       journal,
     }),
     reportRunnerQuota: createRunnerQuotaReporter(journal, clock, ids),
+    reportRunnerAuthentication: createRunnerQuotaReporter(
+      journal,
+      clock,
+      ids,
+      RunnerPauseCause.Authentication,
+    ),
     ...(transcriptStore !== undefined
       ? {
           transcriptRecorder: transcriptStore,

@@ -104,3 +104,6 @@ export const AgentResultStatus = {
 export type AgentResultStatus = ValueOf<typeof AgentResultStatus>;
 
 export const ClaudeAuthenticationFailureKind = 'claude-authentication-required';
+
+export const RunnerAuthenticationMessage =
+  'runner authentication required; restore credentials and resume the runner';

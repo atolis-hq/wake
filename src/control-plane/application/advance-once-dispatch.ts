@@ -1,10 +1,11 @@
 import { deliveryCapacity } from '../domain/delivery-capacity.js';
 import { dispatchRepositoryContext, reviewContext } from './dispatch-resources.js';
 import {
-  isRunnerQuotaOutcome,
+  isRunnerUnavailableOutcome,
   reportUnappliedRunnerQuotaRetry,
-  runnerQuotaMessage,
+  runnerUnavailableMessage,
 } from './runner-quota-outcome.js';
+import { advancementWasDurablyApplied, blockIsolatedWorkflow } from './workflow-isolation.js';
 /* eslint-disable complexity, max-lines-per-function */
 import type { CommandContext } from '@atolis-hq/eventing';
 import {
@@ -48,39 +49,6 @@ interface PendingActivation {
   readonly priority?: PendingActivationPriority | undefined;
 }
 
-export async function advancementWasDurablyApplied(
-  orchestration: OrchestrationPort,
-  workflowInstanceId: WorkflowInstanceView['workflowInstanceId'],
-  activationId: ActivityActivationView['activationId'],
-): Promise<boolean> {
-  const current = await orchestration.get?.(workflowInstanceId);
-  return (
-    current !== undefined && current !== null && current.acceptedOutcomes.includes(activationId)
-  );
-}
-
-const maximumIsolationReasonLength = 2_000;
-
-export function isolatedWorkflowReason(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return `workflow advancement failed: ${message}`.slice(0, maximumIsolationReasonLength);
-}
-
-export async function blockIsolatedWorkflow(
-  orchestration: OrchestrationPort,
-  workflowInstanceId: string,
-  error: unknown,
-  context: CommandContext,
-): Promise<string> {
-  const reason = isolatedWorkflowReason(error);
-  if (orchestration.block === undefined)
-    throw new Error('Orchestration port cannot durably block an isolated workflow', {
-      cause: error,
-    });
-  await orchestration.block(workflowInstanceId, reason, context);
-  return reason;
-}
-
 /** Recheck capacity and select a fresh candidate after each dispatch. */
 export async function runDispatchLoop(
   pending: readonly PendingActivation[],
@@ -88,6 +56,7 @@ export async function runDispatchLoop(
 ): Promise<AdvanceResult> {
   const dispatched: DispatchedRun[] = [];
   const dispatchedIds = new Set<string>();
+  const exhaustedIds = new Set<string>();
   const startedWorkflowIds = new Set<string>();
   const isolatedIds = new Set<string>();
   let isolated: Extract<AdvanceResult, { kind: typeof WorkflowStatus.Blocked }> | undefined;
@@ -135,6 +104,7 @@ export async function runDispatchLoop(
         .filter(
           (item) =>
             !isolatedIds.has(item.workflow.workflowInstanceId) &&
+            !exhaustedIds.has(item.activation.activationId) &&
             !capacity.unavailable.has(item.workflow.workItemId) &&
             !capacity.full.has(
               capacity.roots.get(item.workflow.workItemId) ?? item.workflow.workItemId,
@@ -185,6 +155,7 @@ export async function runDispatchLoop(
         stopReason = { kind: 'no-work' };
         break;
       }
+      await ctx.execution.validateRunnerEligibility?.(selected.activation, ineligible);
       await ctx.orchestration.markActivationStarted(
         selected.workflow.workflowInstanceId,
         selected.activation.activationId,
@@ -221,19 +192,16 @@ export async function runDispatchLoop(
       if (
         run.status === RunStatus.Succeeded &&
         run.outcome !== undefined &&
-        isRunnerQuotaOutcome(run.outcome)
+        isRunnerUnavailableOutcome(run.outcome)
       ) {
-        // No isDispatchPaused check here: a quota retry re-requests the same
-        // stage's activity without publishing an outcome or consuming retry
-        // budget, so it must not be held behind maintenance pause the way an
-        // outward-publishing acceptOutcome call is below.
+        // Infrastructure recovery publishes no outcome and does not consume retry budget.
         const retried = await ctx.orchestration.retryRunnerQuotaFailure?.(
           selected.workflow.workflowInstanceId,
           {
             activationId: selected.activation.activationId,
             runId: run.runId,
             runnerName: run.runner?.name ?? 'unknown-runner',
-            message: runnerQuotaMessage(run.outcome),
+            message: runnerUnavailableMessage(run.outcome),
           },
           ctx.commandContext(run.runId),
         );
@@ -285,7 +253,11 @@ export async function runDispatchLoop(
         };
         continue;
       }
-      if (error instanceof ActivationClaimConflictError || error instanceof NoEligibleRunnerError) {
+      if (error instanceof NoEligibleRunnerError) {
+        exhaustedIds.add(selected.activation.activationId);
+        continue;
+      }
+      if (error instanceof ActivationClaimConflictError) {
         stopReason = { kind: 'no-work' };
         break;
       }

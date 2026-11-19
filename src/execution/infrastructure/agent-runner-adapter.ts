@@ -1,6 +1,7 @@
 import {
   AgentResultStatus,
   ClaudeAuthenticationFailureKind,
+  RunnerAuthenticationMessage,
   parseAgentStatusMarker,
   translateAgentResult,
 } from '../../activities/index.js';
@@ -8,15 +9,19 @@ import type { AgentRunOutcome, AgentRunResponse, AgentRunnerResult } from '../co
 import { RunStatus } from '../contracts/vocabulary.js';
 
 export function parseAgentRunnerResponse(result: AgentRunnerResult): AgentRunResponse {
+  if (requiresAuthentication(result))
+    return {
+      outcome: AgentResultStatus.Blocked,
+      displayBody: RunnerAuthenticationMessage,
+      metadata: metadata(result),
+    };
   const parsed = parseResult(result.output);
   const outcome =
     result.transport === RunStatus.Succeeded && result.unverifiedCompletionReason !== undefined
       ? AgentResultStatus.Blocked
       : result.transport === RunStatus.Succeeded
         ? parsed.outcome
-        : result.failure?.kind === ClaudeAuthenticationFailureKind
-          ? AgentResultStatus.Blocked
-          : AgentResultStatus.Failed;
+        : AgentResultStatus.Failed;
   return {
     outcome,
     displayBody:
@@ -85,4 +90,11 @@ function metadata(
             : { costUsd: result.tokenUsage.costUsd }),
         }),
   };
+}
+
+function requiresAuthentication(result: AgentRunnerResult): boolean {
+  return (
+    result.transport !== RunStatus.Succeeded &&
+    result.failure?.kind === ClaudeAuthenticationFailureKind
+  );
 }
