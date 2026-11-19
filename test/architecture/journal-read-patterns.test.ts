@@ -12,8 +12,6 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 // the reason each is not a resident-loop read. Anything else belongs in a
 // ProjectionStore projection (readCurrentProjection) or a foldedJournalView.
 const unboundedReadAllowlist: Readonly<Record<string, string>> = {
-  'packages/eventing/src/runtime/journal-view.ts':
-    'foldedJournalView reads only the tail after the position it already holds',
   'src/bootstrap/surface-api-applications.ts':
     'fallback for journals without readLatest; the production journal pages from the end',
   'src/surfaces/cli/commands/audit.ts':

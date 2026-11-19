@@ -58,7 +58,7 @@ export function createExecutionService(
   config: ExecutionConfig,
   dependencies: ExecutionDependencies,
 ) {
-  const repository = new RunRepository(journal);
+  const repository = dependencies.runs ?? new RunRepository(journal);
   const active = new Map<string, AbortController>();
   const localAttempts = new Set<string>();
   const lifecycle: ExecutionRuntime['lifecycle'] = {

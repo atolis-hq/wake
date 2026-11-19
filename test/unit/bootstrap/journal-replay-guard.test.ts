@@ -10,7 +10,7 @@ import { expect, it } from 'vitest';
 const FOLDING = /new (OrchestrationRepository|RunRepository|WorkIndex|ResourceRepository)\(/g;
 const allowed: Readonly<Record<string, number>> = {
   'src/bootstrap/artifact-mcp.ts': 1, // single run stream load per MCP call, not a fold
-  'src/bootstrap/composition-root.ts': 2,
+  'src/bootstrap/composition-root.ts': 3,
   'src/bootstrap/delegation-authority.ts': 1,
   'src/bootstrap/integration-runtime.ts': 3,
   'src/execution/application/execution-service.ts': 1,

@@ -57,8 +57,15 @@ export interface AmbiguityWorkflowBlocker {
   ): Promise<unknown>;
 }
 
+export interface RecoveryOptions {
+  readonly blocker?: AmbiguityWorkflowBlocker;
+  /** Share the execution service's run fold instead of folding the journal again. */
+  readonly runs?: RunRepository;
+}
+
 export class RecoveryService {
   private readonly repository: RunRepository;
+  private readonly blocker: AmbiguityWorkflowBlocker | undefined;
 
   constructor(
     journal: EventJournal,
@@ -69,9 +76,10 @@ export class RecoveryService {
       ExecutionConfig,
       'leaseDurationMs' | 'leaseRenewalIntervalMs' | 'maxAmbiguityReconciliationAttempts'
     > = {},
-    private readonly blocker?: AmbiguityWorkflowBlocker,
+    options: RecoveryOptions = {},
   ) {
-    this.repository = new RunRepository(journal);
+    this.blocker = options.blocker;
+    this.repository = options.runs ?? new RunRepository(journal);
   }
 
   async recover(id: string, owner: string): Promise<RunView> {

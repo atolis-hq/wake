@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import {
   createEventData,
@@ -354,8 +354,10 @@ it('blocks the owning workflow when ambiguity reaches the configured bound', asy
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
     {
-      async blockAwaitingActivation(workflowInstanceId, _activationId, reason) {
-        blocked.push({ workflowInstanceId, reason });
+      blocker: {
+        async blockAwaitingActivation(workflowInstanceId, _activationId, reason) {
+          blocked.push({ workflowInstanceId, reason });
+        },
       },
     },
   );
@@ -536,9 +538,11 @@ it('repairs a restart between terminal ambiguity and its workflow block', async 
     fixture.activities,
     { maxAmbiguityReconciliationAttempts: 1 },
     {
-      async blockAwaitingActivation(_workflow, _activation, _reason, context) {
-        commands.push(context.commandId);
-        if (attempts++ === 0) throw new Error('host stopped before workflow append');
+      blocker: {
+        async blockAwaitingActivation(_workflow, _activation, _reason, context) {
+          commands.push(context.commandId);
+          if (attempts++ === 0) throw new Error('host stopped before workflow append');
+        },
       },
     },
   );
@@ -551,4 +555,33 @@ it('repairs a restart between terminal ambiguity and its workflow block', async 
       (event) => event.event.eventType === ExecutionEventType.RunAmbiguous,
     ),
   ).toHaveLength(1);
+});
+
+// Each RunRepository folds and holds its own copy of every run, so recovery must
+// reuse the execution service's repository rather than fold the journal again.
+it('recovers from a shared run fold without folding the journal again', async () => {
+  const fixture = executionFixture();
+  await fixture.activeRunWithExternalExecution();
+  const runs = new RunRepository(fixture.journal);
+  await runs.list();
+  const readAll = vi.spyOn(fixture.journal, 'readAll');
+  const recovery = new RecoveryService(
+    fixture.journal,
+    fixture.clock,
+    {
+      async inspect() {
+        throw new Error('A local worker must not be inspected as a crashed process');
+      },
+    },
+    fixture.activities,
+    {},
+    { runs },
+  );
+
+  await recovery.recoverActive('resident-a', () => true);
+
+  expect(readAll).not.toHaveBeenCalledWith(0, expect.anything());
+  expect(readAll).not.toHaveBeenCalledWith(0);
+  fixture.complete({ kind: 'done' });
+  await fixture.finished('succeeded');
 });

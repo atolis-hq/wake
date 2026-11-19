@@ -301,7 +301,7 @@ export class TestWorld {
             inspector,
             this.activities,
             { leaseDurationMs: 60_000, leaseRenewalIntervalMs: 30_000 },
-            this.orchestration,
+            { blocker: this.orchestration },
           );
     const recovery =
       this.recovery === undefined ? undefined : createRecoveryCoordinator(this.recovery);
