@@ -1319,3 +1319,42 @@ it('releases its SQLite snapshot before segment I/O so a writer can commit concu
   expect(await reading).toHaveLength(1);
   expect(await reader.readStream(stream)).toHaveLength(2);
 }, 15_000);
+
+it.each(['replay', 'stream', 'append'] as const)(
+  'recovers an omitted interior record before %s',
+  async (operation) => {
+    const root = await mkdtemp(join(tmpdir(), 'wake-journal-omission-'));
+    const journal = new FileEventJournal(root, new FakeClock());
+    const lost = { kind: 'test', id: 'lost' };
+    await journal.appendToStream({ kind: 'test', id: 'first' }, 0, [journalDraft('first')]);
+    await journal.appendToStream(lost, 0, [journalDraft('interior')]);
+    await journal.appendToStream({ kind: 'test', id: 'last' }, 0, [journalDraft('last')]);
+    const index = new DatabaseSync(join(root, 'journal-index.sqlite'));
+    index.exec('DELETE FROM records WHERE position = 2');
+    index.close();
+    const reader = operation === 'stream' ? journal : new FileEventJournal(root, new FakeClock());
+    if (operation === 'stream')
+      expect((await reader.readStream(lost)).map((event) => event.sequence)).toEqual([1]);
+    if (operation === 'replay')
+      expect((await reader.readAll(0)).map((event) => event.globalPosition)).toEqual([1, 2, 3]);
+    if (operation === 'append') {
+      await expect(
+        reader.appendToStream(lost, 0, [journalDraft('invalid')]),
+      ).rejects.toBeInstanceOf(WrongExpectedSequenceError);
+      expect((await reader.appendToStream(lost, 1, [journalDraft('valid')]))[0]?.sequence).toBe(2);
+    }
+    expect((await reader.readStream(lost))[0]?.event.eventId).toBe('interior');
+  },
+);
+
+it('rebuilds an unsupported partially initialized SQLite schema from JSONL', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-partial-schema-'));
+  const journal = new FileEventJournal(root, new FakeClock());
+  await journal.appendToStream({ kind: 'test', id: 'one' }, 0, [journalDraft('one')]);
+  const path = join(root, 'journal-index.sqlite');
+  await rm(path);
+  const partial = new DatabaseSync(path);
+  partial.exec('CREATE TABLE head (stamp TEXT)');
+  partial.close();
+  expect((await journal.readAll(0)).map((event) => event.event.eventId)).toEqual(['one']);
+});

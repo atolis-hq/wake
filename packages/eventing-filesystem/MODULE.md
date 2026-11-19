@@ -61,3 +61,20 @@ already committed append. Snapshot scans capture the head, read at most 100
 events per batch, and yield between batches. `fs.watch` only wakes
 `waitForEventsAfter`; correctness never depends on it. Local filesystems and
 same-kernel bind mounts are supported; NFS-style negative lookup caching is not.
+
+The index also stores stream IDs and hashed top-level string payload attributes.
+The optional Eventing `readLatestMatching` capability combines stream-ID and
+payload-attribute matches with OR semantics, descending positions, deduplication,
+and an exclusive cursor. The Work detail event feed uses this capability through
+Bootstrap, preserving cross-stream matches without scanning unrelated history.
+
+Trigger-maintained record and attribute counts are checked against the committed
+head before reads and appends. Positive contiguous positions, independent counts,
+and a schema-version seal detect interior omissions and missing index schema
+without a full-table count. Recovery rebuilds all lookup tables from JSONL.
+
+Read-only SQLite connections are reused in a pool of at most four paths, with
+a 2 MiB page cache per connection. Every read validates the database inode and
+starts a fresh snapshot; pooling does not introduce a freshness window. Replaced
+or invalid indexes close their pooled connection. Windows uses transient
+connections to preserve file-deletion semantics.

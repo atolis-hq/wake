@@ -52,3 +52,7 @@ host or Eventing filesystem adapters.
 ## Scenarios
 
 E2E-CONFIG-001, E2E-OPS-INIT-001, E2E-OPS-001.
+
+The filtered event application used by Work detail selects the journal
+`readLatestMatching` capability when available, preserving stream-ID and payload
+work-item matches, cursor semantics, and provenance without a global tail scan.

@@ -4,10 +4,12 @@ import type {
   EventingClock,
   EventJournal,
   JournalChangeSignal,
+  JournalEventFilter,
   StreamRef,
 } from '@atolis-hq/eventing';
 import { decodeEventEnvelope, WrongExpectedSequenceError, yieldScan } from '@atolis-hq/eventing';
 import { InProcessJournalChangeSignal } from '@atolis-hq/eventing/memory';
+import { createHash } from 'node:crypto';
 import { watch } from 'node:fs';
 import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,6 +18,7 @@ import { scheduler } from 'node:timers/promises';
 import { writeFileAtomically } from './atomic-write.js';
 import { decodeEventRecord, encodeEventRecord } from './event-record-codec.js';
 import { withFileLock } from './file-lock.js';
+import { borrowReadonlyIndex, invalidateReadonlyIndex } from './readonly-index-pool.js';
 
 export interface FileEventJournalWatcher {
   unref(): void;
@@ -78,17 +81,17 @@ export class FileEventJournal implements EventJournal {
             try {
               db = this.openIndex();
             } catch {
+              invalidateReadonlyIndex(this.indexPath);
               await rm(this.indexPath, { force: true });
               db = this.openIndex();
             }
             try {
               let valid = false;
               try {
-                const head = db.prepare('SELECT stamp, position FROM head WHERE id = 1').get();
-                valid =
-                  head?.stamp === (await this.directoryStamp()) && head?.position === this.head(db);
+                valid = this.completeIndex(db, await this.directoryStamp());
               } catch {
                 db.close();
+                invalidateReadonlyIndex(this.indexPath);
                 await rm(this.indexPath, { force: true });
                 db = this.openIndex();
               }
@@ -109,28 +112,34 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async readOnlyIndex<T>(operation: (db: DatabaseSync) => Promise<T>): Promise<T> {
-    let db: DatabaseSync | undefined;
+    let lease: ReturnType<typeof borrowReadonlyIndex> | undefined;
     let ready = false;
     try {
-      const stamp = await this.directoryStamp();
-      const dirty = await exists(this.dirtyPath);
-      db = this.openIndex(this.indexPath, true);
+      const [stamp, dirty, info] = await Promise.all([
+        this.directoryStamp(),
+        exists(this.dirtyPath),
+        stat(this.indexPath, { bigint: true }),
+      ]);
+      lease = borrowReadonlyIndex(this.indexPath, `${info.dev}:${info.ino}`, () =>
+        this.openIndex(this.indexPath, true),
+      );
+      const db = lease.database;
       db.exec('BEGIN');
-      const head = db.prepare('SELECT stamp, position FROM head WHERE id = 1').get();
-      if (head?.stamp !== stamp || head?.position !== this.head(db) || dirty)
+      if (!this.completeIndex(db, stamp) || dirty)
         throw new Error('Journal index requires recovery');
       ready = true;
-      return await operation(db);
+      const result = operation(db);
+      if (db.isTransaction) db.exec('COMMIT');
+      lease.release();
+      return await result;
     } catch {
-      db?.close();
-      db = undefined;
+      if (lease === undefined) invalidateReadonlyIndex(this.indexPath);
+      else lease.invalidate();
       if (!this.options.readOnly)
         return this.serialised(async (index) => {
           if (ready) await this.rebuild(index);
           return operation(index);
         });
-      // Read-only diagnostics can inspect legacy or damaged indexes without
-      // changing runtime state. Their recovery index exists only in memory.
       const memory = this.openIndex(':memory:');
       try {
         await this.rebuild(memory, false);
@@ -139,28 +148,77 @@ export class FileEventJournal implements EventJournal {
         memory.close();
       }
     } finally {
-      db?.close();
+      lease?.release();
     }
   }
 
   private openIndex(path = this.indexPath, readOnly = false): DatabaseSync {
     const db = new DatabaseSync(path, { readOnly });
     try {
+      const version = db.prepare('PRAGMA user_version').get()?.user_version;
+      if (
+        (readOnly && version !== 3) ||
+        (!readOnly &&
+          version !== 3 &&
+          db
+            .prepare(
+              "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+            )
+            .get() !== undefined)
+      )
+        throw new Error('Journal index schema requires recovery');
       db.exec(`
         PRAGMA cache_size = -2048;
         PRAGMA mmap_size = 0;
         PRAGMA temp_store = MEMORY;
         PRAGMA busy_timeout = 5000;
       `);
+      if (!readOnly && version === 3) {
+        const head = db.prepare('SELECT schema_version FROM head WHERE id = 1').get();
+        const schema = db.prepare('PRAGMA schema_version').get()?.schema_version;
+        if (
+          head?.schema_version !== schema ||
+          db.prepare('SELECT id FROM integrity_counts WHERE id = 1').get() === undefined
+        )
+          throw new Error('Journal index schema requires recovery');
+        return db;
+      }
       if (!readOnly)
         db.exec(`
-        CREATE TABLE IF NOT EXISTS head (id INTEGER PRIMARY KEY CHECK (id = 1), stamp TEXT NOT NULL, position INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS head (id INTEGER PRIMARY KEY CHECK (id = 1), stamp TEXT NOT NULL, position INTEGER NOT NULL, attributes INTEGER NOT NULL, schema_version INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS records (
           position INTEGER PRIMARY KEY,
           stream TEXT NOT NULL, sequence INTEGER NOT NULL,
           file TEXT NOT NULL, offset INTEGER NOT NULL, length INTEGER NOT NULL,
-          size INTEGER NOT NULL, mtime REAL NOT NULL
+          size INTEGER NOT NULL, mtime REAL NOT NULL, stream_id TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS payload_strings (
+          field TEXT NOT NULL, value TEXT NOT NULL, position INTEGER NOT NULL,
+          PRIMARY KEY (field, position)
+        );
+        CREATE INDEX IF NOT EXISTS payload_lookup ON payload_strings(field, value, position);
+        CREATE INDEX IF NOT EXISTS stream_id_position ON records(stream_id, position);
+        CREATE TABLE IF NOT EXISTS integrity_counts (id INTEGER PRIMARY KEY, records INTEGER NOT NULL, attributes INTEGER NOT NULL);
+        INSERT OR IGNORE INTO integrity_counts VALUES (1, 0, 0);
+        CREATE TRIGGER IF NOT EXISTS record_insert AFTER INSERT ON records BEGIN
+          UPDATE integrity_counts SET records = records + 1 WHERE id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS record_delete AFTER DELETE ON records BEGIN
+          UPDATE integrity_counts SET records = records - 1 WHERE id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS attribute_insert AFTER INSERT ON payload_strings BEGIN
+          UPDATE integrity_counts SET attributes = attributes + 1 WHERE id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS attribute_delete AFTER DELETE ON payload_strings BEGIN
+          UPDATE integrity_counts SET attributes = attributes - 1 WHERE id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS record_update AFTER UPDATE ON records BEGIN
+          UPDATE integrity_counts SET records = -1 WHERE id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS attribute_update AFTER UPDATE ON payload_strings BEGIN
+          UPDATE integrity_counts SET attributes = -1 WHERE id = 1;
+        END;
+        PRAGMA user_version = 3;
         CREATE UNIQUE INDEX IF NOT EXISTS stream_sequence ON records (stream, sequence);
       `);
       return db;
@@ -168,6 +226,25 @@ export class FileEventJournal implements EventJournal {
       db.close();
       throw error;
     }
+  }
+
+  // Trigger-maintained counts are independent of the last committed head.
+  // With unique positive integer positions, count == max proves no gaps.
+  private completeIndex(db: DatabaseSync, stamp: string): boolean {
+    const head = db.prepare('SELECT * FROM head WHERE id = 1').get();
+    const counts = db.prepare('SELECT * FROM integrity_counts WHERE id = 1').get();
+    const first = db
+      .prepare('SELECT position FROM records ORDER BY position LIMIT 1')
+      .get()?.position;
+    return (
+      db.prepare('PRAGMA user_version').get()?.user_version === 3 &&
+      head?.stamp === stamp &&
+      head?.schema_version === db.prepare('PRAGMA schema_version').get()?.schema_version &&
+      head?.position === this.head(db) &&
+      head?.position === counts?.records &&
+      head?.attributes === counts?.attributes &&
+      (head?.position === 0 ? first === undefined : first === 1)
+    );
   }
 
   private async directoryStamp(): Promise<string> {
@@ -241,9 +318,11 @@ export class FileEventJournal implements EventJournal {
   }
 
   private async commitHead(db: DatabaseSync): Promise<void> {
-    db.prepare('INSERT OR REPLACE INTO head VALUES (1, ?, ?)').run(
+    db.prepare('INSERT OR REPLACE INTO head VALUES (1, ?, ?, ?, ?)').run(
       await this.directoryStamp(),
       this.head(db),
+      db.prepare('SELECT attributes FROM integrity_counts WHERE id = 1').get()!.attributes!,
+      db.prepare('PRAGMA schema_version').get()!.schema_version!,
     );
     db.exec('COMMIT');
   }
@@ -284,7 +363,9 @@ export class FileEventJournal implements EventJournal {
       }
     }
     segments.sort((a, b) => a.position - b.position || a.file.localeCompare(b.file));
-    db.exec('BEGIN; DELETE FROM records; DELETE FROM head;');
+    db.exec(
+      'BEGIN; DELETE FROM records; DELETE FROM payload_strings; DELETE FROM head; UPDATE integrity_counts SET records = 0, attributes = 0 WHERE id = 1;',
+    );
     try {
       let position = 0;
       for (const { file } of segments) {
@@ -313,7 +394,8 @@ export class FileEventJournal implements EventJournal {
     if (raw.length > 0 && !raw.endsWith('\n'))
       throw new Error(`Incomplete trailing line in ${file}`);
     const info = await stat(join(this.root, 'events', file));
-    const insert = db.prepare('INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const insert = db.prepare('INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const attribute = db.prepare('INSERT INTO payload_strings VALUES (?, ?, ?)');
     let offset = 0,
       position = previous;
     for (const [lineNumber, line] of raw.split('\n').slice(0, -1).entries()) {
@@ -328,7 +410,11 @@ export class FileEventJournal implements EventJournal {
         length,
         info.size,
         info.mtimeMs,
+        event.stream.id,
       );
+      if (typeof event.event.payload === 'object' && event.event.payload !== null)
+        for (const [field, value] of Object.entries(event.event.payload))
+          if (typeof value === 'string') attribute.run(field, stringHash(value), position);
       offset += length;
     }
     return position;
@@ -360,7 +446,7 @@ export class FileEventJournal implements EventJournal {
     // locations preserve this snapshot while another process appends.
     if (db.isTransaction) db.exec('COMMIT');
     for (const row of rows) {
-      const { position, stream, sequence, file, offset, length, size, mtime } = row;
+      const { position, stream, stream_id, sequence, file, offset, length, size, mtime } = row;
       if (
         typeof file !== 'string' ||
         !segmentName.test(file) ||
@@ -383,6 +469,7 @@ export class FileEventJournal implements EventJournal {
           info.size !== size ||
           info.mtimeMs !== mtime ||
           cached.globalPosition !== position ||
+          cached.stream.id !== stream_id ||
           key(cached.stream) !== stream ||
           cached.sequence !== sequence
         )
@@ -402,7 +489,11 @@ export class FileEventJournal implements EventJournal {
         if (bytesRead !== length || buffer.at(-1) !== 10)
           throw new Error('Incomplete indexed record');
         const event = decodeLine(file, position, buffer.toString('utf8'), position);
-        if (key(event.stream) !== stream || event.sequence !== sequence)
+        if (
+          key(event.stream) !== stream ||
+          event.stream.id !== stream_id ||
+          event.sequence !== sequence
+        )
           throw new Error('Indexed stream mismatch');
         this.envelopeCache.set(cacheKey, event);
         if (this.envelopeCache.size > 256)
@@ -454,6 +545,41 @@ export class FileEventJournal implements EventJournal {
         false,
       ),
     );
+  }
+
+  async readLatestMatching(
+    filter: JournalEventFilter,
+    before?: number,
+    limit = Number.POSITIVE_INFINITY,
+  ): Promise<readonly EventEnvelope[]> {
+    if ((before !== undefined && before <= 0) || limit <= 0) return [];
+    return this.readOnlyIndex(async (db) => {
+      const events = await this.indexedRead(
+        db,
+        `
+      WITH stream_matches AS (
+        SELECT position FROM records WHERE stream_id = ? AND position < ? ORDER BY position DESC LIMIT ?
+      ), payload_matches AS (
+        SELECT position FROM payload_strings WHERE field = ? AND value = ? AND position < ? ORDER BY position DESC LIMIT ?
+      ), matches AS (SELECT position FROM stream_matches UNION SELECT position FROM payload_matches)
+      SELECT records.* FROM records JOIN matches USING (position) ORDER BY position DESC LIMIT ?
+    `,
+        [
+          filter.streamId,
+          before ?? this.head(db) + 1,
+          sqlLimit(limit),
+          filter.payloadField,
+          stringHash(filter.payloadValue),
+          before ?? this.head(db) + 1,
+          sqlLimit(limit),
+          sqlLimit(limit),
+        ],
+        false,
+      );
+      if (events.some((event) => !matchesFilter(event, filter)))
+        throw new Error('Stale journal attribute index');
+      return events;
+    });
   }
 
   async latestGlobalPosition(): Promise<number> {
@@ -614,5 +740,20 @@ async function reclaimStaleSegmentTemps(directory: string): Promise<void> {
     entries
       .filter((entry) => entry.isFile() && staleSegmentTempName.test(entry.name))
       .map((entry) => rm(join(directory, entry.name), { force: true }).catch(() => undefined)),
+  );
+}
+
+function stringHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function matchesFilter(event: EventEnvelope, filter: JournalEventFilter): boolean {
+  return (
+    event.stream.id === filter.streamId ||
+    (typeof event.event.payload === 'object' &&
+      event.event.payload !== null &&
+      Object.entries(event.event.payload).some(
+        ([field, value]) => field === filter.payloadField && value === filter.payloadValue,
+      ))
   );
 }
