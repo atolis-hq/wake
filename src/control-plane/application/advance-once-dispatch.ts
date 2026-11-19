@@ -155,6 +155,7 @@ export async function runDispatchLoop(
         stopReason = { kind: 'no-work' };
         break;
       }
+      await ctx.execution.validateRunnerEligibility?.(selected.activation, ineligible);
       await ctx.orchestration.markActivationStarted(
         selected.workflow.workflowInstanceId,
         selected.activation.activationId,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const args = process.argv.slice(2);
-const mode = args.at(-1);
+const mode = args.at(-1)?.includes('auth-error-secret') ? 'auth-error-secret' : args.at(-1);
 if (
   !args.includes('stream-json') ||
   !args.includes('--verbose') ||
@@ -17,12 +17,15 @@ const final = () =>
       total_cost_usd: 0.02,
     }),
   );
-if (mode === 'auth-error') {
+if (mode === 'auth-error' || mode === 'auth-error-secret') {
   process.stdout.write(
     JSON.stringify({
       is_error: true,
       terminal_reason: 'api_error',
-      result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+      result:
+        mode === 'auth-error-secret'
+          ? 'Failed to authenticate: invalid API key AUTH_SENTINEL_SECRET'
+          : 'Failed to authenticate: OAuth session expired and could not be refreshed',
     }),
     () => process.exit(1),
   );

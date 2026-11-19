@@ -79,6 +79,14 @@ export function createExecutionService(
     journal,
   };
   return {
+    validateRunnerEligibility: (
+      activation: ExecutionActivation,
+      ineligibleRunners: ReadonlySet<string>,
+    ) => {
+      resolveRunner(runtime, activities.describe(activation.activity).executionKind, activation, {
+        ineligibleRunners,
+      });
+    },
     attempt: (activation: ExecutionActivation, context: ExecutionAttemptContext) =>
       startAttempt(runtime, activation, context),
     list: (activationId?: ExecutionActivation['activationId']) => repository.list(activationId),
@@ -862,7 +870,7 @@ function resolveRunner(
   runtime: ExecutionRuntime,
   executionKind: ActivityExecutionKind,
   activation: ExecutionActivation,
-  context: ExecutionAttemptContext,
+  context: Pick<ExecutionAttemptContext, 'ineligibleRunners'>,
 ) {
   const runnerPool = activation.execution?.runnerPool ?? runtime.config.defaultRunnerPool;
   if (runtime.config.runnerPools[runnerPool] === undefined)
