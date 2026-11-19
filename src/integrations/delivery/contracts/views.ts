@@ -15,6 +15,7 @@ export interface DeliveryIntentView {
   readonly activationId: string;
   readonly kind: DeliveryIntentKindValue;
   readonly resourceId: ResourceId;
+  readonly awaitingMergeResourceId?: string | undefined;
   readonly payload:
     | {
         readonly kind: typeof DeliveryIntentKind.PrApprove;

@@ -26,6 +26,7 @@ interface PublishRequestedPayload {
   readonly workflowInstanceId: string;
   readonly activationId: string;
   readonly resourceId: ResourceId;
+  readonly awaitingMergeResourceId?: string | undefined;
   readonly body: string;
 }
 
@@ -53,6 +54,7 @@ interface AgentRunPublishRequestedPayload {
   readonly workflowInstanceId: string;
   readonly activationId: string;
   readonly resourceId: ResourceId;
+  readonly awaitingMergeResourceId?: string | undefined;
   readonly conversationId?: string | undefined;
   readonly conversationEntryId?: string | undefined;
   readonly report: AgentRunPublicationReport;
@@ -77,6 +79,7 @@ const publishSchema = z
     workflowInstanceId: z.string().min(1),
     activationId: z.string().min(1),
     resourceId: brandedStringSchema(resourceId),
+    awaitingMergeResourceId: z.string().min(1).optional(),
     body: z.string(),
   })
   .strict();
@@ -109,6 +112,7 @@ const agentSchema = z
     workflowInstanceId: z.string().min(1),
     activationId: z.string().min(1),
     resourceId: brandedStringSchema(resourceId),
+    awaitingMergeResourceId: z.string().min(1).optional(),
     conversationId: z.string().min(1).optional(),
     conversationEntryId: z.string().min(1).optional(),
     report: reportSchema,

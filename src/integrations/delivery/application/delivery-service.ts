@@ -5,16 +5,17 @@ import {
   type CommandContext,
   type EventJournal,
 } from '@atolis-hq/eventing';
+import { hasAwaitedMergeEvidence } from '../../application/merge-publication-eligibility.js';
 import { deliveryStream, IntegrationStreamKind } from '../../contracts/streams.js';
 import type { ExternalDeliveryAdapter } from '../contracts/config.js';
 import {
   createDeliveryEventData,
   type DeliveryEventDataInput,
 } from '../contracts/event-factory.js';
-import { DeliveryEventType, selectDeliveryEvent } from '../contracts/events.js';
+import { DeliveryEventType } from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
-import { nextDeliverable } from './delivery-ordering.js';
+import { hasTerminalDeliveryFact, nextDeliverable } from './delivery-ordering.js';
 
 export interface DeliveryServiceDependencies {
   readonly journal: EventJournal;
@@ -100,9 +101,10 @@ export class DeliveryService {
   ): Promise<DeliveryIntentView | null> {
     const intent = nextDeliverable(await this.dependencies.intents(), options.skip);
     if (intent === undefined) return null;
+    const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
+    if (await this.suppressMergedPublication(intent, occurrence)) return intent;
     const resource = await this.dependencies.resource(intent.resourceId);
     if (resource === null) throw new Error(`Delivery resource not found: ${intent.resourceId}`);
-    const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
     const adapter = this.dependencies.adapter(resource.adapter);
     if (adapter === null) {
       await this.append(
@@ -132,6 +134,7 @@ export class DeliveryService {
       if (reconciled.kind !== DeliveryResultKind.NotFound) return intent;
     }
     await this.append(intent, this.attemptStarted(intent, occurrence));
+    if (await this.suppressMergedPublication(intent, occurrence)) return intent;
     const result = await adapter.deliver(intent, signal);
     switch (result.kind) {
       case DeliveryResultKind.Confirmed:
@@ -150,23 +153,28 @@ export class DeliveryService {
     return intent;
   }
 
+  private async suppressMergedPublication(
+    intent: DeliveryIntentView,
+    occurrence: DeliveryOccurrence,
+  ): Promise<boolean> {
+    if (!(await hasAwaitedMergeEvidence(this.dependencies.journal, intent))) return false;
+    await this.append(
+      intent,
+      this.failed(
+        intent,
+        occurrence,
+        'publication-superseded',
+        'The awaited pull request has already merged',
+      ),
+    );
+    return true;
+  }
+
   private async append(intent: DeliveryIntentView, draft: DeliveryEventDataInput): Promise<void> {
     const stream = deliveryStream(intent.intentEventId);
     const facts = await this.dependencies.journal.readStream(stream);
     // A durable confirmation from merged evidence can win while provider I/O is in flight.
-    if (
-      intent.kind === DeliveryIntentKind.PrMerge &&
-      facts.some((fact) => {
-        const delivery = selectDeliveryEvent(fact);
-        return (
-          delivery?.event.eventType === DeliveryEventType.Confirmed ||
-          delivery?.event.eventType === DeliveryEventType.Failed ||
-          (delivery?.event.eventType === DeliveryEventType.Reconciled &&
-            delivery.event.payload.result === DeliveryResultKind.Confirmed)
-        );
-      })
-    )
-      return;
+    if (intent.kind === DeliveryIntentKind.PrMerge && hasTerminalDeliveryFact(facts)) return;
     const sequence = facts.length;
     await this.dependencies.journal.appendToStream(stream, sequence, [
       createDeliveryEventData(draft),

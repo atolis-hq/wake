@@ -95,6 +95,7 @@ it('does not re-serialise the whole segment index on every append', async () => 
   expect(statSync(join(root, 'events', 'index-manifest.json')).size).toBe(baseBytes);
 });
 
+// Durable writes on sandbox storage can exceed the default five-second timeout.
 it('rewrites the base index only once per tail window', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-manifest-compaction-'));
   const journal = new FileEventJournal(root, new FakeClock());
@@ -113,7 +114,7 @@ it('rewrites the base index only once per tail window', async () => {
     await readFile(join(root, 'events', 'index-manifest.tail.json'), 'utf8'),
   ) as { segments: unknown[] };
   expect(tail.segments.length).toBeLessThanOrEqual(256);
-});
+}, 120_000);
 
 it('serves a cold reader from the base index plus its tail without parsing unrelated segments', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-tail-read-'));
