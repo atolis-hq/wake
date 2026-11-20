@@ -30,6 +30,7 @@ const expectedUsage = [
   '  wake run resolve <run-id> --failed --reason <message>',
   '  wake api                   Run the target API surface',
   '  wake sandbox-entrypoint    Run the sandbox resident entrypoint',
+  '  wake self-update clear-bad <tag>  Remove one release from the bad-tag ledger',
   '  wake self-update           Safely update Wake from npm or a source checkout',
   '  wake maintenance clear --failed',
   '',

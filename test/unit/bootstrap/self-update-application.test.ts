@@ -3,6 +3,8 @@ import {
   CandidateNotYetAvailableError,
   createSelfUpdateApplication,
 } from '../../../src/bootstrap/self-update-application.js';
+import { buildCandidateWithRetry } from '../../../src/bootstrap/self-update-build-failure.js';
+import { DockerProcessError } from '../../../src/surfaces/index.js';
 
 function ledger(lastHealthyTag: string | null, calls: string[] = []) {
   return {
@@ -720,3 +722,46 @@ describe('self-update application: Docker rollout', () => {
     ]);
   });
 });
+
+it.each([false, true])(
+  'preserves update behavior after 404 build retries (recover=%s)',
+  async (recover) => {
+    const calls: string[] = [];
+    let attempts = 0;
+    const application = createSelfUpdateApplication({
+      ledger: ledger('v1', calls),
+      source: source(calls),
+      rollout: {
+        ...rollout(calls),
+        prepare: (tag) =>
+          buildCandidateWithRetry(
+            async () => {
+              attempts++;
+              if (!recover || attempts === 1)
+                throw new DockerProcessError('build failed', {
+                  stdout:
+                    'npm error 404 Not Found - GET https://registry.npmjs.org/@atolis-hq/wake/-/wake-v2.tgz - Not found',
+                  stderr: '',
+                });
+            },
+            '@atolis-hq/wake',
+            tag,
+            async () => {},
+          ),
+      },
+    });
+    if (recover) {
+      await expect(application.update('v2')).resolves.toBe(true);
+      expect(attempts).toBe(2);
+      expect(calls).toContain('deploy:v2');
+      expect(calls).toContain('ledger:v2');
+    } else {
+      await expect(application.update('v2')).rejects.toThrow(
+        'not available from the npm registry yet',
+      );
+      expect(attempts).toBe(4);
+      expect(calls).toContain('checkout:v1');
+    }
+    expect(calls).not.toContain('bad:v2');
+  },
+);

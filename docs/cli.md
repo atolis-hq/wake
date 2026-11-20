@@ -52,6 +52,16 @@ updates compare releases with the last healthy deployment in the update ledger,
 independently of the host CLI version. Already deployed or older versions are
 skipped, including with `--force`; force permits retrying a recorded failed release.
 
+`wake self-update clear-bad <tag>` removes one exact tag from the update ledger
+under the configured `--wake-root`. It returns `{ tag, cleared }`; an absent tag
+returns `cleared: false` without writing. Healthy and pending tags and other bad
+tags are preserved. Run this with the same filesystem permissions as the updater.
+
+Candidate image builds retry candidate-specific npm registry 404 and ETARGET
+availability failures after 1, 2, and 4 seconds. Exhaustion leaves the release
+eligible for a later update attempt; genuine build and health failures still
+mark the release bad.
+
 ## Operational model
 
 `tick`, `start`, `ui`, `smoke`, `audit`, `correlate`, and `validate-state` are
