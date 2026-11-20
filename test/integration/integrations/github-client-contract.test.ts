@@ -35,9 +35,18 @@ vi.mock('@octokit/rest', () => ({
   }),
 }));
 
+import { eventId } from '@atolis-hq/eventing';
 import { MergeMethod } from '../../../src/activities/index.js';
+import { translateGitHubOutbound } from '../../../src/integrations/github/application/outbound-translator.js';
+import {
+  BuiltInAdapterId,
+  DeliveryIntentKind,
+  DeliveryState,
+} from '../../../src/integrations/github/index.js';
 import * as GitHubClient from '../../../src/integrations/github/infrastructure/bounded-fetch.js';
 import { createGitHubClient } from '../../../src/integrations/github/infrastructure/client.js';
+import { BuiltInResourceKind } from '../../../src/resources/index.js';
+import { resId } from '../../support/identities.js';
 
 describe('GitHub client transport contract', () => {
   beforeEach(() => {
@@ -250,11 +259,71 @@ describe('GitHub client transport contract', () => {
     });
   });
 
+  it.each([
+    DeliveryIntentKind.AgentRunPublish,
+    DeliveryIntentKind.ReplyPublish,
+    DeliveryIntentKind.StatusPublish,
+  ])('publishes %s without the configured public UI URL', async (kind) => {
+    octokit.createComment.mockResolvedValue({ data: { id: 123 } });
+    const publicUiUrl = 'https://wake.example.com';
+    const body = 'See ' + publicUiUrl + ' and ' + publicUiUrl;
+    const intent = {
+      intentEventId: eventId('safe-publication'),
+      globalPosition: 1,
+      workflowInstanceId: 'workflow-1',
+      activationId: 'activation-1',
+      resourceId: resId('2'),
+      kind,
+      payload:
+        kind === DeliveryIntentKind.AgentRunPublish
+          ? {
+              kind,
+              report: {
+                runId: 'run-1',
+                startedAt: '2026-08-08T00:00:00.000Z',
+                finishedAt: '2026-08-08T00:01:00.000Z',
+                displayBody: body,
+                outcome: 'DONE' as const,
+                metadata: {},
+              },
+            }
+          : { kind, body },
+      state: DeliveryState.Pending,
+      attempts: 0,
+      occurrenceOrdinal: 0,
+    };
+    await createGitHubClient('token').deliver(
+      translateGitHubOutbound(
+        {
+          resourceId: resId('2'),
+          kind: BuiltInResourceKind.Issue,
+          externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+          capabilities: [],
+        },
+        intent,
+        { publicUiUrl },
+      ),
+    );
+    expect(octokit.createComment).toHaveBeenCalledOnce();
+    const published = octokit.createComment.mock.calls[0]?.[0] as { body: string };
+    expect(published.body).toContain('See  and ');
+    expect(published.body).not.toContain(publicUiUrl);
+    expect(published.body).toContain('<!-- wake:delivery:safe-publication -->');
+    if (kind === DeliveryIntentKind.AgentRunPublish) expect(published.body).toContain('**Wake**');
+  });
+
   it('returns an existing comment marker found beyond the first page without creating another', async () => {
     octokit.paginateIterator.mockImplementation(() =>
       pagesOf(
         { data: [comment(1, 'Earlier comment')] },
-        { data: [comment(42, '<!-- wake:delivery:delivery-comment-8 -->')] },
+        {
+          data: [
+            comment(
+              42,
+              '**[Wake](https://wake.example.com)**\n<!-- wake:delivery:delivery-comment-8 -->',
+            ),
+          ],
+        },
       ),
     );
     const client = createGitHubClient('token');

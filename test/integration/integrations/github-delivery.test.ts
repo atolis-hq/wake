@@ -149,7 +149,7 @@ describe('GitHub outbound delivery', () => {
     });
   });
 
-  it('links an agent-run publication to the configured public UI URL', () => {
+  it('excludes the public UI URL from agent-authored publication text', () => {
     const outbound = translateGitHubOutbound(
       {
         resourceId: resId('2'),
@@ -167,7 +167,7 @@ describe('GitHub outbound delivery', () => {
             runId: 'run-2',
             startedAt: '2026-08-03T12:00:00.000Z',
             finishedAt: '2026-08-03T12:00:01.000Z',
-            displayBody: 'terminal report',
+            displayBody: 'terminal https://wake.example.com report https://wake.example.com',
             outcome: 'DONE',
             metadata: {},
           },
@@ -176,7 +176,9 @@ describe('GitHub outbound delivery', () => {
       { publicUiUrl: 'https://wake.example.com' },
     );
 
-    expect(outbound.body).toContain('**[Wake](https://wake.example.com)**');
+    expect(outbound.body).toContain('**Wake**');
+    expect(outbound.body).toContain('terminal  report ');
+    expect(outbound.body).not.toContain('https://wake.example.com');
   });
   it('reports a stable message for a non-Error provider rejection', async () => {
     const adapter = createGitHubDelivery(async () => {
@@ -307,3 +309,24 @@ it('keeps closed-unmerged and unverified targets failed', async () => {
     kind: DeliveryResultKind.Failed,
   });
 });
+
+it.each([DeliveryIntentKind.ReplyPublish, DeliveryIntentKind.StatusPublish])(
+  'excludes the configured URL from %s bodies and preserves unset content',
+  (kind) => {
+    const resource = {
+      resourceId: resId('2'),
+      kind: BuiltInResourceKind.Issue,
+      externalKey: { adapter: BuiltInAdapterId.GitHub, key: 'o/r#3' },
+      capabilities: [],
+    };
+    const intent = {
+      ...mergeIntent,
+      kind,
+      payload: { kind, body: 'See https://wake.example.com and https://wake.example.com' },
+    };
+    expect(
+      translateGitHubOutbound(resource, intent, { publicUiUrl: 'https://wake.example.com' }).body,
+    ).toBe('See  and ');
+    expect(translateGitHubOutbound(resource, intent).body).toBe(intent.payload.body);
+  },
+);

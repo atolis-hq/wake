@@ -22,7 +22,6 @@ export interface AgentRunComment {
   readonly awaitingMerge?: boolean | undefined;
   readonly mergeStageApproval?: boolean | undefined;
   readonly watchGateVerdict?: { readonly runId: string } | undefined;
-  readonly publicUiUrl?: string | undefined;
 }
 
 /** Names only the commands the current wait accepts. */
@@ -38,7 +37,7 @@ export function formatAgentRunComment(value: AgentRunComment): string {
   const sections = [
     '<!-- wake:agent -->',
     `<!-- wake:delivery:${value.idempotencyKey} -->`,
-    `**${wakeHeading(value.publicUiUrl)}** _(Wake${details ? ` - ${details}` : ''})_`,
+    `**Wake** _(Wake${details ? ` - ${details}` : ''})_`,
     `**Outcome:** ${commentOutcome(value)}`,
     value.displayBody.trim() || fallback(value.outcome),
   ];
@@ -59,10 +58,6 @@ export function formatAgentRunComment(value: AgentRunComment): string {
   const marker = watchGateMarkerSection(value);
   if (marker !== undefined) sections.push(marker);
   return sections.join('\n\n');
-}
-
-function wakeHeading(publicUiUrl: string | undefined): string {
-  return publicUiUrl === undefined ? 'Wake' : `[Wake](${publicUiUrl})`;
 }
 
 function watchGateMarkerSection(value: AgentRunComment): string | undefined {

@@ -200,7 +200,8 @@ defineScenario(
     await world.advance(work.workItemId);
     expect(implementPrompts).toHaveLength(2);
     expect(implementPrompts[1]).toContain(rejectionDisplayBody);
-    expect(implementPrompts[1]).toContain('**[Wake](https://wake.example.test)**');
+    expect(implementPrompts[1]).toContain('**Wake**');
+    expect(implementPrompts[1]).not.toContain('https://wake.example.test');
     await world.triggerWatch('pr-review.requested', 'pr-2');
     await world.advance(work.workItemId);
     await world.acceptSignal(parent.workflowInstanceId, {

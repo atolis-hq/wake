@@ -28,16 +28,15 @@ describe('formatAgentRunComment', () => {
     expect(comment).not.toContain('watchGateVerdict');
   });
 
-  it('links the Wake header to the configured public UI URL', () => {
+  it('renders a plain Wake header', () => {
     const comment = formatAgentRunComment({
       idempotencyKey: 'k3',
       displayBody: 'Done.',
       outcome: 'DONE',
       metadata: {},
-      publicUiUrl: 'https://wake.example.com',
     });
 
-    expect(comment).toContain('**[Wake](https://wake.example.com)**');
+    expect(comment).toContain('**Wake**');
   });
 
   it.each([
