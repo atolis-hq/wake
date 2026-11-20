@@ -10,6 +10,7 @@ import {
   type GitHubOutboundAction as GitHubOutboundActionValue,
 } from '../contracts/vocabulary.js';
 import { formatAgentRunComment } from './agent-run-comment.js';
+import { githubCommentBody } from './comment-body.js';
 
 interface GitHubOutboundCommand {
   readonly owner: string;
@@ -41,14 +42,16 @@ export function translateGitHubOutbound(
     idempotencyKey: intent.intentEventId,
     ...('report' in intent.payload
       ? {
-          body: formatAgentRunComment({
-            idempotencyKey: intent.intentEventId,
-            ...intent.payload.report,
-            publicUiUrl: options.publicUiUrl,
-          }),
+          body: githubCommentBody(
+            formatAgentRunComment({
+              idempotencyKey: intent.intentEventId,
+              ...intent.payload.report,
+            }),
+            options.publicUiUrl,
+          ),
         }
       : 'body' in intent.payload
-        ? { body: intent.payload.body }
+        ? { body: githubCommentBody(intent.payload.body, options.publicUiUrl) }
         : {}),
     ...('revision' in intent.payload ? { sha: intent.payload.revision } : {}),
     ...('method' in intent.payload ? { merge_method: intent.payload.method } : {}),

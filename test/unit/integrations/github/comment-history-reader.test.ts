@@ -307,17 +307,19 @@ it('replaces a confirmed synthetic comment with its polled comment before applyi
   await appendIssueComment(world, {
     issueNumber: 7,
     id: 1,
-    body: 'Acknowledged.\n<!-- wake:delivery:reply-comment -->',
+    body: '**[Wake](https://wake.example.com)** Acknowledged.\n<!-- wake:delivery:reply-comment -->',
     author: 'wake-bot',
     updatedAt: '2026-08-08T00:03:00.000Z',
   });
 
-  const reader = createCommentHistoryReader(world.journal, world.resources);
+  const reader = createCommentHistoryReader(world.journal, world.resources, {
+    publicUiUrl: 'https://wake.example.com',
+  });
   await expect(reader.forWorkItem(work.workItemId)).resolves.toEqual([
     {
       author: 'wake-bot',
       occurredAt: '2026-08-08T00:03:00.000Z',
-      body: 'Acknowledged.\n<!-- wake:delivery:reply-comment -->',
+      body: '**[Wake](https://wake.example.com)** Acknowledged.\n<!-- wake:delivery:reply-comment -->',
     },
   ]);
   await expect(
@@ -544,3 +546,81 @@ async function appendIssueComment(
   const events = await world.journal.readStream(stream);
   await world.journal.appendToStream(stream, events.length, [event]);
 }
+
+it.each([
+  DeliveryIntentEventType.StatusPublishRequested,
+  DeliveryIntentEventType.ReplyPublishRequested,
+])('sanitizes synthetic %s bodies like outbound publication', async (eventType) => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  await appendConfirmedDelivery(world, resource.resourceId, {
+    intentEventId: 'sanitized-comment',
+    eventType,
+    occurredAt: '2026-08-08T00:01:00.000Z',
+    body: 'Report https://wake.example.com and https://wake.example.com',
+  });
+  const history = await createCommentHistoryReader(world.journal, world.resources, {
+    publicUiUrl: 'https://wake.example.com',
+  }).forWorkItem(work.workItemId);
+  expect(history).toHaveLength(1);
+  expect(history[0]?.body).toBe('Report  and \n<!-- wake:delivery:sanitized-comment -->');
+});
+
+it('reconstructs sanitized agent-run reports consistently with publication', async () => {
+  const { world, work, resource } = await correlatedGitHubWork();
+  const report = {
+    runId: 'run-1',
+    startedAt: '2026-08-08T00:00:00.000Z',
+    finishedAt: '2026-08-08T00:01:00.000Z',
+    displayBody: 'See https://wake.example.com for details',
+    outcome: 'DONE' as const,
+    metadata: {},
+    model: 'https://wake.example.com',
+  };
+  const intent = await appendEvent(
+    world,
+    createEventData({
+      eventId: 'agent-comment',
+      eventType: DeliveryIntentEventType.AgentRunPublishRequested,
+      occurredAt: '2026-08-08T00:01:00.000Z',
+      correlationId: 'agent-comment',
+      causationId: 'agent-comment',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
+        workflowInstanceId: 'workflow-1',
+        activationId: 'activation-1',
+        resourceId: resource.resourceId,
+        report,
+      },
+    }),
+    resourceStream(resource.resourceId),
+  );
+  await appendEvent(
+    world,
+    createEventData({
+      eventId: 'agent-comment-confirmed',
+      eventType: DeliveryEventType.Confirmed,
+      occurredAt: '2026-08-08T00:02:00.000Z',
+      correlationId: 'agent-comment',
+      causationId: 'agent-comment',
+      actor: { kind: 'system', id: 'test' },
+      source: { kind: 'internal', id: 'test' },
+      payload: {
+        intentEventId: intent.event.eventId,
+        intentGlobalPosition: intent.globalPosition,
+        workflowInstanceId: 'workflow-1',
+        activationId: 'activation-1',
+        occurrenceOrdinal: 1,
+        externalId: '123',
+      },
+    }),
+    deliveryStream(intent.event.eventId),
+  );
+  const history = await createCommentHistoryReader(world.journal, world.resources, {
+    publicUiUrl: 'https://wake.example.com',
+  }).forWorkItem(work.workItemId);
+  expect(history).toHaveLength(1);
+  expect(history[0]?.body).toContain('**Wake**');
+  expect(history[0]?.body).toContain('See  for details');
+  expect(history[0]?.body).not.toContain('https://wake.example.com');
+});

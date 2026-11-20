@@ -798,7 +798,7 @@ fields are for deterministic testing, not normal operation.
 | `surfaces.api.port` | positive integer; default `4317` | API bind port. |
 | `surfaces.api.conversationMessages.enabled` | boolean; default `false` | Enables the control-plane message composer in a Work Item's Conversation tab, which records a control-plane entry and applies the workflow-resume bridge. Leave disabled until operator identity is available to Wake; conversation timeline reads remain available. |
 | `surfaces.web.enabled` | boolean; default `false` | Enables the web surface. It requires `surfaces.api.enabled: true`. |
-| `surfaces.web.publicUrl` | HTTPS URL; optional | Stable operator-managed address for the web UI. When set, GitHub agent-run comments link their **Wake** header to this URL. See [Public UI access](public-ui-access.md). |
+| `surfaces.web.publicUrl` | HTTPS URL; optional | Stable operator-managed address for the web UI. Used for webhook provisioning and the public login link from `wake ui token`. GitHub comment headings are plain **Wake**, and newly published comment bodies exclude this exact configured URL. See [Public UI access](public-ui-access.md). |
 | `transcripts.enabled` | boolean; default `false` | Enables filesystem-only raw agent prompt/response capture. |
 | `transcripts.retentionMs` | non-negative integer; default `86400000` | Transcript retention duration in milliseconds. Raw transcripts are not journal events. |
 

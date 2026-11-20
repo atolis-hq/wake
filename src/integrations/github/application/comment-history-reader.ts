@@ -15,6 +15,7 @@ import {
 } from '../contracts/events.js';
 import { GitHubAdapter, UnknownGitHubIdentity } from '../contracts/vocabulary.js';
 import { formatAgentRunComment } from './agent-run-comment.js';
+import { githubCommentBody } from './comment-body.js';
 import { appendDeliveryMarker, deliveryMarker } from './delivery-marker.js';
 
 export interface CommentHistoryEntry {
@@ -309,10 +310,9 @@ function deliveredCommentBody(
       ? formatAgentRunComment({
           idempotencyKey: intent.event.eventId,
           ...intent.event.payload.report,
-          publicUiUrl,
         })
       : intent.event.payload.body;
-  return appendDeliveryMarker(body, intent.event.eventId);
+  return appendDeliveryMarker(githubCommentBody(body, publicUiUrl), intent.event.eventId);
 }
 
 function parseAdapterId(value: string) {

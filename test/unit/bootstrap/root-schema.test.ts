@@ -94,7 +94,7 @@ describe('web surface configuration', () => {
     ).toBe(true);
   });
 
-  it('accepts an optional HTTPS public URL for GitHub message links', () => {
+  it('accepts an optional HTTPS public UI URL', () => {
     expect(
       parseRootConfig({
         ...baseConfig,

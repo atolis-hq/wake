@@ -44,7 +44,7 @@ export interface WorkConclusion {
 }
 
 export interface ProviderServices {
-  /** Stable operator-configured UI address included in provider notifications when present. */
+  /** Stable operator-configured UI address available to provider adapters. */
   readonly publicUiUrl?: string | undefined;
   /** Durable provider-owned operational state, rooted at .wake/. */
   readonly providerStateRoot: string;

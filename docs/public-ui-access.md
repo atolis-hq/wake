@@ -35,9 +35,10 @@ curl http://127.0.0.1:4317
 ```
 
 `publicUrl` must be the stable HTTPS address assigned by the ingress. Wake
-uses it only when rendering GitHub agent-run messages: the **Wake** heading
-links to that URL. If it is absent, messages retain an unlinked **Wake**
-heading.
+uses it for webhook provisioning and the public login link from `wake ui token`.
+GitHub comments use a plain **Wake** heading. Newly published GitHub comment
+bodies exclude the exact configured URL, including in agent-authored text and
+ordinary replies. Historical comments remain unchanged.
 
 ## ngrok
 
@@ -70,4 +71,4 @@ installation, domains, and traffic-policy authentication.
 Point the provider at `http://127.0.0.1:4317`, preserve HTTPS and access
 controls at the edge, and set the resulting stable external URL as
 `surfaces.web.publicUrl`. This keeps ingress credentials and lifecycle outside
-Wake while preserving a consistent URL in GitHub messages.
+Wake while preserving a consistent public UI address.
