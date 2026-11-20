@@ -1,7 +1,9 @@
 import { correlationId } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
 import { execFile } from 'node:child_process';
@@ -9,7 +11,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { ArtifactContextService } from '../../../src/artifacts/index.js';
 import {
   createCompositionRoot,
@@ -17,7 +19,6 @@ import {
   parseRootConfig,
 } from '../../../src/bootstrap/index.js';
 import {
-  isActiveRunStatus,
   RunStatus,
   type AgentRunnerResult,
   type RunnerRequest,
@@ -32,6 +33,7 @@ import {
 import { BuiltInResourceKind, ResourceCorrelationRole } from '../../../src/resources/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { createRunSettlement } from '../../support/run-settlement.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
 const exec = promisify(execFile);
@@ -75,6 +77,9 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     const runner = new ScriptedDelegationRunner();
     let mergedConsumerCreated = false;
     const journal = new InMemoryEventJournal({ now: () => new Date() });
+    // Recovery state and processor exclusion survive fixture restarts with the journal.
+    const processorState = new InMemoryProcessorStateStore();
+    const subscriptionRunSerialiser = createInMemoryProcessorRunSerialiser();
     const baseOf = (id: string) =>
       Number(id[1]) > 1 ? id[0] + String(Number(id[1]) - 1) : undefined;
     let children: readonly Child[] = [];
@@ -139,6 +144,8 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
           },
         }),
         journal,
+        processorState,
+        subscriptionRunSerialiser,
         checkpoints: new InMemoryCheckpointStore(),
         projections: new InMemoryProjectionStore(),
         decorateRunner: () => runner,
@@ -174,12 +181,7 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       },
       context('start'),
     );
-    const awaitRuns = async () =>
-      vi.waitFor(async () =>
-        expect((await root.execution.list()).every((run) => !isActiveRunStatus(run.status))).toBe(
-          true,
-        ),
-      );
+    const awaitRuns = createRunSettlement(journal);
     runner.scripts.push(async (request) => {
       const assignments = ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'].map((id) => ({
         assignmentId: id,
@@ -332,7 +334,20 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     };
 
     runner.scriptFor = (request) =>
-      request.workspacePath === undefined ? continueParent : undefined;
+      request.workspacePath === undefined
+        ? continueParent
+        : async (request) => {
+            const run = (await root.execution.list()).find(
+              (entry) => entry.runId === request.runId,
+            )!;
+            if (run.stage === 'implement') {
+              const child = children.find(
+                (entry) => entry.workflowInstanceId === run.workflowInstanceId,
+              )!;
+              return act(child)(request);
+            }
+            return { transport: RunStatus.Succeeded, runner: 'fake', output: '{"status":"DONE"}' };
+          };
 
     const act = (child: Child) => async (request: RunnerRequest) => {
       const path = request.workspacePath!;
@@ -374,21 +389,14 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
         }),
       };
     };
-    const dispatch = async (child: Child, implement: boolean) => {
-      runner.scripts.push(
-        implement
-          ? act(child)
-          : async () => ({
-              transport: RunStatus.Succeeded,
-              runner: 'fake',
-              output: '{"status":"DONE"}',
-            }),
-      );
+    const dispatch = async (child: Child) => {
       await root.advanceOnce({ workItemId: child.workItemId, maxProgress: 1 });
       await awaitRuns();
-      const lastRun = (await root.execution.list())
+      const latest = (await root.execution.list())
         .filter((run) => run.workflowInstanceId === child.workflowInstanceId)
         .at(-1);
+      expect(latest).toBeDefined();
+      const lastRun = (await awaitRuns({ runId: latest!.runId }))[0]!;
       expect(lastRun?.status, JSON.stringify(lastRun)).toBe('succeeded');
       const view = (await root.orchestration.get(child.workflowInstanceId))!;
       if (!view.acceptedOutcomes.includes(lastRun!.activationId))
@@ -426,15 +434,15 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
       );
     };
     // b1 remains independent even while all a descendants are queued.
-    await dispatch(childOf('b1'), true);
-    await dispatch(childOf('a1'), true);
+    await dispatch(childOf('b1'));
+    await dispatch(childOf('a1'));
     expect((await root.orchestration.get(childOf('a1').workflowInstanceId))!.status).toBe('active');
     expect(await root.orchestration.get(childOf('a2').workflowInstanceId)).not.toBeNull();
-    await dispatch(childOf('a2'), true);
+    await dispatch(childOf('a2'));
     root = await open();
-    await dispatch(childOf('b2'), true);
-    await dispatch(childOf('a3'), true);
-    await dispatch(childOf('b3'), true);
+    await dispatch(childOf('b2'));
+    await dispatch(childOf('a3'));
+    await dispatch(childOf('b3'));
     const tree = (await root.orchestration.deliveryTree(parentWork))[0]!;
     const receipt = tree.children.find((child) => child.assignmentId === 'b3')!.consumedInputs!;
     expect(receipt.consumed.map((entry) => entry.reference)).toContainEqual({
@@ -537,25 +545,23 @@ it('runs six upfront tasks in two unmerged Git stacks with exact cross-repo cont
     await root.pullRequests.observe(original, context('base-restored'));
     for (const child of children) {
       if ((await root.orchestration.get(child.workflowInstanceId))!.status !== 'completed')
-        await dispatch(child, false);
+        await dispatch(child);
     }
     await root.orchestration.reconcileChildCompletions(context('join'));
     expect(
       await root.orchestration.joinedDelegationResults(parent.workflowInstanceId, 'six'),
     ).toHaveLength(6);
-    // The join can start the parent continuation, which merges PRs before setting the flag.
+    // Dispatch the continuation before checking its completed merge observations.
+    await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
     await awaitRuns();
+    expect(mergedConsumerCreated).toBe(true);
     for (const child of children) {
       const resource = await root.resources.findByExternalKey({
         adapter: 'fake',
         key: `org/${child.assignmentId[0]}#${child.assignmentId[1]}`,
       });
-      expect((await root.pullRequests.get(resource!.resourceId))!.state).toBe(
-        mergedConsumerCreated ? 'merged' : 'open',
-      );
+      expect((await root.pullRequests.get(resource!.resourceId))!.state).toBe('merged');
     }
-    await root.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
-    await awaitRuns();
     const continuedRun = (await root.execution.list())
       .filter((run) => run.workflowInstanceId === parent.workflowInstanceId)
       .at(-1)!;

@@ -1,7 +1,9 @@
 import { correlationId } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
 import { execFile } from 'node:child_process';
@@ -9,7 +11,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it } from 'vitest';
 import { ActivityEventType, PullRequestState } from '../../../src/activities/index.js';
 import {
   createCompositionRoot,
@@ -17,13 +19,7 @@ import {
   type CompositionRoot,
 } from '../../../src/bootstrap/index.js';
 import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
-import {
-  isActiveRunStatus,
-  runId,
-  RunRepository,
-  RunStatus,
-  type RunnerRequest,
-} from '../../../src/execution/index.js';
+import { isActiveRunStatus, RunStatus, type RunnerRequest } from '../../../src/execution/index.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../../../src/integrations/index.js';
 import type { DelegationReservation } from '../../../src/orchestration/contracts/delegation.js';
 import {
@@ -41,6 +37,7 @@ import {
 } from '../../../src/resources/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { createRunSettlement } from '../../support/run-settlement.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
 const exec = promisify(execFile);
@@ -122,6 +119,9 @@ it.each([
     });
     const runner = new ScriptedDelegationRunner();
     const journal = new InMemoryEventJournal({ now: () => new Date() });
+    // Recovery state and processor exclusion survive fixture restarts with the journal.
+    const processorState = new InMemoryProcessorStateStore();
+    const subscriptionRunSerialiser = createInMemoryProcessorRunSerialiser();
     let children: readonly Child[] = [];
     const pulls = [
       { key: 'org/a#1', head: headA1, base: 'integration-a' },
@@ -236,6 +236,8 @@ it.each([
           },
         }),
         journal,
+        processorState,
+        subscriptionRunSerialiser,
         checkpoints: new InMemoryCheckpointStore(),
         projections: new InMemoryProjectionStore(),
         decorateRunner: () => runner,
@@ -349,16 +351,7 @@ it.each([
       );
       return done;
     });
-    const settle = async (workflowId?: string) =>
-      vi.waitFor(async () =>
-        expect(
-          (await current.execution.list()).some(
-            (run) =>
-              isActiveRunStatus(run.status) &&
-              (workflowId === undefined || run.workflowInstanceId === workflowId),
-          ),
-        ).toBe(false),
-      );
+    const settle = createRunSettlement(journal);
     const startDelegation = async () => {
       for (let pass = 0; pass < 4 && reservation === undefined; pass++) {
         await current.advanceOnce({ workItemId: parentWork, maxProgress: 1 });
@@ -372,24 +365,18 @@ it.each([
     children = reservation.children;
     current = await createRoot();
 
-    const runRepository = new RunRepository(journal);
     const dispatch = async (child: Child) => {
       await current.processorRuntime.catchUp('register-output');
       await current.advanceOnce({ workItemId: child.workItemId, maxProgress: 1 });
-      await settle(child.workflowInstanceId);
+      await settle({ workflowId: child.workflowInstanceId });
       await current.processorRuntime.catchUp('register-output');
       const latest = (await current.execution.list())
         .filter((entry) => entry.workflowInstanceId === child.workflowInstanceId)
         .at(-1);
       if (latest === undefined) return;
-      const run = await vi.waitFor(
-        async () => {
-          const view = (await runRepository.load(runId(latest.runId))).view!;
-          expect(isActiveRunStatus(view.status)).toBe(false);
-          return view;
-        },
-        { timeout: 10_000 },
-      );
+      const run = (await settle({ runId: latest.runId }))[0]!;
+      expect(run).toBeDefined();
+      expect(isActiveRunStatus(run.status)).toBe(false);
       await current.processorRuntime.catchUp('settled-output');
       expect(run.status, JSON.stringify(run.failure)).toBe('succeeded');
       expect(run.outcome).toBeDefined();

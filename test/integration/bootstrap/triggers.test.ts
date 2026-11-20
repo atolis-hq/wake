@@ -7,7 +7,9 @@ import {
 import {
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
+  createInMemoryProcessorRunSerialiser,
 } from '@atolis-hq/eventing/memory';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -614,9 +616,13 @@ describe('durable trigger coordination', () => {
     expect(await invocations(f.journal)).toHaveLength(1);
   });
 
-  // Two catch-up passes fsync their checkpoints; allow contention in the full suite.
   it('bounds cron catch-up and persists consumed slots across restart', async () => {
-    const f = await fixture({ cron: '* * * * *' });
+    // Share recovery state across root reconstruction, just as the fixture shares its journal.
+    const persistence = {
+      processorState: new InMemoryProcessorStateStore(),
+      subscriptionRunSerialiser: createInMemoryProcessorRunSerialiser(),
+    };
+    const f = await fixture({ cron: '* * * * *' }, false, undefined, persistence);
     await f.root.runnerPipeline.run({ maxProgress: 1 });
     vi.spyOn(f.clock, 'now').mockReturnValue(new Date('2026-08-11T00:01:30.000Z'));
     await f.root.triggers.pause('oversight', 'skip catch-up', {
@@ -633,7 +639,7 @@ describe('durable trigger coordination', () => {
     ).toEqual({
       slot: '2026-08-10T01:05:00.000Z',
     });
-    const recovered = await restart(f);
+    const recovered = await restart(f, persistence);
     await recovered.runnerPipeline.run({ maxProgress: 1 });
     view = await recovered.triggers.get();
     expect(view.requests).toHaveLength(1);

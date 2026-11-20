@@ -1,7 +1,9 @@
 import { correlationId } from '@atolis-hq/eventing';
 import {
+  createInMemoryProcessorRunSerialiser,
   InMemoryCheckpointStore,
   InMemoryEventJournal,
+  InMemoryProcessorStateStore,
   InMemoryProjectionStore,
 } from '@atolis-hq/eventing/memory';
 import { execFile } from 'node:child_process';
@@ -9,7 +11,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import {
   ActivityEventType,
   ParentActionKind,
@@ -23,7 +25,6 @@ import {
 } from '../../../src/bootstrap/index.js';
 import { presentDelivery } from '../../../src/bootstrap/surface-api-delivery.js';
 import {
-  isActiveRunStatus,
   RunStatus,
   type AgentRunnerResult,
   type RunnerRequest,
@@ -45,6 +46,7 @@ import {
 import { BuiltInResourceKind, ResourceCorrelationRole } from '../../../src/resources/index.js';
 import { workItemId } from '../../../src/work/index.js';
 import { resId, workId } from '../../support/identities.js';
+import { createRunSettlement } from '../../support/run-settlement.js';
 import { ScriptedDelegationRunner } from '../../support/scripted-delegation-runner.js';
 
 const exec = promisify(execFile);
@@ -130,6 +132,9 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       );
     const runner = new ScriptedDelegationRunner();
     const journal = new InMemoryEventJournal({ now: () => new Date() });
+    // Recovery state and processor exclusion survive fixture restarts with the journal.
+    const processorState = new InMemoryProcessorStateStore();
+    const subscriptionRunSerialiser = createInMemoryProcessorRunSerialiser();
     const checkpoints = new InMemoryCheckpointStore();
     const projections = new InMemoryProjectionStore();
     let children: readonly Child[] = [];
@@ -297,6 +302,8 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
           },
         }),
         journal,
+        processorState,
+        subscriptionRunSerialiser,
         checkpoints,
         projections,
         decorateRunner: () => runner,
@@ -333,14 +340,7 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
       },
       context('start'),
     );
-    const settle = async () =>
-      vi.waitFor(
-        async () =>
-          expect((await root.execution.list()).every((run) => !isActiveRunStatus(run.status))).toBe(
-            true,
-          ),
-        { timeout: 30_000 },
-      );
+    const settle = createRunSettlement(journal);
     const callerFor = async (request: RunnerRequest) => ({
       workflowInstanceId: parent.workflowInstanceId,
       activationId: (await root.orchestration.get(parent.workflowInstanceId))!.pendingActivation!
@@ -747,9 +747,11 @@ it('integrates two squash-merged stacks through scoped parent merges, agent main
 
     const awaitRuns = settle;
     const acceptLatest = async (child: Child) => {
-      const last = (await root.execution.list())
+      const latest = (await root.execution.list())
         .filter((run) => run.workflowInstanceId === child.workflowInstanceId)
         .at(-1);
+      expect(latest).toBeDefined();
+      const last = (await settle({ runId: latest!.runId }))[0]!;
       expect(last?.status, JSON.stringify(last)).toBe('succeeded');
       const view = (await root.orchestration.get(child.workflowInstanceId))!;
       if (!view.acceptedOutcomes.includes(last!.activationId))
