@@ -169,7 +169,6 @@ describe('incremental event feed', () => {
     ]);
   });
   it('keeps the first-load cursor for Next page after polling and bounds the list', async () => {
-    const user = userEvent.setup();
     const requests: string[] = [];
     let poll = false;
     const client = new WakeApiClient(async (input) => {
@@ -204,9 +203,11 @@ describe('incremental event feed', () => {
     poll = true;
     await advancePolling();
     expect(await screen.findByText('event-300')).toBeTruthy();
-    expect(screen.getAllByRole('listitem')).toHaveLength(200);
+    // Role queries and user-event pointer simulation walk the whole 200-row tree and grow
+    // with CI load, so count rows and click directly; neither is what this test verifies.
+    expect(document.querySelectorAll('ol > li')).toHaveLength(200);
     expect(screen.queryByText('event-5')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    fireEvent.click(screen.getByText('Next page'));
     expect(await screen.findByText('event-1')).toBeTruthy();
     expect(requests.at(-1)).toBe('/api/v1/events?cursor=c_first');
   });
