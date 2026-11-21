@@ -32,6 +32,8 @@ import { reportUnroutedOutcomes, type WorkflowCompileDiagnostic } from './compil
 import { assertDeliveryQa } from './delivery-workflow-policy.js';
 import { compileResourceTransitions } from './resource-transition-compiler.js';
 import {
+  assertConcludesWorkRoute,
+  assertWaitRoute,
   compileTarget,
   isReservedRouteTarget,
   isReservedTerminalTarget,
@@ -163,6 +165,7 @@ function compileStage(
           );
         if (!isReservedRouteTarget(route.then) && !(route.then in allStages))
           throw new Error(`Unknown transition target: ${route.then}`);
+        assertConcludesWorkRoute(route, `${compiledWorkflowName}:${rawStageName}:${outcomeKind}`);
         if (route.await !== undefined && route.watchGates !== undefined)
           throw new Error(
             `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} cannot configure both await and watchGates`,
@@ -171,17 +174,12 @@ function compileStage(
           throw new Error(
             `Route ${compiledWorkflowName}:${rawStageName}:${outcomeKind} resourceTransitions are only valid on done`,
           );
-        if (route.then === 'wait' && outcomeKind !== ActivityOutcomeKind.Done)
-          throw new Error('then: wait is only valid on done');
-        if (route.then === 'wait' && route.resourceTransitions === undefined)
-          throw new Error('then: wait requires resourceTransitions');
-        if (route.then === 'wait' && (route.await !== undefined || route.watchGates !== undefined))
-          throw new Error('then: wait cannot configure await or watchGates');
+        assertWaitRoute(route, outcomeKind);
         const followOns = route.activities?.map((activity) => ({
           use: activityName(activity.use),
           with: activities.validateInput(activityName(activity.use), activity.with),
         }));
-        const target = compileTarget(route.then, outcomeKind);
+        const target = compileTarget(route.then, outcomeKind, route.concludesWork === true);
         const effectiveAwait = defaultApprovalAwait(stage, outcomeKind, route);
         const compiled: CompiledOutcomeRoute = Object.freeze({
           target,
@@ -221,6 +219,7 @@ function compileStage(
                     inheritedThen: route.then,
                     outcomeKind,
                     requiresExplicitTarget: route.then === 'wait',
+                    concludesWork: route.concludesWork === true,
                   },
                   allStages,
                   isReservedRouteTarget,

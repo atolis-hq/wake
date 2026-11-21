@@ -129,7 +129,14 @@ export class AdvanceWorkflow {
 
   async block(id: WorkflowInstanceId, reason: string, context: CommandContext) {
     const loaded = await this.repository.load(id);
-    if (loaded.view === null || loaded.view.status === WorkflowStatus.Blocked) return loaded.view;
+    // Terminal instances stay terminal: closing work must not flip completed to blocked.
+    if (
+      loaded.view === null ||
+      loaded.view.status === WorkflowStatus.Blocked ||
+      loaded.view.status === WorkflowStatus.Completed ||
+      loaded.view.status === WorkflowStatus.Superseded
+    )
+      return loaded.view;
     const event = workflowEventData({
       eventId: `${context.commandId}:${id}:${OrchestrationEventType.InstanceBlocked}`,
       eventType: OrchestrationEventType.InstanceBlocked,

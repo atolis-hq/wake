@@ -81,6 +81,8 @@ export interface WorkflowInstanceView {
     readonly attentionKey: string;
     readonly activationId: ActivationId;
   };
+  /** Set when completion came from a route declaring that done concludes the WorkItem. */
+  readonly concludesWork?: true;
   readonly delegationWait?: { readonly cohortId: string; readonly activationId: ActivationId };
   readonly status: WorkflowStatus;
   readonly blockReason?: string;

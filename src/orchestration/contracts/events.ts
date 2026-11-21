@@ -235,7 +235,9 @@ export interface OrchestrationEventPayloads {
     readonly retryKey: string;
     readonly count: number;
   };
-  readonly [OrchestrationEventType.InstanceCompleted]: Readonly<Record<never, never>>;
+  readonly [OrchestrationEventType.InstanceCompleted]: {
+    readonly concludesWork?: true;
+  };
   readonly [OrchestrationEventType.InstanceBlocked]: {
     readonly reason: string;
     readonly deliveryGate?: DeliveryCompletionBlock['deliveryGate'];

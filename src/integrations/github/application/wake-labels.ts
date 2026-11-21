@@ -61,16 +61,6 @@ export function createGitHubWakeLabelReconciler(input: {
   readonly requests?: GitHubRequestCoordinator;
 }): GitHubWakeLabelReconciler {
   const syncedDesiredLabels = new Map<string, string>();
-  const openWorkItemIds = async (
-    workItemIds: ReadonlySet<WorkItemId>,
-  ): Promise<ReadonlySet<WorkItemId>> => {
-    const open = new Set<WorkItemId>();
-    for (const workItemId of workItemIds) {
-      const item = await input.work.get(workItemId);
-      if (item?.state === WorkStatus.Open) open.add(workItemId);
-    }
-    return open;
-  };
   const onError = input.onError ?? defaultOnError;
 
   return {
@@ -81,7 +71,7 @@ export function createGitHubWakeLabelReconciler(input: {
       // never need checking again. Without this, listAll() keeps returning
       // every WorkItem ever created and this loop keeps making a live
       // getLabels call per item, every cycle, forever.
-      const open = await openWorkItemIds(new Set(workflows.map((workflow) => workflow.workItemId)));
+      const open = await syncableWorkItemIds(input.work, workflows);
       // A watch's spawned child shares its parent's work item (and so its GitHub
       // resource) but is not the canonical state for that issue — only the
       // top-level (non-child) workflow instance drives its stage/status labels.
@@ -135,6 +125,29 @@ export function createGitHubWakeLabelReconciler(input: {
       }
     },
   };
+}
+
+// A work item Wake concluded itself (concludesWork) is closed right after its instance
+// completes, before the final labels were synced, so it still needs one last sync.
+// The synced-fingerprint map makes that a single GitHub call per process, and other
+// closed items stay excluded so history never costs a call per pass.
+async function syncableWorkItemIds(
+  work: Pick<WorkService, 'get'>,
+  workflows: readonly WorkflowInstanceView[],
+): Promise<ReadonlySet<WorkItemId>> {
+  const concluded = new Set(
+    workflows
+      .filter((w) => w.status === WorkflowStatus.Completed && w.concludesWork === true)
+      .map((w) => w.workItemId),
+  );
+  const syncable = new Set<WorkItemId>();
+  for (const workItemId of new Set(workflows.map((workflow) => workflow.workItemId))) {
+    const item = await work.get(workItemId);
+    if (item?.state === WorkStatus.Open) syncable.add(workItemId);
+    else if (item?.state === WorkStatus.Closed && concluded.has(workItemId))
+      syncable.add(workItemId);
+  }
+  return syncable;
 }
 
 function request<Value>(

@@ -177,7 +177,10 @@ export function resumeToTarget(
       stateDraft(
         state,
         input,
-        { eventType: OrchestrationEventType.InstanceCompleted, payload: {} },
+        {
+          eventType: OrchestrationEventType.InstanceCompleted,
+          payload: target.concludesWork === true ? { concludesWork: true } : {},
+        },
         events.length + 1,
       ),
     );

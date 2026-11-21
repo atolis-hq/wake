@@ -109,7 +109,7 @@ workflow.
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | string | `<workflow>:<stage>:<outcomeKind>`, used as the repeat-count key. |
-| `target` | TransitionTarget | The resolved Stage, `complete`, or implicit-wait target. |
+| `target` | TransitionTarget | The resolved Stage, `complete`, or implicit-wait target. A `complete` target carries `concludesWork: true` only when the route declares it (valid only with `then: done`; the compiler rejects it elsewhere). `resourceTransitions` entries carry it when the entry declares it (valid only with `then: done`) or inherits `then: done` from a declaring route; a watch gate's `onRejectTarget` never does. |
 | `reentryTarget` | TransitionTarget | The owning Stage materialised at compile time; approval rejection resumes through this explicit target. |
 | `repeat` | optional `{ max }` | Present when this route closes a cycle; required whenever it does. |
 | `retry` | optional `{ max }` | Present when a non-`done` outcome at this route may retry the Stage. |

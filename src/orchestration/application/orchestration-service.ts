@@ -852,7 +852,10 @@ export class OrchestrationService {
       stateDraft(
         loaded.view,
         { occurredAt: context.occurredAt, causationId: context.commandId },
-        { eventType: OrchestrationEventType.InstanceCompleted, payload: {} },
+        {
+          eventType: OrchestrationEventType.InstanceCompleted,
+          payload: loaded.view.concludesWork === true ? { concludesWork: true } : {},
+        },
         1,
       ),
     ]);

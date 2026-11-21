@@ -23,6 +23,7 @@ import {
   createControlPlaneService,
   createDurableRunnerIneligibility,
   createRunnerControlService,
+  createWorkCancellationPolicy,
   recoverOperatorRun,
   type ActivationScheduler,
   type ActivationSchedulerSubscriber,
@@ -592,6 +593,7 @@ export async function createCompositionRoot(
       isDispatchPaused: isRuntimePaused,
       workspaceRecovery: workspaces,
       work,
+      conclusion: createWorkCancellationPolicy(work, orchestration, execution, clock, ids),
       ...(transcriptStore === undefined
         ? {}
         : createTranscriptRetention(transcriptStore, projections, config, clock)),
