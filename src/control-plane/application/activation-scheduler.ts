@@ -29,6 +29,7 @@ import type {
   OrchestrationPort,
 } from './activation-scheduler-ports.js';
 import { runDispatchLoop } from './advance-once-dispatch.js';
+import { concludeCompletedWork } from './conclude-completed-work.js';
 import {
   findUnresolvedSucceededTerminal,
   findUnresolvedTerminal,
@@ -118,6 +119,7 @@ export function createActivationScheduler(
     if (await isDispatchPaused()) return { kind: 'paused' };
     await orchestration.reconcileChildCompletions(context('child-completion-reconciliation'));
     if (await isDispatchPaused()) return { kind: 'paused' };
+    await concludeCompletedWork(orchestration, dependencies);
     return { kind: 'ready' };
   };
   const dispatch = async (options: AdvanceOptions): Promise<AdvanceResult> => {

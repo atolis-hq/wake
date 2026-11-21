@@ -50,6 +50,7 @@ export interface OrchestrationPort {
   get?(workflowInstanceId: string): Promise<WorkflowInstanceView | null>;
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
+  getPrimaryWorkflowInstanceId?(workItemId: WorkItemId): Promise<string | undefined>;
   deliveryRunLimit?(id: WorkItemId): Promise<number | undefined>;
   validateActivationDispatch?(
     workflowInstanceId: string,
@@ -141,6 +142,10 @@ export interface ActivationSchedulerDependencies {
       readonly deleted?: boolean;
     } | null>;
     deliverySnapshot(): Promise<DeliverySnapshot>;
+  };
+  /** Closes WorkItems whose primary workflow completed via a `concludesWork` route. */
+  readonly conclusion?: {
+    closeWork(workItemId: WorkItemId, reason: string): Promise<unknown>;
   };
   readonly runnerIneligibility?: () => Promise<ReadonlySet<string>>;
   readonly isDispatchPaused?: () => Promise<boolean>;

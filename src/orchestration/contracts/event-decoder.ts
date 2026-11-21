@@ -160,7 +160,12 @@ const transitionTargetSchema = z.discriminatedUnion('kind', [
   z
     .object({ kind: z.literal(TransitionTargetKind.Stage), stage: brandedStringSchema(stageName) })
     .strict(),
-  z.object({ kind: z.literal(TransitionTargetKind.Complete) }).strict(),
+  z
+    .object({
+      kind: z.literal(TransitionTargetKind.Complete),
+      concludesWork: z.literal(true).optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal(TransitionTargetKind.AwaitSignal),
@@ -554,7 +559,7 @@ const eventSchemas = {
   ),
   [OrchestrationEventType.InstanceCompleted]: workflowEnvelope(
     OrchestrationEventType.InstanceCompleted,
-    emptySchema,
+    z.object({ concludesWork: z.literal(true).optional() }).strict(),
   ),
   [OrchestrationEventType.InstanceBlocked]: workflowEnvelope(
     OrchestrationEventType.InstanceBlocked,

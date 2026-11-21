@@ -48,6 +48,7 @@ export type MutableWorkflowInstance = {
   causalCycleId?: string;
   requestId?: string;
   delegationFence?: WorkflowInstanceView['delegationFence'];
+  concludesWork?: true;
   delegationWait?: WorkflowInstanceView['delegationWait'];
   delegationAttention?: WorkflowInstanceView['delegationAttention'];
   status: WorkflowInstanceView['status'];
@@ -219,6 +220,8 @@ function applyLifecycleFact(state: MutableWorkflowInstance, event: LifecycleFact
       state.retryCounts[event.payload.retryKey] = event.payload.count;
       return;
     case OrchestrationEventType.InstanceCompleted:
+      if (event.payload.concludesWork === true) state.concludesWork = true;
+      else delete state.concludesWork;
       delete state.delegationWait;
       delete state.delegationAttention;
       state.status = orchestrationStatusTransitions[OrchestrationEventType.InstanceCompleted]!;
@@ -446,6 +449,7 @@ export function immutableWorkflowInstanceView(
     ...(state.causalCycleId === undefined ? {} : { causalCycleId: state.causalCycleId }),
     ...(state.requestId === undefined ? {} : { requestId: state.requestId }),
     ...(state.delegationFence === undefined ? {} : { delegationFence: state.delegationFence }),
+    ...(state.concludesWork === true ? { concludesWork: true as const } : {}),
     ...(state.delegationWait === undefined ? {} : { delegationWait: state.delegationWait }),
     ...(state.delegationAttention === undefined
       ? {}

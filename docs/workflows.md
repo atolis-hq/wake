@@ -169,6 +169,17 @@ Every `on.<outcome>` route requires `then`: another stage, `done`,
 | `await` | `{ signal, from }`; waits for a named signal from declared authorities before `then`. |
 | `watchGates` | One named watch, optionally with `onReject: { then }`; waits for a child-workflow verdict. |
 | `resourceTransitions` | On `done` only, primary-PR facts that may advance the route instead of its watch gate. |
+| `concludesWork` | `true`, valid only with `then: done`; when the primary instance completes through this route, Wake also closes the WorkItem. Omitted leaves the WorkItem untouched. |
+
+`concludesWork: true` makes the final `done` conclude the WorkItem. The control
+plane closes it with the standard close policy after the instance is
+`completed`; the instance stays `completed`, and the close is a no-op if the
+item is already closed. Only the WorkItem's primary instance concludes work: the
+declaration on a child or delegated instance is ignored. Closing also cancels
+the active run of, and blocks, any other running instance of the item. Stages
+after `issue.complete` still run; only the final `done` route concludes. The
+compiler rejects `concludesWork` on any route whose `then` is not `done`.
+Completed and superseded instances are never blocked by a later close.
 
 Wake first records every non-waiting Activity outcome. If the stage does not
 declare a route for it, the instance blocks with `unconfigured outcome <kind>`;

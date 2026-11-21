@@ -138,6 +138,8 @@ export const outcomeRouteConfigSchema = z
   .object({
     activities: z.array(followOnActivityConfigSchema).readonly().optional(),
     then: identifier,
+    /** Only valid with `then: done`: completing the primary instance also closes the WorkItem. */
+    concludesWork: z.boolean().optional(),
     repeat: bound.optional(),
     retry: z
       .object({
@@ -277,7 +279,7 @@ export type WorkflowDefinitionConfig = z.infer<typeof workflowDefinitionConfigSc
 
 export type TransitionTarget =
   | { readonly kind: typeof TransitionTargetKind.Stage; readonly stage: StageName }
-  | { readonly kind: typeof TransitionTargetKind.Complete }
+  | { readonly kind: typeof TransitionTargetKind.Complete; readonly concludesWork?: true }
   | { readonly kind: typeof TransitionTargetKind.AwaitSignal; readonly signal: SignalName }
   | { readonly kind: typeof TransitionTargetKind.ResourceTransitionWait };
 
@@ -308,7 +310,7 @@ export interface CompiledFollowOnActivity {
 
 export interface CompiledOutcomeRoute extends Omit<
   OutcomeRouteConfig,
-  'activities' | 'then' | 'await' | 'watchGates' | 'resourceTransitions'
+  'activities' | 'then' | 'concludesWork' | 'await' | 'watchGates' | 'resourceTransitions'
 > {
   readonly id: string;
   readonly target: TransitionTarget;
