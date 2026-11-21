@@ -22,7 +22,7 @@ import { requestManualTrigger } from './trigger-manual-request.js';
 import { advancePendingTriggers } from './trigger-pending.js';
 import { maximumTriggerSources, type TriggerView } from './trigger-projection.js';
 import { recoverTriggerInvocation } from './trigger-recovery.js';
-import { hasActiveInvocation, isOwnScopeSource } from './trigger-rules.js';
+import { hasActiveInvocation, isTriggerOriginatedSource } from './trigger-rules.js';
 import type { TriggerServiceDependencies } from './trigger-service-ports.js';
 import { TriggerSourceCursor } from './trigger-source-cursor.js';
 import { TriggerStateReader } from './trigger-state-reader.js';
@@ -221,7 +221,7 @@ export class TriggerService {
       return false;
     }
     if (
-      await isOwnScopeSource(view, { triggerId: config.id, coordinationKey }, event, {
+      await isTriggerOriginatedSource(view, { triggerId: config.id, coordinationKey }, event, {
         keyOf: (id) => {
           const other = this.configured(id);
           return other === undefined ? undefined : this.key(other);
@@ -230,7 +230,7 @@ export class TriggerService {
         invocationScope: this.dependencies.invocationScope,
       })
     ) {
-      await this.diagnostics.record(config.id, source, TriggerSkipReason.OwnScope);
+      await this.diagnostics.record(config.id, source, TriggerSkipReason.TriggerOriginated);
       await this.sourceCursor.consume(config.id, source, event);
       return false;
     }

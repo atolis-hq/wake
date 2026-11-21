@@ -106,7 +106,7 @@ export const TriggerRequestDispositionValue: typeof TriggerRequestDisposition = 
 } as const;
 
 export const TriggerSkipReasonValue: typeof TriggerSkipReason = {
-  OwnScope: 'own-scope',
+  TriggerOriginated: 'trigger-originated',
   Paused: 'paused',
   Removed: 'removed',
   DispatchPaused: 'dispatch-paused',

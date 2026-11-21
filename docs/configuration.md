@@ -454,11 +454,15 @@ sharing a Wake home serialize trigger starts and operator pause/resume/manual-ru
 recovery uses the claimed WorkItem and workflow IDs to complete an interrupted
 start. Cron catch-up consumes at most 64 occurrences per trigger per pass and
 coalesces them into one request. There is no cooldown or minimum interval.
+A completion of any trigger-originated instance (including manual runs and
+their delegated children) is never a source for any trigger, so triggers
+subscribed to `orchestration.instance-completed` cannot ping-pong; deliberate
+trigger chains through that event are not supported.
 Skipped background occurrences advance durable source cursors without adding request facts.
 Control Plane retains the latest actual skip diagnostic per trigger in processor
 state, bounded to 256 recent trigger identities. Each diagnostic includes the
 trigger ID, canonical source identity, observation time, and typed reason
-(own-scope suppression, trigger pause, removed definition, dispatch pause,
+(trigger-originated suppression, trigger pause, removed definition, dispatch pause,
 capacity unavailable, or the pending-source limit). This is operational
 explainability, not an occurrence audit log or a rebuildable projection. It does
 not change admission or scheduling and does not emit events that could trigger

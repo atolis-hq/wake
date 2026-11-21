@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { triggerSourceSchema } from './events.js';
 
-import { TriggerSkipReason } from './trigger-skip-reason.js';
+import { triggerSkipReasonSchema } from './trigger-skip-reason.js';
 
 export { TriggerSkipReason } from './trigger-skip-reason.js';
 
@@ -10,7 +10,7 @@ export const triggerSkipDiagnosticSchema = z
     triggerId: z.string().min(1),
     source: triggerSourceSchema,
     occurredAt: z.string().datetime({ offset: true }),
-    reason: z.enum(TriggerSkipReason),
+    reason: triggerSkipReasonSchema,
   })
   .strict();
 

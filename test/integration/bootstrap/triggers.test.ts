@@ -40,6 +40,7 @@ import {
   triggerCriticalSectionConsumer,
   triggerInvocationProjection,
   triggerProjectionName,
+  triggerSkipDiagnosticSchema,
   type TriggerConfig,
   type TriggerView,
 } from '../../../src/control-plane/index.js';
@@ -994,6 +995,45 @@ describe('durable trigger coordination', () => {
     await f.root.runnerPipeline.run({ maxProgress: 1 });
     expect(await invocations(f.journal)).toHaveLength(1);
     expect((await f.root.triggers.get()).coalesced).toEqual({});
+  });
+
+  it('does not let one trigger invocation completion start another trigger', async () => {
+    const f = await fixture(
+      { events: [OrchestrationEventType.InstanceCompleted] },
+      false,
+      undefined,
+      {},
+      ['alpha', 'beta'],
+    );
+    const item = workItemId('work-00000000000000000000000003');
+    await f.root.work.create({ workItemId: item, objective: 'independent' }, f.context);
+    await f.root.orchestration.start(
+      {
+        workflowInstanceId: workflowInstanceId('workflow-independent'),
+        workItemId: item,
+        workflowName: workflowName('inspect'),
+        orchestrationGroupId: orchestrationGroupId(`primary:${item}`),
+      },
+      f.context,
+    );
+    await accept(f, 'workflow-independent');
+    await f.consume();
+    const started = await invocations(f.journal);
+    expect(started.map((entry) => entry.triggerId).sort()).toEqual(['alpha', 'beta']);
+    for (const entry of started) await accept(f, entry.workflowInstanceId);
+    await f.consume();
+    expect(await invocations(f.journal)).toHaveLength(2);
+  });
+
+  it('reads the legacy own-scope skip reason as trigger-originated', () => {
+    expect(
+      triggerSkipDiagnosticSchema.parse({
+        triggerId: 'alpha',
+        source: { kind: TriggerSourceKind.Event, eventId: 'e', eventType: 'x' },
+        occurredAt: '2026-08-10T00:01:30.000Z',
+        reason: 'own-scope',
+      }).reason,
+    ).toBe(TriggerSkipReason.TriggerOriginated);
   });
 
   it('retains the blocked slot without pausing for restart ambiguity across repeated recovery', async () => {

@@ -19,8 +19,8 @@ export function hasActiveInvocation(view: TriggerView, coordinationKey: string):
   );
 }
 
-/** Events caused by this scope's own invocations must not re-trigger it. */
-export async function isOwnScopeSource(
+/** Control events of this scope, and completions of any trigger invocation, are never sources. */
+export async function isTriggerOriginatedSource(
   view: TriggerView,
   scope: { readonly triggerId: string; readonly coordinationKey: string },
   event: EventEnvelope | undefined,
@@ -48,9 +48,7 @@ export async function isOwnScopeSource(
       return true;
   }
   const sourceItem = await resolve.sourceWorkItem(event);
-  return (
-    sourceItem !== null && (await resolve.invocationScope(sourceItem)) === scope.coordinationKey
-  );
+  return sourceItem !== null && (await resolve.invocationScope(sourceItem)) !== null;
 }
 
 /** Blocking or a failed outcome with no retry wait left ends automatic workflow progress. */
