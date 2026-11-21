@@ -148,7 +148,7 @@ export class TestWorld {
     this.execution,
     this.resources,
     this.clock,
-    { ids: this.ids },
+    this.schedulerDependencies(),
   );
 
   private readonly watchReactor = createWatchReactor(
@@ -314,8 +314,12 @@ export class TestWorld {
       dispatchExecution,
       this.resources,
       this.clock,
-      { ids: this.ids },
+      this.schedulerDependencies(),
     );
+  }
+
+  private schedulerDependencies() {
+    return { ids: this.ids, work: this.work, conclusion: this.cancellation };
   }
 
   resolveRun(runId: string, resolution: Parameters<RecoveryService['resolve']>[1]) {

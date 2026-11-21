@@ -219,6 +219,7 @@ function compileStage(
                     inheritedThen: route.then,
                     outcomeKind,
                     requiresExplicitTarget: route.then === 'wait',
+                    concludesWork: route.concludesWork === true,
                   },
                   allStages,
                   isReservedRouteTarget,

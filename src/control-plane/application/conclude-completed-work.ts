@@ -23,10 +23,11 @@ export async function concludeCompletedWork(
     return;
   for (const workflow of await orchestration.listAll()) {
     if (workflow.status !== WorkflowStatus.Completed || workflow.concludesWork !== true) continue;
-    const primary = await orchestration.getPrimaryWorkflowInstanceId(workflow.workItemId);
-    if (primary !== workflow.workflowInstanceId) continue;
+    // Cheapest filter first so long-closed items add no per-pass lookups.
     const item = await work.get(workflow.workItemId);
     if (item?.state !== WorkStatus.Open || item.deleted === true) continue;
+    const primary = await orchestration.getPrimaryWorkflowInstanceId(workflow.workItemId);
+    if (primary !== workflow.workflowInstanceId) continue;
     await conclusion.closeWork(workflow.workItemId, 'workflow completed');
   }
 }

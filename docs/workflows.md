@@ -179,6 +179,13 @@ declaration on a child or delegated instance is ignored. Closing also cancels
 the active run of, and blocks, any other running instance of the item. Stages
 after `issue.complete` still run; only the final `done` route concludes. The
 compiler rejects `concludesWork` on any route whose `then` is not `done`.
+
+A `resourceTransitions` entry that ends in `done` concludes the work in two
+ways: it inherits the route's `concludesWork` when it omits `then`, or it
+declares `concludesWork: true` itself (valid only with `then: done`). The common
+shape is a `then: wait` route whose merged-PR entry declares `then: done` and
+`concludesWork: true`. A `watchGates` `onReject: { then: done }` never concludes
+the work.
 Completed and superseded instances are never blocked by a later close.
 
 Wake first records every non-waiting Activity outcome. If the stage does not

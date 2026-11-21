@@ -64,11 +64,13 @@ then folds.
 - `InstanceCompleted` MUST set status to `completed` and clear both the
   pending Activation and any wait expectation; once `completed`, the
   instance is terminal for this fold (no further status change is defined
-  for a completed instance).
+  for a completed instance). A `concludesWork: true` payload MUST be recorded
+  as the view's `concludesWork`; an absent payload field (events written before
+  the declaration existed) clears it.
 - `InstanceBlocked` MUST set status to `blocked`. A caller MAY explicitly
   block an instance directly (independent of any policy decision); doing so
-  when the instance is already `blocked` MUST be a no-op that appends no
-  new fact. It intentionally retains any current wait expectation so an
+  when the instance is already `blocked`, `completed`, or `superseded` MUST be
+  a no-op that appends no new fact. It intentionally retains any current wait expectation so an
   explicitly human-authorized signal can resolve that wait through the signal
   policy; no other blocked signal is accepted.
 - `InstanceBlocked` MUST record its reason as `blockReason` for operator

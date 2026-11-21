@@ -87,6 +87,44 @@ describe('route concludesWork', () => {
     ).toThrow(/w:first:done concludesWork is only valid with then: done/);
   });
 
+  describe('resource transitions', () => {
+    const compile = (route: Record<string, unknown>) =>
+      compileWorkflow('w', { stages: { only: stage({ done: route }) } } as never, registry())
+        .stages[stageName('only')]?.on.done?.resourceTransitions;
+    const merged = { events: ['pr.state-changed'], where: { state: 'merged' } };
+
+    it('carries an entry-level declaration on a then: done entry', () => {
+      const entries = compile({
+        then: 'wait',
+        resourceTransitions: [{ ...merged, then: 'done', concludesWork: true }],
+      });
+      expect(entries?.[0]?.target).toEqual({ kind: 'complete', concludesWork: true });
+    });
+
+    it('inherits the route declaration only for entries that inherit then: done', () => {
+      const entries = compile({
+        then: 'done',
+        concludesWork: true,
+        resourceTransitions: [merged],
+      });
+      expect(entries?.[0]?.target).toEqual({ kind: 'complete', concludesWork: true });
+    });
+
+    it('does not conclude when no declaration is made', () => {
+      const entries = compile({ then: 'wait', resourceTransitions: [{ ...merged, then: 'done' }] });
+      expect(entries?.[0]?.target).toEqual({ kind: 'complete' });
+    });
+
+    it('rejects an entry declaration that does not end in done', () => {
+      expect(() =>
+        compile({
+          then: 'wait',
+          resourceTransitions: [{ ...merged, then: 'only', concludesWork: true }],
+        }),
+      ).toThrow(/concludesWork is only valid with then: done/);
+    });
+  });
+
   async function completed(concludesWork: boolean) {
     const journal = new InMemoryEventJournal(new FakeClock());
     const work = createWorkService(journal);

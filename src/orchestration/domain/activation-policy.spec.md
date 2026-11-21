@@ -95,7 +95,9 @@ child start requires complete provenance to already be validated.
   beyond `repeat.max`, the instance is blocked (`InstanceBlocked`) instead of
   transitioning, and `RepeatCounted` is not appended; below the bound,
   `RepeatCounted` is appended before `StageEntered`/`ActivityRequested`.
-- A `complete` target MUST emit `InstanceCompleted` and nothing else.
+- A `complete` target MUST emit `InstanceCompleted` and nothing else. When the
+  target carries `concludesWork`, the event payload MUST carry
+  `concludesWork: true`; otherwise the payload is empty.
 - An implicit-wait (`await-signal`) target MUST emit `SignalWaitStarted` for
   the configured signal, with no `from` restriction of its own (this is
   distinct from a route's explicit `await`, which does carry authority).

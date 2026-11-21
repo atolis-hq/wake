@@ -669,6 +669,17 @@ describe('Orchestration event contract', () => {
     });
   });
 
+  it('decodes InstanceCompleted with and without the concludesWork declaration', () => {
+    const decode = (payload: object) =>
+      decodeOrchestrationEvent(
+        eventEnvelope(OrchestrationEventType.InstanceCompleted, payload, workflow),
+      );
+    // Events written before the declaration existed carry an empty payload.
+    expect(decode({}).event.payload).toEqual({});
+    expect(decode({ concludesWork: true }).event.payload).toEqual({ concludesWork: true });
+    expect(() => decode({ concludesWork: false })).toThrow();
+  });
+
   it('round-trips a SignalAccepted event carrying outcome', () => {
     const decoded = decodeOrchestrationEvent(
       eventEnvelope(

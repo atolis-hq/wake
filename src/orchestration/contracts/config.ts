@@ -69,6 +69,7 @@ const resourceTransitionConfigSchema = z.union([
     .object({
       events: z.tuple([z.literal(ActivityEventType.PrReviewAccepted)]),
       then: identifier.optional(),
+      concludesWork: z.boolean().optional(),
     })
     .strict(),
   z
@@ -76,6 +77,7 @@ const resourceTransitionConfigSchema = z.union([
       events: z.tuple([z.literal(ActivityEventType.PrStateChanged)]),
       where: z.object({ state: z.literal(PullRequestState.Merged) }).strict(),
       then: identifier.optional(),
+      concludesWork: z.boolean().optional(),
     })
     .strict(),
   z
