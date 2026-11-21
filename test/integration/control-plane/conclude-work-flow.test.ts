@@ -2,6 +2,7 @@ import { correlationId } from '@atolis-hq/eventing';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { activityName } from '../../../src/activities/index.js';
+import { createGitHubWakeLabelReconciler } from '../../../src/integrations/github/index.js';
 import {
   orchestrationGroupId,
   workflowInstanceId,
@@ -229,6 +230,42 @@ describe('workflow routes that conclude work (real services)', () => {
       expect(await world.events(CLOSED)).toHaveLength(1);
     },
   );
+
+  it('still syncs the completed status label once the concluded work item is closed', async () => {
+    const { world, workItemId } = await setup({
+      only: stage({ done: { then: 'done', concludesWork: true } }),
+    });
+    const resourceId = resId('gh-issue');
+    await world.discoverResource({
+      resourceId,
+      kind: resourceKind('issue'),
+      externalKey: { adapter: 'github', key: 'org/repo#7' },
+      capabilities: [],
+    });
+    await world.correlateResource(resourceId, workItemId, 'primary');
+    await world.startWorkflow({ workItemId, workflowName: 'main' });
+    await world.advanceUntilSettled(workItemId);
+    for (let pass = 0; pass < 3; pass += 1) await world.advance(workItemId);
+    expect(await world.viewWork(workItemId)).toMatchObject({ state: WorkStatus.Closed });
+    let labels: readonly string[] = ['bug', 'wake:status.working', 'wake:stage.only'];
+    let sets = 0;
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: world.orchestration,
+      resources: world.resources,
+      work: world.work,
+      getLabels: async () => labels,
+      setLabels: async (_owner, _repo, _number, next) => {
+        sets += 1;
+        labels = next;
+      },
+    });
+    await reconciler.runOnce();
+    await reconciler.runOnce();
+    expect(labels).toContain('wake:status.completed');
+    expect(labels).not.toContain('wake:status.working');
+    expect(labels).toContain('bug');
+    expect(sets).toBe(1);
+  });
 
   it('concludes the work when a merged-PR resource transition completes the instance', async () => {
     const { world, workItemId } = await setup({

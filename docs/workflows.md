@@ -186,7 +186,12 @@ declares `concludesWork: true` itself (valid only with `then: done`). The common
 shape is a `then: wait` route whose merged-PR entry declares `then: done` and
 `concludesWork: true`. A `watchGates` `onReject: { then: done }` never concludes
 the work.
-Completed and superseded instances are never blocked by a later close.
+Completed and superseded instances are never blocked by a later close. Because
+this is an ordinary work close, it also blocks running instances on delegated
+descendant work items and stops new child or watch instances from starting on
+the closed item, so a watch meant to run after a concluding `done` will not run.
+The GitHub label reconciler still performs one final sync for a concluded item,
+so the issue ends with `wake:status.completed`.
 
 Wake first records every non-waiting Activity outcome. If the stage does not
 declare a route for it, the instance blocks with `unconfigured outcome <kind>`;
