@@ -13,7 +13,7 @@ import {
   type TriggerControlStreamRef,
   type TriggerInvocationStreamRef,
 } from './streams.js';
-import { TriggerSkipReason } from './trigger-skip-reason.js';
+import { triggerSkipReasonSchema } from './trigger-skip-reason.js';
 
 export const ControlEventType = {
   TriggerRequestRecorded: 'control-plane.trigger-request-recorded',
@@ -68,7 +68,7 @@ export const manualTriggerOutcomeSchema = z.discriminatedUnion('disposition', [
   z
     .object({
       disposition: z.literal(ManualTriggerDisposition.Skipped),
-      reason: z.enum(TriggerSkipReason),
+      reason: triggerSkipReasonSchema,
     })
     .strict(),
 ]);
