@@ -27,7 +27,7 @@ it('folds each event exactly once and in order, however many callers ask at once
       ...events.map((event) => event.event.eventId),
     ],
   );
-  const view = foldedJournalView<readonly string[]>(journal, { initial: [], extend });
+  const view = foldedJournalView<readonly string[]>(journal, { name: 'test', initial: [], extend });
 
   const first = await Promise.all(Array.from({ length: 20 }, () => view.get()));
   expect(first.every((value) => value.join() === 'event-1,event-2')).toBe(true);
@@ -44,6 +44,7 @@ it('returns the held value without reading when nothing new landed', async () =>
   const journal = new InMemoryEventJournal(new FakeClock());
   await journal.appendToStream(stream, 0, [draft('event-1')]);
   const view = foldedJournalView(journal, {
+    name: 'test',
     initial: 0,
     extend: (value, events) => value + events.length,
   });
@@ -63,6 +64,7 @@ it('reads only the events after the position it already holds, however long the 
     Array.from({ length: 200 }, (_, index) => draft(`event-${index}`)),
   );
   const view = foldedJournalView(journal, {
+    name: 'test',
     initial: 0,
     extend: (value, events) => value + events.length,
   });
@@ -85,6 +87,7 @@ it('refreshes after another journal instance appends without a local notificatio
     latestGlobalPosition: async () => eventCount,
   } as never;
   const view = foldedJournalView(journal, {
+    name: 'test',
     initial: 0,
     extend: (value, events) => value + events.length,
   });
@@ -105,7 +108,7 @@ it('catches up in bounded pages so a long journal is never decoded into memory a
   );
   const readAll = vi.spyOn(journal, 'readAll');
   const extend = vi.fn((value: number, events: readonly unknown[]) => value + events.length);
-  const view = foldedJournalView(journal, { initial: 0, extend });
+  const view = foldedJournalView(journal, { name: 'test', initial: 0, extend });
 
   expect(await view.get()).toBe(total);
 

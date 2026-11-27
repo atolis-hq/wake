@@ -12,6 +12,7 @@ describe('Wake paths', () => {
       eventsRoot: join('C:/wake-home', '.wake', 'events'),
       projectionsRoot: join('C:/wake-home', '.wake', 'projections'),
       checkpointsRoot: join('C:/wake-home', '.wake', 'checkpoints'),
+      viewSnapshotsRoot: join('C:/wake-home', '.wake', 'view-snapshots'),
       locksRoot: join('C:/wake-home', '.wake', 'locks'),
       transcriptsRoot: join('C:/wake-home', '.wake', 'transcripts'),
       artifactsRoot: join('C:/wake-home', '.wake', 'artifacts'),

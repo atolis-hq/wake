@@ -3,6 +3,7 @@ import {
   EventProcessorFailure,
   JOURNAL_CHANGE_FALLBACK_MS,
   correlationId,
+  warmJournalViews,
 } from '@atolis-hq/eventing';
 import { withFileLock } from '@atolis-hq/eventing-filesystem';
 import type { FastifyInstance } from 'fastify';
@@ -211,6 +212,7 @@ export function createSurfaceCliApplications(
   return {
     tick: {
       async run(budget) {
+        warmViews(root);
         return withFinalProjectionCatchUp(
           async () => {
             await root.projectionSubscriptions.catchUpOnce();
@@ -225,6 +227,7 @@ export function createSurfaceCliApplications(
     },
     start: {
       async run(signal, budget) {
+        warmViews(root);
         const listening = root.config.surfaces.web.enabled || root.config.surfaces.api.enabled;
         if (root.config.surfaces.web.enabled) await startHttp({}, true);
         else if (root.config.surfaces.api.enabled) await startHttp({}, false);
@@ -1462,4 +1465,16 @@ function createAuditApplication(
       }));
     },
   };
+}
+
+// Begins every journal view's catch-up together so staggered first uses share
+// one replay (or one snapshot restore). It is an optimisation only: it must
+// never fail or alter a tick, so synchronous and asynchronous errors are
+// dropped here and resurface on each view's own read.
+function warmViews(root: CompositionRoot): void {
+  try {
+    void warmJournalViews(root.journal).catch(() => undefined);
+  } catch {
+    // Nothing to warm.
+  }
 }

@@ -4,6 +4,7 @@ import {
   type EventEnvelope,
   type EventJournal,
   type JournalView,
+  type ViewSnapshotCodec,
 } from '@atolis-hq/eventing';
 import {
   ResourceEventType,
@@ -29,8 +30,18 @@ export class ResourceRepository {
   private readonly attention: JournalView<ResourceAttention>;
 
   constructor(private readonly journal: EventJournal) {
-    this.resourceIds = foldedJournalView(journal, { initial: [], extend: extendResourceIds });
-    this.attention = foldedJournalView(journal, { initial: noAttention, extend: extendAttention });
+    this.resourceIds = foldedJournalView(journal, {
+      name: 'resource-ids',
+      initial: [],
+      extend: extendResourceIds,
+      persist: { schemaVersion: 1, codec: resourceIdsCodec },
+    });
+    this.attention = foldedJournalView(journal, {
+      name: 'resource-attention',
+      initial: noAttention,
+      extend: extendAttention,
+      persist: { schemaVersion: 1, codec: attentionCodec },
+    });
   }
 
   async load(resourceId: ResourceId): Promise<LoadedResource> {
@@ -75,6 +86,25 @@ interface ResourceAttention {
 }
 
 const noAttention: ResourceAttention = { retry: new Set(), outcome: new Set() };
+
+function idList(raw: unknown): ResourceId[] {
+  if (!Array.isArray(raw) || raw.some((id) => typeof id !== 'string'))
+    throw new Error('Resource snapshot must be a list of ids');
+  return raw as ResourceId[];
+}
+
+const resourceIdsCodec: ViewSnapshotCodec<readonly ResourceId[]> = {
+  encode: (ids) => ids,
+  decode: idList,
+};
+
+const attentionCodec: ViewSnapshotCodec<ResourceAttention> = {
+  encode: (attention) => ({ retry: [...attention.retry], outcome: [...attention.outcome] }),
+  decode(raw) {
+    const { retry, outcome } = raw as { retry: unknown; outcome: unknown };
+    return { retry: new Set(idList(retry)), outcome: new Set(idList(outcome)) };
+  },
+};
 
 function extendAttention(
   known: ResourceAttention,
