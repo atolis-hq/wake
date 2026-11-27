@@ -30,6 +30,7 @@ import {
   retryPendingWorkCorrelations,
 } from './resource-correlation-retry.js';
 import { appendResourceEvent, resourceDraft } from './resource-event-support.js';
+import { ResourceIndex, type ResourceCorrelationSnapshot } from './resource-index.js';
 import type { ResourceLookup } from './resource-lookup.js';
 import { ResourceRepository } from './resource-repository.js';
 
@@ -40,6 +41,8 @@ export interface ResourceService {
   correlations(resourceId: ResourceId): Promise<readonly ResourceCorrelationView[]>;
   primaryCorrelation(resourceId: ResourceId): Promise<ResourceCorrelationView | null>;
   correlationsForWork(workItemId: WorkItemId): Promise<readonly ResourceCorrelationView[]>;
+  /** In-memory external keys and correlations, extended incrementally; for per-pass batch readers. */
+  correlationSnapshot(): Promise<ResourceCorrelationSnapshot>;
   correlate(
     resourceId: ResourceId,
     workItemId: WorkItemId,
@@ -93,6 +96,7 @@ export function createResourceService(
   lookup: ResourceLookup,
 ): ResourceService {
   const repository = new ResourceRepository(journal);
+  const index = new ResourceIndex(journal);
   return {
     discover: (command, context) => discoverResource(repository, command, context),
     async get(resourceId) {
@@ -107,6 +111,7 @@ export function createResourceService(
     },
     primaryCorrelation: (resourceId) => lookup.primaryCorrelation(resourceId),
     correlationsForWork: (workItemId) => lookup.correlationsForWork(workItemId),
+    correlationSnapshot: () => index.snapshot(),
     correlate: (resourceId, workItemId, role, context, provenance) =>
       correlateResource(repository, resourceId, workItemId, role, context, provenance),
     async retract(resourceId, workItemId, context) {

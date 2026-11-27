@@ -27,6 +27,7 @@ import {
 import { WorkStatus, createWorkService } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { resId, workId } from '../../support/identities.js';
+import { fakeResources, fakeWork } from '../../support/reconciler-fakes.js';
 
 it('validates GitHub polling configuration and isolates a failed repository', async () => {
   const config = gitHubConfigSchema.parse({
@@ -382,24 +383,20 @@ it('reconciles target workflow markers to correlated GitHub resources without re
         ] as never;
       },
     },
-    resources: {
-      async correlations() {
+    resources: fakeResources({
+      correlations() {
         return [
           { workItemId: workId('label-work'), role: ResourceCorrelationRole.Primary },
         ] as never;
       },
-      async correlationsForWork() {
+      correlationsForWork() {
         return [{ resourceId: resId('label-resource') }] as never;
       },
-      async get() {
+      get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#42' } } as never;
       },
-    },
-    work: {
-      async get() {
-        return { state: WorkStatus.Open } as never;
-      },
-    },
+    }),
+    work: fakeWork(() => ({ state: WorkStatus.Open }) as never),
     async getLabels() {
       return ['bug', 'wake:status.working', 'wake:stage.implement'];
     },
@@ -441,24 +438,20 @@ it('replaces a failed status label with working for an active primary workflow',
         ] as never;
       },
     },
-    resources: {
-      async correlations() {
+    resources: fakeResources({
+      correlations() {
         return [
           { workItemId: workId('active-work'), role: ResourceCorrelationRole.Primary },
         ] as never;
       },
-      async correlationsForWork() {
+      correlationsForWork() {
         return [{ resourceId: resId('active-resource') }] as never;
       },
-      async get() {
+      get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#45' } } as never;
       },
-    },
-    work: {
-      async get() {
-        return { state: WorkStatus.Open } as never;
-      },
-    },
+    }),
+    work: fakeWork(() => ({ state: WorkStatus.Open }) as never),
     async getLabels() {
       return ['bug', 'wake:status.failed', 'wake:stage.refine'];
     },
@@ -508,24 +501,20 @@ it('reflects only the primary workflow in labels, adding a watching marker while
         ] as never;
       },
     },
-    resources: {
-      async correlations() {
+    resources: fakeResources({
+      correlations() {
         return [
           { workItemId: workId('watch-work'), role: ResourceCorrelationRole.Primary },
         ] as never;
       },
-      async correlationsForWork() {
+      correlationsForWork() {
         return [{ resourceId: resId('watch-resource') }] as never;
       },
-      async get() {
+      get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
       },
-    },
-    work: {
-      async get() {
-        return { state: WorkStatus.Open } as never;
-      },
-    },
+    }),
+    work: fakeWork(() => ({ state: WorkStatus.Open }) as never),
     async getLabels() {
       return [];
     },
@@ -581,24 +570,20 @@ it('drops the watching marker once every watch child has completed', async () =>
         ] as never;
       },
     },
-    resources: {
-      async correlations() {
+    resources: fakeResources({
+      correlations() {
         return [
           { workItemId: workId('watch-work'), role: ResourceCorrelationRole.Primary },
         ] as never;
       },
-      async correlationsForWork() {
+      correlationsForWork() {
         return [{ resourceId: resId('watch-resource') }] as never;
       },
-      async get() {
+      get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#43' } } as never;
       },
-    },
-    work: {
-      async get() {
-        return { state: WorkStatus.Open } as never;
-      },
-    },
+    }),
+    work: fakeWork(() => ({ state: WorkStatus.Open }) as never),
     async getLabels() {
       return ['wake:watching'];
     },
@@ -635,24 +620,20 @@ it('skips a closed WorkItem entirely, never calling getLabels for it', async () 
         ] as never;
       },
     },
-    resources: {
-      async correlations() {
+    resources: fakeResources({
+      correlations() {
         return [
           { workItemId: workId('closed-work'), role: ResourceCorrelationRole.Primary },
         ] as never;
       },
-      async correlationsForWork() {
+      correlationsForWork() {
         return [{ resourceId: resId('closed-resource') }] as never;
       },
-      async get() {
+      get() {
         return { externalKey: { adapter: 'github', key: 'org/repo#44' } } as never;
       },
-    },
-    work: {
-      async get() {
-        return { state: WorkStatus.Closed } as never;
-      },
-    },
+    }),
+    work: fakeWork(() => ({ state: WorkStatus.Closed }) as never),
     async getLabels() {
       getLabelsCalls += 1;
       return [];
