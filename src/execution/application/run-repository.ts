@@ -3,6 +3,7 @@ import {
   foldedJournalView,
   type EventJournal,
   type JournalView,
+  type ViewSnapshotCodec,
 } from '@atolis-hq/eventing';
 import type { ActivationId } from '../../activities/index.js';
 import {
@@ -13,7 +14,7 @@ import {
 import { runId, type RunId } from '../contracts/identifiers.js';
 import { isRunStream, runStream } from '../contracts/streams.js';
 import type { RunView } from '../contracts/views.js';
-import { foldRun } from '../domain/run.js';
+import { foldRun, foldRunEvent } from '../domain/run.js';
 
 type JournalEvent = Awaited<ReturnType<EventJournal['readAll']>>[number];
 
@@ -23,7 +24,11 @@ export class RunRepository {
   private readonly runs: JournalView<RunsState>;
 
   constructor(private readonly journal: EventJournal) {
-    this.runs = foldedJournalView(journal, { initial: emptyRuns, extend: extendRuns });
+    this.runs = foldedJournalView(journal, {
+      initial: emptyRuns,
+      extend: extendRuns,
+      persist: { name: 'run-views', schemaVersion: 1, codec: runsCodec },
+    });
   }
 
   async load(runId: RunId): Promise<{
@@ -54,35 +59,36 @@ export class RunRepository {
 }
 
 interface RunsState {
-  readonly events: ReadonlyMap<RunId, readonly RunExecutionEvent[]>;
-  readonly byRun: ReadonlyMap<RunId, RunView | null>;
+  readonly byRun: ReadonlyMap<RunId, RunView>;
   readonly views: readonly RunView[];
 }
 
-const emptyRuns: RunsState = { events: new Map(), byRun: new Map(), views: [] };
+const emptyRuns: RunsState = { byRun: new Map(), views: [] };
 
-// Decodes and folds only the runs the new events touch; untouched runs keep
-// their decoded history and view, so a journal move costs the delta.
+// Bump `schemaVersion` when RunView or its fold changes shape: a snapshot is
+// trusted for its version, not re-validated field by field.
+const runsCodec: ViewSnapshotCodec<RunsState> = {
+  encode: (state) => [...state.byRun.values()],
+  decode(raw) {
+    if (!Array.isArray(raw)) throw new Error('Run snapshot must be an array');
+    const byRun = new Map<RunId, RunView>();
+    for (const view of raw as RunView[]) {
+      if (typeof view?.runId !== 'string') throw new Error('Run snapshot entry has no runId');
+      byRun.set(view.runId, view);
+    }
+    return { byRun, views: [...byRun.values()] };
+  },
+};
+
+// Folds only the events the journal moved by, one run view at a time; untouched
+// runs keep their view, so a journal move costs the delta.
 function extendRuns(state: RunsState, events: readonly JournalEvent[]): RunsState {
-  const touched = new Map<RunId, RunExecutionEvent[]>();
+  let byRun: Map<RunId, RunView> | undefined;
   for (const event of events) {
     if (!isRunStream(event.stream)) continue;
     const id = runId(event.stream.id);
-    const batch = touched.get(id) ?? [];
-    batch.push(decodeRun(event));
-    touched.set(id, batch);
+    byRun ??= new Map(state.byRun);
+    byRun.set(id, foldRunEvent(byRun.get(id) ?? null, decodeRun(event)));
   }
-  if (touched.size === 0) return state;
-  const history = new Map(state.events);
-  const byRun = new Map(state.byRun);
-  for (const [id, batch] of touched) {
-    const all = [...(history.get(id) ?? []), ...batch];
-    history.set(id, all);
-    byRun.set(id, foldRun(all));
-  }
-  return {
-    events: history,
-    byRun,
-    views: [...byRun.values()].filter((run) => run !== null),
-  };
+  return byRun === undefined ? state : { byRun, views: [...byRun.values()] };
 }

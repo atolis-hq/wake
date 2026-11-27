@@ -1,8 +1,9 @@
-import { correlationId, createEventData } from '@atolis-hq/eventing';
-import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
-import { expect, it } from 'vitest';
+import { correlationId, createEventData, registerViewSnapshotStore } from '@atolis-hq/eventing';
+import { InMemoryEventJournal, InMemoryViewSnapshotStore } from '@atolis-hq/eventing/memory';
+import { expect, it, vi } from 'vitest';
 import { DelegationGate } from '../../../src/orchestration/application/delegation-gate.js';
 import type { WorkflowInstanceView } from '../../../src/orchestration/index.js';
+import { WorkIndex } from '../../../src/work/application/work-index.js';
 import { createWorkService, workItemStream } from '../../../src/work/index.js';
 import { FakeClock } from '../../e2e/support/world.js';
 import { workId } from '../../support/identities.js';
@@ -65,4 +66,23 @@ it('holds only the item whose Work events are malformed and leaves every other i
   const gate = new DelegationGate({} as never, work);
   const views = [broken, healthy].map((workItemId) => ({ workItemId })) as WorkflowInstanceView[];
   expect(await gate.filterAvailable(views, (view) => view)).toEqual([views[1]]);
+});
+
+it('restores a persisted snapshot instead of replaying work history, with identical results', async () => {
+  const { journal, work } = setup();
+  const store = new InMemoryViewSnapshotStore();
+  registerViewSnapshotStore(journal, store);
+  const id = workId('persisted');
+  await work.create({ workItemId: id, objective: 'ship' }, context('create'));
+  await work.freeze(id, context('freeze'));
+  const first = new WorkIndex(journal, { minEvents: 1, minIntervalMs: 0 });
+  const expected = await first.snapshot();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const readAll = vi.spyOn(journal, 'readAll');
+
+  const restored = await new WorkIndex(journal, { minEvents: 1, minIntervalMs: 0 }).snapshot();
+
+  expect(restored.get(id)).toEqual(expected.get(id));
+  expect(restored.availability(id)).toEqual(expected.availability(id));
+  expect(readAll.mock.calls.every(([after]) => after > 0)).toBe(true);
 });

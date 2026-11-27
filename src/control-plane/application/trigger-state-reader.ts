@@ -1,36 +1,49 @@
-import type { EventJournal } from '@atolis-hq/eventing';
+import { foldedJournalView, type EventJournal, type JournalView } from '@atolis-hq/eventing';
 import { ControlStreamKind } from '../contracts/streams.js';
 import { triggerProjection, type TriggerView } from './trigger-projection.js';
 
+interface TriggerState {
+  readonly value: TriggerView;
+  readonly sequences: ReadonlyMap<string, number>;
+}
+
 /** A rebuildable operational cache; every critical section catches up to the journal. */
 export class TriggerStateReader {
-  private position = 0;
-  private value = triggerProjection.initial('global');
-  private readonly sequences = new Map<string, number>();
+  private state: TriggerState = {
+    value: triggerProjection.initial('global'),
+    sequences: new Map(),
+  };
 
-  constructor(private readonly journal: EventJournal) {}
+  private readonly view: JournalView<TriggerState>;
+
+  constructor(journal: EventJournal) {
+    // Shares the paged journal catch-up with every other view over this journal.
+    this.view = foldedJournalView<TriggerState>(journal, {
+      initial: this.state,
+      extend: (known, events) => {
+        let value = known.value;
+        const sequences = new Map(known.sequences);
+        for (const envelope of events) {
+          if (triggerProjection.select(envelope) !== null)
+            value = triggerProjection.project(value, envelope);
+          if (envelope.stream.kind === ControlStreamKind.Trigger)
+            sequences.set(envelope.stream.id, envelope.sequence);
+        }
+        return { value, sequences };
+      },
+    });
+  }
 
   get current(): TriggerView {
-    return this.value;
+    return this.state.value;
   }
 
   sequence(coordinationKey: string): number {
-    return this.sequences.get(coordinationKey) ?? 0;
+    return this.state.sequences.get(coordinationKey) ?? 0;
   }
 
   async get(): Promise<TriggerView> {
-    const latest = await this.journal.latestGlobalPosition();
-    while (this.position < latest) {
-      const batch = await this.journal.readAll(this.position, 256);
-      if (batch.length === 0) throw new Error('Trigger journal cursor did not advance');
-      for (const envelope of batch) {
-        if (triggerProjection.select(envelope) !== null)
-          this.value = triggerProjection.project(this.value, envelope);
-        if (envelope.stream.kind === ControlStreamKind.Trigger)
-          this.sequences.set(envelope.stream.id, envelope.sequence);
-        this.position = envelope.globalPosition;
-      }
-    }
-    return this.value;
+    this.state = await this.view.get();
+    return this.state.value;
   }
 }

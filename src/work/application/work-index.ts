@@ -3,8 +3,10 @@ import {
   type EventEnvelope,
   type EventJournal,
   type JournalView,
+  type ViewPersistence,
+  type ViewSnapshotCodec,
 } from '@atolis-hq/eventing';
-import { selectWorkEvent, type WorkEvent } from '../contracts/events.js';
+import { decodeWorkEvent, selectWorkEvent, type WorkEvent } from '../contracts/events.js';
 import { isWorkItemStream } from '../contracts/streams.js';
 import type { WorkItemView } from '../contracts/views.js';
 import {
@@ -38,10 +40,19 @@ interface WorkIndexState {
 export class WorkIndex {
   private readonly state: JournalView<WorkIndexState>;
 
-  constructor(journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>) {
+  constructor(
+    journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>,
+    snapshotThresholds: Pick<ViewPersistence<never>, 'minEvents' | 'minIntervalMs'> = {},
+  ) {
     this.state = foldedJournalView(journal, {
       initial: { streams: new Map(), items: new Map(), invalid: new Set() },
       extend: extendWorkIndex,
+      persist: {
+        name: 'work-index',
+        schemaVersion: 1,
+        codec: workIndexCodec,
+        ...snapshotThresholds,
+      },
     });
   }
 
@@ -55,6 +66,31 @@ export class WorkIndex {
     };
   }
 }
+
+// Streams are persisted as decoded events and re-folded on load, so a snapshot
+// can never disagree with the fold; items are derived, not stored.
+const workIndexCodec: ViewSnapshotCodec<WorkIndexState> = {
+  encode: (state) => ({
+    streams: [...state.streams].map(([id, events]) => [id, events]),
+    invalid: [...state.invalid],
+  }),
+  decode(raw) {
+    const { streams: entries, invalid: invalidIds } = raw as {
+      streams: [string, EventEnvelope[]][];
+      invalid: string[];
+    };
+    const invalid = new Set(invalidIds);
+    const streams = new Map<string, readonly WorkEvent[]>();
+    const items = new Map<string, WorkItemView>();
+    for (const [id, events] of entries) {
+      const decoded = events.map((event) => decodeWorkEvent(event));
+      streams.set(id, decoded);
+      const view = invalid.has(id) ? null : foldWorkItem(decoded);
+      if (view !== null) items.set(id, view);
+    }
+    return { streams, items, invalid };
+  },
+};
 
 // A malformed stream poisons only its own item. That item is then unknown and
 // held, rather than failing availability for every other item.

@@ -6,6 +6,7 @@ export interface WakePaths {
   readonly eventsRoot: string;
   readonly projectionsRoot: string;
   readonly checkpointsRoot: string;
+  readonly viewSnapshotsRoot: string;
   readonly locksRoot: string;
   readonly transcriptsRoot: string;
   readonly artifactsRoot: string;
@@ -21,6 +22,7 @@ export function resolveWakePaths(wakeRoot: string): WakePaths {
     eventsRoot: join(dataRoot, 'events'),
     projectionsRoot: join(dataRoot, 'projections'),
     checkpointsRoot: join(dataRoot, 'checkpoints'),
+    viewSnapshotsRoot: join(dataRoot, 'view-snapshots'),
     locksRoot: join(dataRoot, 'locks'),
     transcriptsRoot: join(dataRoot, 'transcripts'),
     artifactsRoot: join(dataRoot, 'artifacts'),
