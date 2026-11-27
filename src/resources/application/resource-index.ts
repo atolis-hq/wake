@@ -39,6 +39,7 @@ export class ResourceIndex {
 
   constructor(journal: Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>) {
     this.state = foldedJournalView(journal, {
+      name: 'resource-correlation-index',
       initial: { resources: new Map(), byWork: new Map(), invalid: new Set() },
       extend: extendResourceIndex,
     });
