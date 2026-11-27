@@ -26,6 +26,7 @@ import {
   timestampsValid,
   watermarkCheckpoint,
 } from './poll-watermark.js';
+import { createPullRequestObservationCache } from './pr-observation-cache.js';
 import { pullRequestEventsFor } from './pr-source.js';
 import {
   createGitHubRequestCoordinator,
@@ -55,6 +56,7 @@ export function createGitHubSource(
   // PR observations use the journal to deduplicate consecutive evidence durably.
   // This cache avoids returning unchanged issue observations within one process.
   const lastEventIds = new Map<string, string>();
+  const observationCache = createPullRequestObservationCache(state?.journal, adapter);
   const pendingWatermarks = new Map<string, number>();
   let pendingSignal: AbortSignal | undefined;
   const now = state?.now ?? Date.now;
@@ -91,8 +93,7 @@ export function createGitHubSource(
       );
       const drafts = await consecutivePullRequestObservations(
         perRepository.flatMap((result) => result.drafts),
-        state?.journal,
-        adapter,
+        observationCache,
       );
       // Journal reads can outlive the deadline too; never publish leaked cursors.
       signal.throwIfAborted();

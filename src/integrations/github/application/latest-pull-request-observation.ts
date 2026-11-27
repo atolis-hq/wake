@@ -11,6 +11,20 @@ type PullRequestObservation = GitHubAdapterEventOf<typeof GitHubEventType.WorkOb
 
 const PAGE = 50;
 
+/** The pull-request observation an envelope carries on this adapter's stream, if any. */
+export function pullRequestObservationOf(
+  envelope: Awaited<ReturnType<EventJournal['readStream']>>[number],
+  adapter: AdapterId,
+): PullRequestObservation | undefined {
+  const stream = integrationStream(adapter);
+  if (envelope.stream.kind !== stream.kind || envelope.stream.id !== stream.id) return undefined;
+  const owned = selectGitHubAdapterEvent(envelope);
+  return owned?.event.eventType === GitHubEventType.WorkObserved &&
+    owned.event.payload.kind === 'pull-request'
+    ? (owned as PullRequestObservation)
+    : undefined;
+}
+
 /**
  * Latest observation of one pull request. The integration stream grows without
  * bound, so journals with a payload index answer this without reading the stream.
@@ -22,13 +36,8 @@ export async function latestPullRequestObservation(
 ): Promise<PullRequestObservation | undefined> {
   const stream = integrationStream(adapter);
   const accept = (envelope: Awaited<ReturnType<EventJournal['readStream']>>[number]) => {
-    if (envelope.stream.kind !== stream.kind || envelope.stream.id !== stream.id) return undefined;
-    const owned = selectGitHubAdapterEvent(envelope);
-    return owned?.event.eventType === GitHubEventType.WorkObserved &&
-      owned.event.payload.kind === 'pull-request' &&
-      owned.event.payload.externalKey === externalKey
-      ? (owned as PullRequestObservation)
-      : undefined;
+    const owned = pullRequestObservationOf(envelope, adapter);
+    return owned?.event.payload.externalKey === externalKey ? owned : undefined;
   };
   if (journal.readLatestMatching === undefined) {
     let latest: PullRequestObservation | undefined;
