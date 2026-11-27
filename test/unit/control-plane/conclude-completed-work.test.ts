@@ -8,12 +8,16 @@ type Instance = {
   workItemId: string;
   status: string;
   concludesWork?: true | undefined;
+  workflowName?: string;
+  currentStage?: string;
+  blockReason?: string;
 };
 
 function setup(
   instances: Instance[],
   primary: Record<string, string>,
   states: Record<string, string>,
+  definitions: unknown[] = [],
 ) {
   const closed: string[] = [];
   const scheduler = createActivationScheduler(
@@ -23,6 +27,7 @@ function setup(
       listWaiting: async () => [],
       listAll: async () => instances as unknown as readonly WorkflowInstanceView[],
       getPrimaryWorkflowInstanceId: async (workItemId: string) => primary[workItemId],
+      listCurrentDefinitions: () => definitions as never,
       acceptOutcome: async () => ({}) as never,
       markActivationStarted: async () => ({}) as never,
     },
@@ -107,5 +112,54 @@ describe('concluding completed work', () => {
     );
     await scheduler.maintain!();
     expect(closed).toEqual(['work-a']);
+  });
+
+  describe('instances completed before the flag was recorded', () => {
+    const route = (concludesWork: boolean) => ({
+      target: concludesWork ? { kind: 'complete', concludesWork: true } : { kind: 'complete' },
+    });
+    const definition = (routes: Record<string, unknown>) => [
+      { definition: { name: 'flow', stages: { finish: { on: routes } } } },
+    ];
+    const legacy = (extra: Partial<Instance> = {}) =>
+      done('a', {
+        concludesWork: undefined,
+        workflowName: 'flow',
+        currentStage: 'finish',
+        ...extra,
+      });
+
+    it('closes the work when every completing route of its final stage concludes', async () => {
+      const { scheduler, closed } = setup(
+        [legacy()],
+        { 'work-a': 'wf-a' },
+        { 'work-a': 'open' },
+        definition({ done: route(true) }),
+      );
+      await scheduler.maintain!();
+      expect(closed).toEqual(['work-a']);
+    });
+
+    it('leaves the work when a completing route of that stage does not conclude', async () => {
+      const { scheduler, closed } = setup(
+        [legacy()],
+        { 'work-a': 'wf-a' },
+        { 'work-a': 'open' },
+        definition({ done: route(true), skipped: route(false) }),
+      );
+      await scheduler.maintain!();
+      expect(closed).toEqual([]);
+    });
+
+    it('leaves a completion that recorded a block reason', async () => {
+      const { scheduler, closed } = setup(
+        [legacy({ blockReason: 'execution failed' })],
+        { 'work-a': 'wf-a' },
+        { 'work-a': 'open' },
+        definition({ done: route(true) }),
+      );
+      await scheduler.maintain!();
+      expect(closed).toEqual([]);
+    });
   });
 });

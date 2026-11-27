@@ -10,6 +10,7 @@ import type {
 import type { IdGenerator } from '../../kernel/index.js';
 import type {
   ActivityActivationView,
+  CompiledWorkflow,
   PendingActivationPriority,
   WorkflowInstanceView,
 } from '../../orchestration/index.js';
@@ -51,6 +52,7 @@ export interface OrchestrationPort {
   expireTimedOutWaits?(context: CommandContext): Promise<readonly WorkflowInstanceView[]>;
   listAll?(): Promise<readonly WorkflowInstanceView[]>;
   getPrimaryWorkflowInstanceId?(workItemId: WorkItemId): Promise<string | undefined>;
+  listCurrentDefinitions?(): readonly { readonly definition: CompiledWorkflow }[];
   deliveryRunLimit?(id: WorkItemId): Promise<number | undefined>;
   validateActivationDispatch?(
     workflowInstanceId: string,

@@ -1,4 +1,3 @@
-import { dirname, normalize } from 'node:path/posix';
 import {
   DockerProcessError,
   type DockerInvocationResult,
@@ -6,6 +5,7 @@ import {
 } from './docker-invocation.js';
 import { managedRuntimeDockerfile, managedRuntimeImage } from './managed-runtime-image.js';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
+import { sandboxHomeInitDirectories } from './sandbox-home-init-directories.js';
 import { ensureSandboxWorkspaceOwnership } from './sandbox-workspace-ownership.js';
 
 export {
@@ -283,6 +283,7 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
   await docker.invoke([
     String.fromCharCode(114, 117, 110),
     '-d',
+    '--init', // PID 1 is `su`, which never reaps orphaned agent children
     // Bounds the container's own json-file log driver so its internal log
     // storage can't grow unbounded; independent of process-log.ts's rotation
     // of Wake's own log file. Matches the legacy adapter's precedent values.
@@ -313,24 +314,6 @@ async function createContainer(docker: DockerCli, options: SandboxDockerOptions)
       : ['-e', `WAKE_MEMORY_PROFILE=${options.memoryProfile}`]),
     options.image,
   ]);
-}
-
-function sandboxHomeInitDirectories(
-  containerHomeMountPath: string | undefined,
-  extraMounts: readonly { readonly target: string }[],
-): readonly string[] {
-  if (containerHomeMountPath === undefined) return [];
-  const home = normalize(containerHomeMountPath);
-  const prefix = home === '/' ? '/' : `${home}/`;
-  const directories = new Set<string>();
-  for (const mount of extraMounts) {
-    let current = dirname(normalize(mount.target));
-    while (current !== home && current.startsWith(prefix)) {
-      directories.add(current);
-      current = dirname(current);
-    }
-  }
-  return [...directories].sort();
 }
 
 const containerLogMaxSize = '10m';

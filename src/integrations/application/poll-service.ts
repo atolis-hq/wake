@@ -8,6 +8,10 @@ export interface PollResult {
 }
 
 export class PollService {
+  // Kept across polls: the stream is read once per process, then tracked as we
+  // append. A concurrent writer is caught by the sequence check and reloaded.
+  private ledger: StreamLedger | undefined;
+
   constructor(
     private readonly journal: EventJournal,
     private readonly instance: ProviderInstance,
@@ -22,9 +26,9 @@ export class PollService {
     const drafts = await this.instance.source.poll(signal, options);
     let appended = 0;
     let failed = 0;
-    // Read the stream once per poll: it grows without bound, and re-reading it for
-    // every draft makes a poll's cost drafts x history, which outlives its deadline.
-    const ledger = new StreamLedger(this.journal, integrationStream(adapter));
+    // The stream grows without bound: re-reading it per draft or per poll makes
+    // a poll cost history, which outlives its deadline.
+    const ledger = (this.ledger ??= new StreamLedger(this.journal, integrationStream(adapter)));
     for (const draft of drafts) {
       // A run past its deadline may be leaked; it must not persist or advance state.
       if (signal.aborted) return { appended, failed: failed + 1 };

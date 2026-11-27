@@ -196,6 +196,33 @@ describe('createGitHubWakeLabelReconciler', () => {
     expect(published[0]).toContain(`wake:status.${status}`);
   });
 
+  it('stops loading a closed, non-concluded work item once it is known to be final', async () => {
+    const item = workItemId(`work-${ulid('8')}`);
+    let loads = 0;
+    const reconciler = createGitHubWakeLabelReconciler({
+      orchestration: { listAll: async () => [openWorkflow({ workItemId: item, issue: 551 })] },
+      resources: {
+        correlations: async () => [],
+        correlationsForWork: async () => [],
+        get: async () => null,
+      },
+      work: {
+        get: async () => {
+          loads += 1;
+          return { state: WorkStatus.Closed } as unknown as WorkItemView;
+        },
+      },
+      getLabels: async () => [],
+      setLabels: async () => undefined,
+    });
+
+    await reconciler.runOnce();
+    await reconciler.runOnce();
+    await reconciler.runOnce();
+
+    expect(loads).toBe(1);
+  });
+
   it('uses an in-memory desired-label cache for an unchanged resource', async () => {
     const item = workItemId(`work-${ulid('9')}`);
     const resource = resourceId(`resource-${ulid('9')}`);

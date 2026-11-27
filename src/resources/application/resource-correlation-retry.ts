@@ -58,7 +58,7 @@ export async function pendingExternalOutcomes(repository: ResourceRepository): P
     outcome: ResourceExternalOutcome;
     sourceObservationId: string;
   }[] = [];
-  for (const resourceId of await repository.listResourceIds()) {
+  for (const resourceId of await repository.listPendingOutcomeCandidateIds()) {
     const resource = (await repository.load(resourceId)).resource;
     if (resource?.view.pendingExternalOutcome !== undefined && hasPrimary(resource.correlations))
       pending.push({ resourceId, ...resource.view.pendingExternalOutcome });
@@ -88,7 +88,7 @@ export async function retryPendingWorkCorrelations(
   repository: ResourceRepository,
 ): Promise<number> {
   let processed = 0;
-  for (const resourceId of await repository.listResourceIds()) {
+  for (const resourceId of await repository.listRetryCandidateIds()) {
     const loaded = await repository.load(resourceId);
     if (loaded.resource === null || hasPrimary(loaded.resource.correlations)) continue;
     if (loaded.resource.view.correlationStatus === 'unresolvable') continue;

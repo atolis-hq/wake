@@ -2,6 +2,8 @@ import { createEventData } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { PollService } from '../../../src/integrations/application/poll-service.js';
+import { adapterId } from '../../../src/integrations/contracts/identifiers.js';
+import { integrationStream } from '../../../src/integrations/contracts/streams.js';
 import { FakeClock } from '../../e2e/support/world.js';
 
 it('commits a provider cursor only after its evidence is durable', async () => {
@@ -95,6 +97,29 @@ it('reads the integration stream once per poll however many drafts it persists',
     failed: 0,
   });
   expect(readStream.mock.calls.length).toBeLessThanOrEqual(1);
+});
+
+it('reads the stream once across polls and still dedupes a concurrent writer', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const readStream = vi.spyOn(journal, 'readStream');
+  let next: ReturnType<typeof draft>[] = [draft('one')];
+  const service = new PollService(
+    journal,
+    provider({ poll: async () => next, markPollPersisted: async () => undefined }),
+  );
+
+  await service.pollOnce(new AbortController().signal);
+  next = [draft('one'), draft('two')];
+  await service.pollOnce(new AbortController().signal);
+  expect(readStream).toHaveBeenCalledTimes(1);
+
+  // Another process appends `three`; our cached sequence is now stale.
+  await journal.appendToStream(integrationStream(adapterId('github')), 2, [draft('three')]);
+  next = [draft('three'), draft('four')];
+  await service.pollOnce(new AbortController().signal);
+
+  const ids = (await journal.readAll(0)).map((event) => event.event.eventId);
+  expect(ids).toEqual(['one', 'two', 'three', 'four']);
 });
 
 function provider(source: {

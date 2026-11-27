@@ -43,6 +43,16 @@ export function createPollCoordinator(options: PollCoordinatorOptions) {
   const deadlineMs = options.deadlineMs ?? DEFAULT_POLL_DEADLINE_MS;
   const lockWaitMs = options.lockWaitMs ?? DEFAULT_POLL_LOCK_WAIT_MS;
   const inFlight = new Map<string, Promise<PollRunResult>>();
+  // One service per provider instance so its stream ledger survives between polls.
+  const services = new WeakMap<ProviderInstance, PollService>();
+  const serviceFor = (provider: ProviderInstance): PollService => {
+    let service = services.get(provider);
+    if (service === undefined) {
+      service = new PollService(options.journal, provider);
+      services.set(provider, service);
+    }
+    return service;
+  };
 
   const run = async (
     provider: ProviderInstance,
@@ -59,8 +69,7 @@ export function createPollCoordinator(options: PollCoordinatorOptions) {
     }
     try {
       const result = await runWithDeadline(
-        (boundedSignal) =>
-          new PollService(options.journal, provider).pollOnce(boundedSignal, pollOptions),
+        (boundedSignal) => serviceFor(provider).pollOnce(boundedSignal, pollOptions),
         signal,
         deadlineMs,
         provider.adapter,
