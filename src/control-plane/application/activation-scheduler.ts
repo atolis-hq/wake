@@ -82,7 +82,10 @@ export function createActivationScheduler(
       await workspaceRecovery.recover(await execution.list(), {
         isPaused: isDispatchPaused,
         retainWorkItem: async (workItemId) => {
-          const work = await dependencies.work?.get(workItemId);
+          const snapshot = await dependencies.work?.deliverySnapshot();
+          // An unreadable item is unknown, so its workspace is kept.
+          if (snapshot?.invalid(workItemId) === true) return true;
+          const work = snapshot?.get(workItemId);
           return work?.state === WorkStatus.Open && work.deleted !== true;
         },
         onWorkspaceReclaimed: async (workItemId) => {

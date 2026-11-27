@@ -1,5 +1,7 @@
 export * from './application/lookup-projections.js';
 
+export * from './application/resource-index.js';
+
 export * from './application/resource-lookup.js';
 
 export * from './application/resource-projections.js';

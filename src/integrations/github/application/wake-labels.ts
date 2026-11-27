@@ -6,7 +6,12 @@ import {
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
 import { ResourceCorrelationRole, type ResourceService } from '../../../resources/index.js';
-import { WorkStatus, type WorkItemId, type WorkService } from '../../../work/index.js';
+import {
+  WorkStatus,
+  type DeliverySnapshot,
+  type WorkItemId,
+  type WorkService,
+} from '../../../work/index.js';
 import {
   GitHubWakeStatusLabel,
   isGitHubWakeMarker,
@@ -48,8 +53,8 @@ export interface GitHubWakeLabelReconcileFailure {
 
 export function createGitHubWakeLabelReconciler(input: {
   readonly orchestration: Pick<OrchestrationService, 'listAll'>;
-  readonly resources: Pick<ResourceService, 'correlationsForWork' | 'correlations' | 'get'>;
-  readonly work: Pick<WorkService, 'get'>;
+  readonly resources: Pick<ResourceService, 'correlationSnapshot'>;
+  readonly work: Pick<WorkService, 'deliverySnapshot'>;
   readonly getLabels: (owner: string, repo: string, number: number) => Promise<readonly string[]>;
   readonly setLabels: (
     owner: string,
@@ -72,7 +77,14 @@ export function createGitHubWakeLabelReconciler(input: {
       // never need checking again. Without this, listAll() keeps returning
       // every WorkItem ever created and this loop keeps making a live
       // getLabels call per item, every cycle, forever.
-      const open = await syncableWorkItemIds(input.work, workflows, finishedWorkItems);
+      const open = syncableWorkItemIds(
+        await input.work.deliverySnapshot(),
+        workflows,
+        finishedWorkItems,
+      );
+      // Both snapshots are in-memory and extended only by new events, so a quiet
+      // pass costs no stream loads however many items are open.
+      const resources = await input.resources.correlationSnapshot();
       // A watch's spawned child shares its parent's work item (and so its GitHub
       // resource) but is not the canonical state for that issue — only the
       // top-level (non-child) workflow instance drives its stage/status labels.
@@ -87,9 +99,9 @@ export function createGitHubWakeLabelReconciler(input: {
             candidate.status !== WorkflowStatus.Completed,
         );
         const desired = desiredWakeLabels(workflow, watching);
-        for (const correlation of await input.resources.correlationsForWork(workflow.workItemId)) {
+        for (const correlation of resources.correlationsForWork(workflow.workItemId)) {
           // Delegated children can publish here, but only the active owner drives labels.
-          const owners = await input.resources.correlations(correlation.resourceId);
+          const owners = resources.correlations(correlation.resourceId);
           if (
             !owners.some(
               (owner) =>
@@ -98,12 +110,12 @@ export function createGitHubWakeLabelReconciler(input: {
             )
           )
             continue;
-          const resource = await input.resources.get(correlation.resourceId);
-          if (resource?.externalKey.adapter !== 'github') continue;
-          const locator = parseGitHubIssueKey(resource.externalKey.key);
+          const externalKey = resources.externalKey(correlation.resourceId);
+          if (externalKey?.adapter !== 'github') continue;
+          const locator = parseGitHubIssueKey(externalKey.key);
           if (locator === null) continue;
           const fingerprint = desired.join('\u0000');
-          if (syncedDesiredLabels.get(resource.resourceId) === fingerprint) continue;
+          if (syncedDesiredLabels.get(correlation.resourceId) === fingerprint) continue;
           // One issue's persistent failure (rate limit, permissions, a stale
           // resource) must not stop every other open work item from being
           // reconciled this pass — each correlation is an independent GitHub
@@ -117,9 +129,9 @@ export function createGitHubWakeLabelReconciler(input: {
               await request(input, () =>
                 input.setLabels(locator.owner, locator.repo, locator.number, next),
               );
-            syncedDesiredLabels.set(resource.resourceId, fingerprint);
+            syncedDesiredLabels.set(correlation.resourceId, fingerprint);
           } catch (error) {
-            syncedDesiredLabels.delete(resource.resourceId);
+            syncedDesiredLabels.delete(correlation.resourceId);
             onError({ workItemId: workflow.workItemId, ...locator }, error);
           }
         }
@@ -132,11 +144,11 @@ export function createGitHubWakeLabelReconciler(input: {
 // completes, before the final labels were synced, so it still needs one last sync.
 // The synced-fingerprint map makes that a single GitHub call per process, and other
 // closed items stay excluded so history never costs a call per pass.
-async function syncableWorkItemIds(
-  work: Pick<WorkService, 'get'>,
+function syncableWorkItemIds(
+  work: DeliverySnapshot,
   workflows: readonly WorkflowInstanceView[],
   finished: Set<WorkItemId>,
-): Promise<ReadonlySet<WorkItemId>> {
+): ReadonlySet<WorkItemId> {
   const concluded = new Set(
     workflows
       .filter((w) => w.status === WorkflowStatus.Completed && w.concludesWork === true)
@@ -147,7 +159,9 @@ async function syncableWorkItemIds(
     // Lifecycles are final: remember items that can never need a sync again so
     // history does not cost a journal read per item per pass.
     if (finished.has(workItemId)) continue;
-    const item = await work.get(workItemId);
+    // A malformed item is unknown: skip it this pass without finishing it.
+    if (work.invalid(workItemId)) continue;
+    const item = work.get(workItemId);
     if (item?.state === WorkStatus.Open) syncable.add(workItemId);
     else if (item?.state === WorkStatus.Closed && concluded.has(workItemId))
       syncable.add(workItemId);
