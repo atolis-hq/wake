@@ -1052,3 +1052,59 @@ it('does not publish cursors from a journal read that finishes after abort', asy
   await source.markPollPersisted?.();
   expect(saved).toEqual([]);
 });
+
+it('reads no journal rows for unchanged pull requests on repeat polls', async () => {
+  const journal = new InMemoryEventJournal({ now: () => new Date('2026-08-08T00:00:00Z') });
+  let rows = 0;
+  const counted =
+    <A extends unknown[], R extends readonly unknown[]>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A) => {
+      const result = await fn(...args);
+      rows += result.length;
+      return result;
+    };
+  journal.readStream = counted(journal.readStream.bind(journal));
+  journal.readAll = counted(journal.readAll.bind(journal));
+  let title = 'A PR';
+  const source = createGitHubSource(
+    gitHubConfigSchema.parse({
+      enabled: true,
+      token: 'token',
+      repositories: [{ owner: 'atolis-hq', repo: 'wake-test' }],
+    }),
+    {
+      ...fakeClient({ issues: [], issueComments: {} }),
+      async listPullRequests() {
+        return Array.from({ length: 30 }, (_, n) => issue(6 + n, n === 0 ? title : 'PR')) as never;
+      },
+    },
+    undefined,
+    undefined,
+    { journal },
+  );
+  const service = new PollService(journal, {
+    adapter: GitHubAdapter,
+    source,
+    eventTypes: Object.values(GitHubEventType),
+  } as unknown as ProviderInstance);
+  const poll = () => service.pollOnce(new AbortController().signal, { bypassInterval: true });
+
+  expect((await poll()).appended).toBeGreaterThan(0);
+  const stored = (await journal.readAll(0)).length;
+  // Unrelated traffic that a full-stream read would have to walk.
+  for (let i = 0; i < 20; i++) await poll();
+  rows = 0;
+  const unchanged = await poll();
+  expect(unchanged.appended).toBe(0);
+  expect(rows).toBe(0);
+
+  title = 'Renamed PR';
+  rows = 0;
+  const changed = await poll();
+  expect(changed.appended).toBeGreaterThan(0);
+  expect(rows).toBeLessThan(stored + 1);
+  rows = 0;
+  expect((await poll()).appended).toBe(0);
+  // Only the event this process just appended is read back, once.
+  expect(rows).toBeLessThanOrEqual(changed.appended);
+});
