@@ -152,6 +152,7 @@ describe('CLI infrastructure', () => {
       [
         'run',
         '-d',
+        '--init',
         '--log-opt',
         'max-size=10m',
         '--log-opt',
@@ -195,6 +196,8 @@ describe('CLI infrastructure', () => {
     const [runArguments] = calls;
     expect(runArguments).toEqual(expect.arrayContaining(['--log-opt', 'max-size=10m']));
     expect(runArguments).toEqual(expect.arrayContaining(['--log-opt', 'max-file=3']));
+    // Without an init, orphaned agent children are never reaped.
+    expect(runArguments).toContain('--init');
   });
 
   it('maps configured host mounts and resident mode to the Docker boundary', async () => {
@@ -220,6 +223,7 @@ describe('CLI infrastructure', () => {
       [
         'run',
         '-d',
+        '--init',
         '--log-opt',
         'max-size=10m',
         '--log-opt',

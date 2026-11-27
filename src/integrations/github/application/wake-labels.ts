@@ -61,6 +61,7 @@ export function createGitHubWakeLabelReconciler(input: {
   readonly requests?: GitHubRequestCoordinator;
 }): GitHubWakeLabelReconciler {
   const syncedDesiredLabels = new Map<string, string>();
+  const finishedWorkItems = new Set<WorkItemId>();
   const onError = input.onError ?? defaultOnError;
 
   return {
@@ -71,7 +72,7 @@ export function createGitHubWakeLabelReconciler(input: {
       // never need checking again. Without this, listAll() keeps returning
       // every WorkItem ever created and this loop keeps making a live
       // getLabels call per item, every cycle, forever.
-      const open = await syncableWorkItemIds(input.work, workflows);
+      const open = await syncableWorkItemIds(input.work, workflows, finishedWorkItems);
       // A watch's spawned child shares its parent's work item (and so its GitHub
       // resource) but is not the canonical state for that issue — only the
       // top-level (non-child) workflow instance drives its stage/status labels.
@@ -134,6 +135,7 @@ export function createGitHubWakeLabelReconciler(input: {
 async function syncableWorkItemIds(
   work: Pick<WorkService, 'get'>,
   workflows: readonly WorkflowInstanceView[],
+  finished: Set<WorkItemId>,
 ): Promise<ReadonlySet<WorkItemId>> {
   const concluded = new Set(
     workflows
@@ -142,10 +144,14 @@ async function syncableWorkItemIds(
   );
   const syncable = new Set<WorkItemId>();
   for (const workItemId of new Set(workflows.map((workflow) => workflow.workItemId))) {
+    // Lifecycles are final: remember items that can never need a sync again so
+    // history does not cost a journal read per item per pass.
+    if (finished.has(workItemId)) continue;
     const item = await work.get(workItemId);
     if (item?.state === WorkStatus.Open) syncable.add(workItemId);
     else if (item?.state === WorkStatus.Closed && concluded.has(workItemId))
       syncable.add(workItemId);
+    else if (item !== null && item !== undefined) finished.add(workItemId);
   }
   return syncable;
 }
