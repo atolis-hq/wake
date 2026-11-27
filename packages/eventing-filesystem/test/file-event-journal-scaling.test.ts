@@ -1,7 +1,7 @@
 import { createEventData, type StreamRef as EntityRef } from '@atolis-hq/eventing';
 import { FileEventJournal } from '@atolis-hq/eventing-filesystem';
 import type * as FsPromises from 'node:fs/promises';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -206,7 +206,7 @@ it('reads a cold journal in listing order even when segment reads complete out o
   );
 });
 
-it('keeps decoded envelopes bounded after head, replay, and stream reads', async () => {
+it('keeps decoded envelopes bounded by bytes and does not let a large scan evict hot streams', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wake-journal-bounded-cache-'));
   await seedSegments(root, 3000);
   const journal = new FileEventJournal(root, new FakeClock());
@@ -214,8 +214,45 @@ it('keeps decoded envelopes bounded after head, replay, and stream reads', async
   const cache = (journal as unknown as { envelopeCache: ReadonlyMap<string, unknown> })
     .envelopeCache;
   expect(cache.size).toBe(1);
+  // A scan beyond the admission limit does not populate the cache.
   expect(await journal.readAll(0)).toHaveLength(3000);
-  expect(cache.size).toBe(256);
-  expect(await journal.readStream({ kind: 'test', id: 's1' })).toHaveLength(75);
-  expect(cache.size).toBe(256);
+  expect(cache.size).toBe(1);
+  // Hot streams exceed the old 256-entry cap and all stay resident.
+  for (let index = 0; index < 40; index += 1)
+    await journal.readStream({ kind: 'test', id: `s${index}` });
+  expect(cache.size).toBe(3000);
+  await journal.readAll(0);
+  expect(cache.size).toBe(3000);
+});
+
+it('evicts least-recently-used envelopes once the byte budget is exceeded', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-byte-budget-'));
+  const journal = new FileEventJournal(root, new FakeClock());
+  const big = 'x'.repeat(1024 * 1024);
+  for (let index = 0; index < 24; index += 1)
+    await journal.appendToStream({ kind: 'test', id: `big${index}` }, 0, [
+      createEventData({ ...draft(`big-${index}`), payload: { value: big } }),
+    ]);
+  for (let index = 0; index < 24; index += 1)
+    await journal.readStream({ kind: 'test', id: `big${index}` });
+  const cache = (journal as unknown as { envelopeCache: ReadonlyMap<string, unknown> })
+    .envelopeCache;
+  expect(cache.size).toBeGreaterThan(0);
+  expect(cache.size).toBeLessThanOrEqual(16);
+});
+
+it('never serves a cached envelope after its segment was rewritten in place', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'wake-journal-cache-rewrite-'));
+  await seedSegments(root, 5);
+  const journal = new FileEventJournal(root, new FakeClock());
+  const stream = { kind: 'test', id: 's1' };
+  expect(await journal.readStream(stream)).toHaveLength(1);
+  const file = join(root, 'events', segmentName(1));
+  const rewritten = (await readFile(file, 'utf8')).replace('"value":1', '"value":9');
+  await writeFile(file, rewritten);
+  const future = new Date(Date.now() + 5000);
+  await utimes(file, future, future);
+  // Staleness is detected and the index recovered; the old envelope is never served.
+  const [event] = await journal.readStream(stream);
+  expect(event?.event.payload).toEqual({ value: 9 });
 });
