@@ -2,6 +2,7 @@ import {
   JOURNAL_VIEW_PAGE_SIZE,
   createEventData,
   foldedJournalView,
+  warmJournalViews,
   type StreamRef,
 } from '@atolis-hq/eventing';
 import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
@@ -24,6 +25,7 @@ function draft(eventId: string) {
 }
 
 const count = {
+  name: 'count',
   initial: 0,
   extend: (value: number, events: readonly unknown[]) => value + events.length,
 };
@@ -98,4 +100,18 @@ it('starts over when the journal head moves backwards', async () => {
   events = 4;
 
   expect(await view.get()).toBe(4);
+});
+
+it('warms views that would otherwise start at staggered moments with one replay', async () => {
+  const total = JOURNAL_VIEW_PAGE_SIZE * 40;
+  const journal = await journalOf(total);
+  const readAll = vi.spyOn(journal, 'readAll');
+  const views = Array.from({ length: 4 }, () => foldedJournalView(journal, count));
+
+  await warmJournalViews(journal);
+  // Past the window a late starter would have had to replay on its own.
+  const late = await Promise.all(views.map((view) => view.get()));
+
+  expect(late).toEqual(Array(4).fill(total));
+  expect(readAll).toHaveBeenCalledTimes(41);
 });

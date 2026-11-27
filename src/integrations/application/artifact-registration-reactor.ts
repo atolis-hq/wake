@@ -39,7 +39,7 @@ import {
   artifactVerificationSource,
   type ArtifactSourceRun,
 } from './artifact-verification-source.js';
-import { extendLatestUnresolved } from './latest-unresolved-artifacts.js';
+import { extendLatestUnresolved, latestUnresolvedCodec } from './latest-unresolved-artifacts.js';
 
 interface ArtifactRegistrationDependencies {
   readonly journal: EventJournal;
@@ -75,8 +75,10 @@ export class ArtifactRegistrationReactor {
     this.latestUnresolved = foldedJournalView<ReadonlyMap<string, ArtifactEvent>>(
       dependencies.journal,
       {
+        name: 'artifact-latest-unresolved',
         initial: new Map(),
         extend: extendLatestUnresolved,
+        persist: { schemaVersion: 1, codec: latestUnresolvedCodec },
       },
     );
     this.processor = defineEventProcessor({

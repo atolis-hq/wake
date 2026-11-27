@@ -31,14 +31,16 @@ export class ResourceRepository {
 
   constructor(private readonly journal: EventJournal) {
     this.resourceIds = foldedJournalView(journal, {
+      name: 'resource-ids',
       initial: [],
       extend: extendResourceIds,
-      persist: { name: 'resource-ids', schemaVersion: 1, codec: resourceIdsCodec },
+      persist: { schemaVersion: 1, codec: resourceIdsCodec },
     });
     this.attention = foldedJournalView(journal, {
+      name: 'resource-attention',
       initial: noAttention,
       extend: extendAttention,
-      persist: { name: 'resource-attention', schemaVersion: 1, codec: attentionCodec },
+      persist: { schemaVersion: 1, codec: attentionCodec },
     });
   }
 

@@ -1,5 +1,10 @@
-import { correlationId, createEventData, type EventJournal } from '@atolis-hq/eventing';
-import { InMemoryEventJournal } from '@atolis-hq/eventing/memory';
+import {
+  correlationId,
+  createEventData,
+  registerViewSnapshotStore,
+  type EventJournal,
+} from '@atolis-hq/eventing';
+import { InMemoryEventJournal, InMemoryViewSnapshotStore } from '@atolis-hq/eventing/memory';
 import { expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { activityName, ActivityRegistry } from '../../../src/activities/index.js';
@@ -200,3 +205,45 @@ function startContext(seed: string) {
     actor: { kind: 'system' as const, id: 'control-plane' },
   };
 }
+
+it('restores a snapshot instead of replaying, and ignores one that no longer matches the journal', async () => {
+  const journal = new InMemoryEventJournal(new FakeClock());
+  const store = new InMemoryViewSnapshotStore();
+  registerViewSnapshotStore(journal, store);
+  await journal.appendToStream(
+    { kind: 'noise', id: 'filler' },
+    0,
+    Array.from({ length: 1_000 }, (_, index) =>
+      createEventData({
+        eventId: `noise-${index}`,
+        eventType: 'noise.event',
+        occurredAt: '2026-07-30T12:00:00Z',
+        correlationId: 'corr',
+        causationId: 'cause',
+        actor: { kind: 'system', id: 'test' },
+        source: { kind: 'internal', id: 'test' },
+        payload: {},
+      }),
+    ),
+  );
+  await seedTwoInstances(journal);
+  const fresh = new OrchestrationRepository(journal);
+  const expected = await fresh.list();
+  const expectedEvents = await fresh.events();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(await store.load('orchestration-state')).not.toBeNull();
+  const readAll = vi.spyOn(journal, 'readAll');
+
+  const restored = new OrchestrationRepository(journal);
+
+  expect(await restored.list()).toStrictEqual(expected);
+  expect(await restored.events()).toStrictEqual(expectedEvents);
+  expect(readAll.mock.calls.every(([after]) => after > 0)).toBe(true);
+
+  const record = (await store.load('orchestration-state'))!;
+  store.replace('orchestration-state', { ...record, value: 'garbage' });
+  readAll.mockClear();
+  const rebuilt = new OrchestrationRepository(journal);
+  expect(await rebuilt.list()).toStrictEqual(expected);
+  expect(readAll.mock.calls.some(([after]) => after === 0)).toBe(true);
+});

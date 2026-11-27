@@ -19,10 +19,30 @@ export type FeedJournal = Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>
  */
 export class SharedJournalFeed {
   private readonly pages = new Map<number, Promise<readonly EventEnvelope[]>>();
+  private readonly views = new Set<WeakRef<{ get(): Promise<unknown> }>>();
   private lastHead = 0;
   private active = 0;
 
   constructor(private readonly journal: FeedJournal) {}
+
+  /** Held weakly: a view dropped by its owner must not be kept alive or warmed. */
+  register(view: { get(): Promise<unknown> }): void {
+    this.views.add(new WeakRef(view));
+  }
+
+  /**
+   * Catches every live view up together, so views that would otherwise start at
+   * staggered moments share one replay instead of each paying for its own.
+   */
+  async warm(): Promise<void> {
+    const live: { get(): Promise<unknown> }[] = [];
+    for (const ref of this.views) {
+      const view = ref.deref();
+      if (view === undefined) this.views.delete(ref);
+      else live.push(view);
+    }
+    await Promise.allSettled(live.map((view) => view.get()));
+  }
 
   async head(): Promise<number> {
     const head = await this.journal.latestGlobalPosition();
@@ -66,4 +86,9 @@ export function sharedJournalFeed(journal: FeedJournal): SharedJournalFeed {
     feeds.set(journal, feed);
   }
   return feed;
+}
+
+/** Starts every registered view's catch-up at once; failures surface on each view's own `get`. */
+export function warmJournalViews(journal: FeedJournal): Promise<void> {
+  return sharedJournalFeed(journal).warm();
 }

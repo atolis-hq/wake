@@ -1,4 +1,4 @@
-import { createEventData, registerViewSnapshotStore } from '@atolis-hq/eventing';
+import { createEventData, registerViewSnapshotStore, warmJournalViews } from '@atolis-hq/eventing';
 import { FileEventJournal, FileViewSnapshotStore } from '@atolis-hq/eventing-filesystem';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { TriggerStateReader } from '../../src/control-plane/application/trigger-state-reader.js';
 import { RunRepository } from '../../src/execution/application/run-repository.js';
+import { OrchestrationRepository } from '../../src/orchestration/application/orchestration-repository.js';
 import { ResourceRepository } from '../../src/resources/application/resource-repository.js';
 import { WorkIndex } from '../../src/work/application/work-index.js';
 import { FakeClock } from '../e2e/support/world.js';
@@ -38,12 +39,19 @@ async function seededJournal(root: string): Promise<FileEventJournal> {
 }
 
 /** The five resident consumers that each used to replay the whole journal at startup. */
-async function startConsumers(journal: FileEventJournal, triggers = true): Promise<void> {
+async function startConsumers(journal: FileEventJournal): Promise<void> {
   const resources = new ResourceRepository(journal);
+  const work = new WorkIndex(journal, { minEvents: 1, minIntervalMs: 0 });
+  const runs = new RunRepository(journal);
+  const triggers = new TriggerStateReader(journal);
+  const orchestration = new OrchestrationRepository(journal);
+  // The resident host warms every view at once, as `wake start` does.
+  await warmJournalViews(journal);
   await Promise.all([
-    new WorkIndex(journal, { minEvents: 1, minIntervalMs: 0 }).snapshot(),
-    new RunRepository(journal).list(),
-    triggers ? new TriggerStateReader(journal).get() : Promise.resolve(),
+    work.snapshot(),
+    runs.list(),
+    triggers.get(),
+    orchestration.list(),
     resources.listResourceIds(),
     resources.listRetryCandidateIds(),
   ]);
@@ -71,11 +79,11 @@ it(
     // A fresh process: new journal object, same files and snapshots.
     const restarted = new FileEventJournal(root, new FakeClock());
     registerViewSnapshotStore(restarted, store);
-    const warm = await rowsRead(restarted, () => startConsumers(restarted, false));
+    const warm = await rowsRead(restarted, () => startConsumers(restarted));
 
     console.log(`startup rows read: cold=${cold} warm=${warm} journal=${TOTAL}`);
     expect(cold).toBeLessThanOrEqual(TOTAL * 1.2);
-    // Persisted views read ~0 rows on restart (the trigger reader has no snapshot, so it is excluded).
+    // Persisted views read ~0 rows on restart (every view is persisted).
     expect(warm).toBeLessThanOrEqual(10);
   },
 );

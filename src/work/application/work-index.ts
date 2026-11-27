@@ -45,10 +45,10 @@ export class WorkIndex {
     snapshotThresholds: Pick<ViewPersistence<never>, 'minEvents' | 'minIntervalMs'> = {},
   ) {
     this.state = foldedJournalView(journal, {
+      name: 'work-index',
       initial: { streams: new Map(), items: new Map(), invalid: new Set() },
       extend: extendWorkIndex,
       persist: {
-        name: 'work-index',
         schemaVersion: 1,
         codec: workIndexCodec,
         ...snapshotThresholds,

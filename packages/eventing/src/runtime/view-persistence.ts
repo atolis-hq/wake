@@ -4,6 +4,7 @@ import {
   VIEW_SNAPSHOT_MIN_INTERVAL_MS,
   registeredViewSnapshotStore,
   type ViewPersistence,
+  type ViewSnapshotStore,
 } from './view-snapshot.js';
 
 export interface ViewAnchor {
@@ -13,6 +14,7 @@ export interface ViewAnchor {
 
 export interface RestoredView<Value> {
   readonly position: number;
+  readonly valuePosition: number;
   readonly value: Value;
   readonly eventId: string;
 }
@@ -20,16 +22,17 @@ export interface RestoredView<Value> {
 /** Loads a usable snapshot or null; any mismatch means "replay from the start". */
 export async function restoreView<Value>(
   journal: FeedJournal,
+  name: string,
   persistence: ViewPersistence<Value>,
   head: number,
 ): Promise<RestoredView<Value> | null> {
   const store = persistence.store ?? registeredViewSnapshotStore(journal);
   if (store === undefined) return null;
   try {
-    const record = await store.load(persistence.name);
+    const record = await store.load(name);
     if (
       record === null ||
-      record.viewName !== persistence.name ||
+      record.viewName !== name ||
       record.schemaVersion !== persistence.schemaVersion ||
       !Number.isSafeInteger(record.position) ||
       record.position < 1 ||
@@ -42,6 +45,7 @@ export async function restoreView<Value>(
       return null;
     return {
       position: record.position,
+      valuePosition: record.valuePosition ?? record.position,
       eventId: record.anchorEventId,
       value: persistence.codec.decode(record.value),
     };
@@ -55,20 +59,25 @@ export class ViewSnapshotWriter<Value> {
   private persisted = 0;
   private lastAt = Number.NEGATIVE_INFINITY;
   private saving = false;
+  /** The folded value the stored snapshot holds, and the position it was written at. */
+  private stored: { readonly value: Value; readonly valuePosition: number } | undefined;
 
   constructor(
     private readonly journal: FeedJournal,
+    private readonly name: string,
     private readonly persistence: ViewPersistence<Value>,
   ) {}
 
-  /** Treat a restored position as already durable. */
-  restored(position: number): void {
+  /** Treat a restored snapshot as already durable. */
+  restored(position: number, valuePosition: number, value: Value): void {
     this.persisted = position;
+    this.stored = { value, valuePosition };
   }
 
   /** A restore moved the head backwards; what was persisted no longer describes it. */
   reset(): void {
     this.persisted = 0;
+    this.stored = undefined;
   }
 
   maybeSave(anchor: ViewAnchor | null, value: Value): void {
@@ -80,22 +89,9 @@ export class ViewSnapshotWriter<Value> {
       now - this.lastAt < (this.persistence.minIntervalMs ?? VIEW_SNAPSHOT_MIN_INTERVAL_MS)
     )
       return;
-    let encoded: unknown;
-    try {
-      encoded = this.persistence.codec.encode(value);
-    } catch {
-      return;
-    }
     this.saving = true;
     this.lastAt = now;
-    void store
-      .save({
-        viewName: this.persistence.name,
-        schemaVersion: this.persistence.schemaVersion,
-        position: anchor.position,
-        anchorEventId: anchor.eventId,
-        value: encoded,
-      })
+    void this.write(store, anchor, value)
       .then(
         () => {
           this.persisted = anchor.position;
@@ -105,5 +101,22 @@ export class ViewSnapshotWriter<Value> {
       .finally(() => {
         this.saving = false;
       });
+  }
+
+  private async write(store: ViewSnapshotStore, anchor: ViewAnchor, value: Value): Promise<void> {
+    // Unchanged values (the fold returned the same object) skip the encode and rewrite.
+    if (this.stored?.value === value && store.advance !== undefined) {
+      await store.advance(this.name, this.stored.valuePosition, anchor.position, anchor.eventId);
+      return;
+    }
+    const encoded = this.persistence.codec.encode(value);
+    await store.save({
+      viewName: this.name,
+      schemaVersion: this.persistence.schemaVersion,
+      position: anchor.position,
+      anchorEventId: anchor.eventId,
+      value: encoded,
+    });
+    this.stored = { value, valuePosition: anchor.position };
   }
 }

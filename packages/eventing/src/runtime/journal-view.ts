@@ -4,7 +4,7 @@ import { JOURNAL_VIEW_PAGE_SIZE, sharedJournalFeed } from './shared-journal-feed
 import { restoreView, ViewSnapshotWriter, type ViewAnchor } from './view-persistence.js';
 import type { ViewPersistence } from './view-snapshot.js';
 
-export { JOURNAL_VIEW_PAGE_SIZE } from './shared-journal-feed.js';
+export { JOURNAL_VIEW_PAGE_SIZE, warmJournalViews } from './shared-journal-feed.js';
 
 export const JOURNAL_CHANGE_FALLBACK_MS = 30_000;
 
@@ -15,6 +15,8 @@ export interface JournalView<Value> {
 type ViewJournal = Pick<EventJournal, 'readAll' | 'latestGlobalPosition'>;
 
 export interface JournalFold<Value> {
+  /** Stable identity: names the snapshot file and attributes catch-up cost per view. */
+  readonly name: string;
   readonly initial: Value;
   /** Returns the value after `events`, which follow everything already folded. Must not mutate `value`: earlier callers may still hold it across awaits. */
   extend(value: Value, events: readonly EventEnvelope[]): Value;
@@ -39,7 +41,9 @@ export function foldedJournalView<Value>(
 ): JournalView<Value> {
   const feed = sharedJournalFeed(journal);
   const writer =
-    fold.persist === undefined ? undefined : new ViewSnapshotWriter(journal, fold.persist);
+    fold.persist === undefined
+      ? undefined
+      : new ViewSnapshotWriter(journal, fold.name, fold.persist);
   let state: { readonly position: number; readonly value: Value } = {
     position: 0,
     value: fold.initial,
@@ -51,11 +55,11 @@ export function foldedJournalView<Value>(
   async function restore(head: number): Promise<void> {
     restoreTried = true;
     if (fold.persist === undefined) return;
-    const restored = await restoreView(journal, fold.persist, head);
+    const restored = await restoreView(journal, fold.name, fold.persist, head);
     if (restored === null) return;
     state = { position: restored.position, value: restored.value };
     anchor = { position: restored.position, eventId: restored.eventId };
-    writer?.restored(restored.position);
+    writer?.restored(restored.position, restored.valuePosition, restored.value);
   }
 
   // Catch up in pages: one unbounded read would hold every decoded envelope of
@@ -75,7 +79,7 @@ export function foldedJournalView<Value>(
     writer?.maybeSave(anchor, state.value);
   }
 
-  return {
+  const view: JournalView<Value> = {
     async get(): Promise<Value> {
       for (;;) {
         const sampled = await feed.head();
@@ -103,6 +107,8 @@ export function foldedJournalView<Value>(
       }
     },
   };
+  feed.register(view);
+  return view;
 }
 
 /**

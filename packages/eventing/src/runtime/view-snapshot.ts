@@ -11,12 +11,25 @@ export interface ViewSnapshotRecord {
   readonly anchorEventId: string;
   /** Codec output; must survive JSON. */
   readonly value: unknown;
+  /** Set by a store that advanced `position` past the one `value` was written at. */
+  readonly valuePosition?: number;
 }
 
 export interface ViewSnapshotStore {
   /** Null for a missing or unreadable snapshot; never throws for bad content. */
   load(viewName: string): Promise<ViewSnapshotRecord | null>;
   save(record: ViewSnapshotRecord): Promise<void>;
+  /**
+   * Moves the stored position forward without rewriting a `value` that has not
+   * changed since `valuePosition`, so a view whose events are rare stays current
+   * cheaply. A store that cannot do this omits it and the writer falls back to nothing.
+   */
+  advance?(
+    viewName: string,
+    valuePosition: number,
+    position: number,
+    anchorEventId: string,
+  ): Promise<void>;
 }
 
 export interface ViewSnapshotCodec<Value> {
@@ -26,7 +39,6 @@ export interface ViewSnapshotCodec<Value> {
 }
 
 export interface ViewPersistence<Value> {
-  readonly name: string;
   /** Bump when the fold or the encoded shape changes; older snapshots are then ignored. */
   readonly schemaVersion: number;
   readonly codec: ViewSnapshotCodec<Value>;

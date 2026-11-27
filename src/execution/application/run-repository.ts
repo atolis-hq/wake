@@ -25,9 +25,10 @@ export class RunRepository {
 
   constructor(private readonly journal: EventJournal) {
     this.runs = foldedJournalView(journal, {
+      name: 'run-views',
       initial: emptyRuns,
       extend: extendRuns,
-      persist: { name: 'run-views', schemaVersion: 1, codec: runsCodec },
+      persist: { schemaVersion: 1, codec: runsCodec },
     });
   }
 

@@ -1,4 +1,9 @@
-import { foldedJournalView, type EventJournal, type JournalView } from '@atolis-hq/eventing';
+import {
+  foldedJournalView,
+  type EventJournal,
+  type JournalView,
+  type ViewSnapshotCodec,
+} from '@atolis-hq/eventing';
 import type { DeliveryCompletionBlock } from '../contracts/delivery.js';
 import {
   decodeOrchestrationEvent,
@@ -67,7 +72,12 @@ export class OrchestrationRepository {
     private readonly journal: EventJournal,
     private readonly completionBlock?: (id: string) => Promise<DeliveryCompletionBlock | undefined>,
   ) {
-    this.state = foldedJournalView(journal, { initial: emptyState, extend: extendState });
+    this.state = foldedJournalView(journal, {
+      name: 'orchestration-state',
+      initial: emptyState,
+      extend: extendState,
+      persist: { schemaVersion: 1, codec: orchestrationStateCodec, minIntervalMs: 60_000 },
+    });
   }
 
   async load(id: string) {
@@ -160,6 +170,30 @@ export class OrchestrationRepository {
     return (await this.healthyState()).instances;
   }
 }
+
+// The state is a pure fold of the workflow-instance events, so the snapshot is
+// those decoded events in journal order and loading re-folds them. Decoded
+// failures hold Error objects and cannot be persisted, so a state with any
+// (or with a stream event the fold skipped) is simply not snapshotted.
+const orchestrationStateCodec: ViewSnapshotCodec<OrchestrationState> = {
+  encode(state) {
+    const counts = new Map<string, number>();
+    for (const event of state.events)
+      counts.set(event.stream.id, (counts.get(event.stream.id) ?? 0) + 1);
+    const consistent =
+      state.failures.size === 0 &&
+      counts.size === state.sequences.size &&
+      [...state.sequences].every(([id, count]) => counts.get(id) === count);
+    if (!consistent) throw new Error('Orchestration state is not snapshot-safe');
+    return state.events;
+  },
+  decode(raw) {
+    if (!Array.isArray(raw)) throw new Error('Orchestration snapshot must be an array');
+    const state = extendState(emptyState, raw as JournalEvent[]);
+    if (state.failures.size > 0) throw new Error('Orchestration snapshot holds malformed events');
+    return state;
+  },
+};
 
 function historyOf(state: OrchestrationState, id: string) {
   if (state.failures.has(id)) throw state.failures.get(id);

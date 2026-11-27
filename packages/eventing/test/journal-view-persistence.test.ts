@@ -39,10 +39,10 @@ function persisted(
   overrides: Partial<ViewPersistence<number>> = {},
 ) {
   return {
+    name: 'count',
     initial: 0,
     extend: (value: number, events: readonly unknown[]) => value + events.length,
     persist: {
-      name: 'count',
       schemaVersion: 1,
       codec: {
         encode: (value: number) => value,
@@ -143,4 +143,32 @@ it('does not persist a small advance or more often than the interval', async () 
   await view.get();
   await settle();
   expect((await store.load('count'))?.position).toBe(7);
+});
+
+it('advances an unchanged value without rewriting it', async () => {
+  const journal = await journalOf(50);
+  const store = new InMemoryViewSnapshotStore();
+  const save = vi.spyOn(store, 'save');
+  const unchanged = {
+    ...persisted(store, { minEvents: 1 }),
+    extend: (value: number, events: readonly unknown[]) =>
+      events.length === 0 ? value : value + (events.length > 0 ? 0 : 1),
+  };
+  const view = foldedJournalView(journal, unchanged);
+  await view.get();
+  await settle();
+  const value = (await store.load('count'))!.value;
+  expect(save).toHaveBeenCalledTimes(1);
+
+  await journal.appendToStream(stream, 50, [draft('later')]);
+  await view.get();
+  await settle();
+
+  const stored = (await store.load('count'))!;
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(stored.value).toBe(value);
+  expect(stored.position).toBe(51);
+  const readAll = vi.spyOn(journal, 'readAll');
+  expect(await foldedJournalView(journal, unchanged).get()).toBe(value);
+  expect(readAll.mock.calls.every(([after]) => after >= 50)).toBe(true);
 });
