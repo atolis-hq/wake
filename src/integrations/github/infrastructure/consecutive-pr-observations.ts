@@ -1,17 +1,13 @@
-import type { EventJournal } from '@atolis-hq/eventing';
 import { createHash } from 'node:crypto';
-import type { AdapterId } from '../../contracts/identifiers.js';
-import { latestPullRequestObservation } from '../application/latest-pull-request-observation.js';
 import { createGitHubEventData } from '../contracts/event-factory.js';
 import { GitHubEventType, type GitHubAdapterEventData } from '../contracts/events.js';
-import { GitHubAdapter } from '../contracts/vocabulary.js';
+import type { PullRequestObservationCache } from './pr-observation-cache.js';
 
 export async function consecutivePullRequestObservations(
   drafts: readonly GitHubAdapterEventData[],
-  journal: EventJournal | undefined,
-  adapter: AdapterId | undefined,
+  cache: PullRequestObservationCache | undefined,
 ): Promise<GitHubAdapterEventData[]> {
-  if (journal === undefined) return [...drafts];
+  if (cache === undefined) return [...drafts];
   // Most polls carry no PR evidence; they must not touch the unbounded stream at all.
   const keys = new Set(
     drafts.flatMap((draft) =>
@@ -22,8 +18,8 @@ export async function consecutivePullRequestObservations(
   );
   const latest = new Map<string, GitHubAdapterEventData>();
   for (const key of keys) {
-    const observed = await latestPullRequestObservation(journal, adapter ?? GitHubAdapter, key);
-    if (observed !== undefined) latest.set(key, observed.event);
+    const observed = await cache.latest(key);
+    if (observed !== undefined) latest.set(key, observed);
   }
   return drafts.flatMap((draft) => {
     if (draft.eventType !== GitHubEventType.WorkObserved || draft.payload.kind !== 'pull-request')

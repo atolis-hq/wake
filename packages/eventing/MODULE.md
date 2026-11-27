@@ -32,7 +32,7 @@ nor Node filesystem APIs.
 Define portable contracts and runtime capabilities here. Put a concrete storage
 adapter in its own package and compose it in the consuming application.
 
-Every journal read (`readStream`, `readAll`, `latestGlobalPosition`) must observe all appends committed before the call, including appends by other processes sharing the storage; adapters may cache only what they can prove is unchanged. `foldedJournalView` keys its value by the last position actually read.
+Every journal read (`readStream`, `readAll`, `latestGlobalPosition`) must observe all appends committed before the call, including appends by other processes sharing the storage; adapters may cache only what they can prove is unchanged. `foldedJournalView` keys its value by the last position actually read. Views over one journal share the paged catch-up reads; a view may opt in (`persist`) to a rebuildable `ViewSnapshotStore` snapshot, discarded on any version, anchor or head mismatch.
 
 Resident-loop code must never re-read or re-decode history on a journal move.
 Per-key state that must survive restarts is a `ProjectionStore` projection,

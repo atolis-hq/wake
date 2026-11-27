@@ -1,15 +1,18 @@
-import type {
-  CheckpointStore,
-  EventJournal,
-  ProcessorRunSerialiser,
-  ProcessorStateStore,
-  ProjectionStore,
+import {
+  registerViewSnapshotStore,
+  type CheckpointStore,
+  type EventJournal,
+  type ProcessorRunSerialiser,
+  type ProcessorStateStore,
+  type ProjectionStore,
+  type ViewSnapshotStore,
 } from '@atolis-hq/eventing';
 import {
   FileCheckpointStore,
   FileEventJournal,
   FileProcessorStateStore,
   FileProjectionStore,
+  FileViewSnapshotStore,
   createFileProcessorRunSerialiser,
 } from '@atolis-hq/eventing-filesystem';
 import type { Clock } from '../kernel/index.js';
@@ -21,6 +24,7 @@ export interface PersistenceCompositionOptions {
   readonly projections?: ProjectionStore;
   readonly checkpoints?: CheckpointStore;
   readonly processorState?: ProcessorStateStore;
+  readonly viewSnapshots?: ViewSnapshotStore;
   readonly decorateJournal?: (journal: EventJournal) => EventJournal;
   readonly decorateProjections?: (projections: ProjectionStore) => ProjectionStore;
   readonly decorateCheckpoints?: (checkpoints: CheckpointStore) => CheckpointStore;
@@ -76,6 +80,17 @@ function serializeJournalAppends(journal: EventJournal): EventJournal {
   };
 }
 
+// An injected journal is a test double with no relation to files on disk.
+function viewSnapshotStore(
+  paths: WakePaths,
+  options: PersistenceCompositionOptions,
+): ViewSnapshotStore | undefined {
+  if (options.viewSnapshots !== undefined) return options.viewSnapshots;
+  return options.journal === undefined
+    ? new FileViewSnapshotStore(paths.viewSnapshotsRoot)
+    : undefined;
+}
+
 export function composePersistence(
   paths: WakePaths,
   clock: Clock,
@@ -83,15 +98,18 @@ export function composePersistence(
 ): PersistenceComposition {
   const subscriptionRunSerialiser =
     options.subscriptionRunSerialiser ?? createFileProcessorRunSerialiser(paths.dataRoot);
-  return {
-    journal: serializeJournalAppends(
-      (options.decorateJournal ?? identity)(
-        options.journal ??
-          new FileEventJournal(paths.dataRoot, clock, {
-            readOnly: options.readOnlyJournal ?? false,
-          }),
-      ),
+  const journal = serializeJournalAppends(
+    (options.decorateJournal ?? identity)(
+      options.journal ??
+        new FileEventJournal(paths.dataRoot, clock, {
+          readOnly: options.readOnlyJournal ?? false,
+        }),
     ),
+  );
+  const viewSnapshots = viewSnapshotStore(paths, options);
+  if (viewSnapshots !== undefined) registerViewSnapshotStore(journal, viewSnapshots);
+  return {
+    journal,
     projections: (options.decorateProjections ?? identity)(
       options.projections ?? new FileProjectionStore(paths.dataRoot),
     ),

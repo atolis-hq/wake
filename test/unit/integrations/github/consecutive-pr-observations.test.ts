@@ -8,6 +8,7 @@ import { createGitHubEventData } from '../../../../src/integrations/github/contr
 import { GitHubEventType } from '../../../../src/integrations/github/contracts/events.js';
 import { GitHubAdapter } from '../../../../src/integrations/github/contracts/vocabulary.js';
 import { consecutivePullRequestObservations } from '../../../../src/integrations/github/infrastructure/consecutive-pr-observations.js';
+import { createPullRequestObservationCache } from '../../../../src/integrations/github/infrastructure/pr-observation-cache.js';
 import { FakeClock } from '../../../e2e/support/world.js';
 
 function observation(key: string, eventId: string, causationId: string, kind = 'pull-request') {
@@ -47,21 +48,19 @@ it('chains and drops consecutive PR observations without reading the stream', as
     ),
   ]);
   const readStream = vi.spyOn(journal, 'readStream');
+  const cache = createPullRequestObservationCache(journal, GitHubAdapter);
 
   const same = await consecutivePullRequestObservations(
     [observation('o/r#1', 'pr1-b', 'cause-a')],
-    journal,
-    undefined,
+    cache,
   );
   const changed = await consecutivePullRequestObservations(
     [observation('o/r#1', 'pr1-c', 'cause-b'), observation('o/r#3', 'pr3-a', 'cause-y')],
-    journal,
-    undefined,
+    cache,
   );
   const issuesOnly = await consecutivePullRequestObservations(
     [observation('o/r#9', 'issue-9', 'cause-i', 'issue')],
-    journal,
-    undefined,
+    cache,
   );
 
   expect(same).toEqual([]);

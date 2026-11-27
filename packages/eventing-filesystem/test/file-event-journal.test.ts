@@ -464,6 +464,7 @@ it('refreshes a cached view when another file-journal instance appends', async (
   const readerClock = new FakeClock();
   const reader = new FileEventJournal(root, readerClock);
   const view = foldedJournalView(reader, {
+    name: 'test',
     initial: 0,
     extend: (count, events) => count + events.length,
   });

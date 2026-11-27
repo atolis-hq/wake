@@ -40,6 +40,9 @@ export interface FileEventJournalOptions {
 const createFileSystemWatcher: FileEventJournalWatcherFactory = async (directory, notify) =>
   watch(directory, { persistent: false }, notify);
 
+const ENVELOPE_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+const ENVELOPE_CACHE_ADMIT_MAX_ROWS = 512;
+
 // The JSONL files are authoritative. SQLite contains only rebuildable byte
 // locations; its B-trees bound page reads/writes without a growing JS manifest.
 export class FileEventJournal implements EventJournal {
@@ -53,7 +56,10 @@ export class FileEventJournal implements EventJournal {
   private changeWatcher: FileEventJournalWatcher | undefined;
   private startingChangeWatcher: Promise<void> | undefined;
   private queue: Promise<void> = Promise.resolve();
-  private readonly envelopeCache = new Map<string, EventEnvelope>();
+  // LRU of decoded envelopes, bounded by encoded record bytes rather than entry
+  // count: records are one per segment, so a count cap is far below a hot set.
+  private readonly envelopeCache = new Map<string, { event: EventEnvelope; bytes: number }>();
+  private envelopeCacheBytes = 0;
 
   get changeSignal(): JournalChangeSignal {
     return this.changeSignalSource;
@@ -442,6 +448,9 @@ export class FileEventJournal implements EventJournal {
   ): Promise<EventEnvelope[]> {
     const events: EventEnvelope[] = [];
     const rows = db.prepare(query).all(...parameters);
+    // A scan larger than this would evict the hot small streams; serve hits but
+    // do not insert.
+    const admit = rows.length <= ENVELOPE_CACHE_ADMIT_MAX_ROWS;
     // Release SQLite's shared lock before asynchronous segment I/O. Immutable
     // locations preserve this snapshot while another process appends.
     if (db.isTransaction) db.exec('COMMIT');
@@ -462,8 +471,9 @@ export class FileEventJournal implements EventJournal {
       )
         throw new Error('Invalid journal index entry');
       const cacheKey = JSON.stringify([file, offset, length, size, mtime]);
-      const cached = this.envelopeCache.get(cacheKey);
-      if (cached !== undefined) {
+      const entry = this.envelopeCache.get(cacheKey);
+      if (entry !== undefined) {
+        const cached = entry.event;
         const info = await stat(join(this.root, 'events', file));
         if (
           info.size !== size ||
@@ -475,7 +485,7 @@ export class FileEventJournal implements EventJournal {
         )
           throw new Error('Stale journal cache entry');
         this.envelopeCache.delete(cacheKey);
-        this.envelopeCache.set(cacheKey, cached);
+        this.envelopeCache.set(cacheKey, entry);
         events.push(cached);
         continue;
       }
@@ -495,15 +505,27 @@ export class FileEventJournal implements EventJournal {
           event.sequence !== sequence
         )
           throw new Error('Indexed stream mismatch');
-        this.envelopeCache.set(cacheKey, event);
-        if (this.envelopeCache.size > 256)
-          this.envelopeCache.delete(this.envelopeCache.keys().next().value!);
+        if (admit) this.admit(cacheKey, event, length);
         events.push(event);
       } finally {
         await handle.close();
       }
     }
     return events;
+  }
+
+  private admit(cacheKey: string, event: EventEnvelope, bytes: number): void {
+    if (bytes > ENVELOPE_CACHE_MAX_BYTES) return;
+    const previous = this.envelopeCache.get(cacheKey);
+    if (previous !== undefined) this.envelopeCacheBytes -= previous.bytes;
+    this.envelopeCache.delete(cacheKey);
+    this.envelopeCache.set(cacheKey, { event, bytes });
+    this.envelopeCacheBytes += bytes;
+    for (const [oldest, value] of this.envelopeCache) {
+      if (this.envelopeCacheBytes <= ENVELOPE_CACHE_MAX_BYTES) break;
+      this.envelopeCache.delete(oldest);
+      this.envelopeCacheBytes -= value.bytes;
+    }
   }
 
   async readStream(stream: StreamRef): Promise<readonly EventEnvelope[]> {

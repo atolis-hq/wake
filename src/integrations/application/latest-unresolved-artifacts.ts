@@ -1,4 +1,4 @@
-import type { EventEnvelope } from '@atolis-hq/eventing';
+import type { EventEnvelope, ViewSnapshotCodec } from '@atolis-hq/eventing';
 import {
   ArtifactEventType,
   decodeArtifactEvent,
@@ -22,3 +22,13 @@ export function extendLatestUnresolved(
   }
   return latest;
 }
+
+export const latestUnresolvedCodec: ViewSnapshotCodec<ReadonlyMap<string, ArtifactEvent>> = {
+  encode: (latest) => [...latest],
+  decode(raw) {
+    if (!Array.isArray(raw)) throw new Error('Artifact snapshot must be a list of entries');
+    return new Map(
+      (raw as [string, EventEnvelope][]).map(([key, event]) => [key, decodeArtifactEvent(event)]),
+    );
+  },
+};
