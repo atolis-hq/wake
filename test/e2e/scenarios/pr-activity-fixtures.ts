@@ -64,6 +64,7 @@ export interface ComposedMergeRootOptions {
   readonly provider: ExternalDeliveryAdapter;
   readonly waitForMerged?: boolean;
   readonly retryChecks?: boolean;
+  readonly autoMerge?: boolean;
   readonly clock?: Clock;
   readonly journal?: EventJournal;
   readonly projections?: ProjectionStore;
@@ -94,7 +95,11 @@ export async function createComposedMergeRoot(
             stages: {
               merge: {
                 activity: 'pr.merge',
-                with: { method: 'squash', requireChecks: true },
+                with: {
+                  method: 'squash',
+                  requireChecks: true,
+                  autoMerge: options.autoMerge ?? false,
+                },
                 on: options.waitForMerged
                   ? {
                       ...outcomeRoutes(),

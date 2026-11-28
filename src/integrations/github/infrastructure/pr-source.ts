@@ -173,7 +173,7 @@ function pullRequestObservation(input: {
   return event;
 }
 
-function normalizeCheckEvidence(
+export function normalizeCheckEvidence(
   checkRuns: readonly GitHubCheckRunPayload[],
   statuses: readonly GitHubCommitStatusPayload[],
 ): PullRequestCheckStateValue {

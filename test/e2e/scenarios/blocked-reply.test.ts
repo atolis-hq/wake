@@ -49,8 +49,9 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('default'),
     });
-    await world.advanceUntilSettled(work.workItemId);
     await world.advance(work.workItemId);
+    world.clock.advance(60_000);
+    await world.advanceUntilSettled(work.workItemId);
     await world.waitForSignal(workflow.workflowInstanceId, {
       signalKind: signalName('accepted'),
       resourceId: resId('pr-1'),

@@ -200,6 +200,14 @@ function foldDeliveryFact(
     ),
   };
   switch (delivery.event.eventType) {
+    case DeliveryEventType.Deferred:
+      return {
+        ...current,
+        readinessWait: {
+          startedAt: delivery.event.payload.startedAt,
+          notBefore: delivery.event.payload.notBefore,
+        },
+      };
     case DeliveryEventType.AttemptStarted:
       return { ...current, attempts: current.attempts + 1 };
     case DeliveryEventType.Confirmed:

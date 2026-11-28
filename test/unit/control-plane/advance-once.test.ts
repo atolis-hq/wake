@@ -1690,6 +1690,7 @@ it('orders durable workflow activations through advanceOnce with one available s
     w.clock,
     { ids: w.ids, maxConcurrentRuns: 1 },
   );
+  w.clock.advance(60_000);
   for (const workflow of [near!, watch!, retry!, fresh!]) {
     const view = await w.orchestration.get(workflow.workflowInstanceId);
     await expect(advance({ maxProgress: 1 })).resolves.toMatchObject({ kind: 'progressed' });

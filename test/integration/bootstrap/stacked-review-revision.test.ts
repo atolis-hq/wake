@@ -214,7 +214,7 @@ it.each([
                       on: {
                         done: { then: 'done' },
                         rejected: { then: 'done' },
-                        failed: { retry: { max: 1 }, then: 'done' },
+                        failed: { retry: { max: 1, delaysMs: [1] }, then: 'done' },
                       },
                     },
                   },
@@ -712,6 +712,7 @@ it.each([
           failingReviews = 2;
           await root.orchestration.reconcileChildCompletions(context('start-failing-review'));
           for (const attempt of [1, 2]) {
+            await new Promise((resolve) => setTimeout(resolve, attempt));
             const failing = (await root.orchestration.listAll()).find(
               (view) => view.workflowInstanceId === requested.requestId,
             )!;

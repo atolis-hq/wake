@@ -279,10 +279,21 @@ retains `checks-could-not-be-read` for unknown evidence or `checks-pending` for
 pending checks. Unknown never passes required-check authority; pending remains
 allowed for provider-managed `autoMerge`.
 
-Existing `retry: { max: N }` policies still retry immediately without filtering.
+Existing `retry: { max: N }` policies retry without filtering, waiting 60 seconds
+before the first retry, 5 minutes before the second, and 15 minutes before each
+further retry. These durable deadlines survive restart. Explicit `delaysMs`
+overrides this default ladder.
 Optional `reasons` selects check-denial codes, and optional `delaysMs` must have
 exactly `max` positive integer delays. This policy belongs in the configured
 workflow; it does not retry runners.
+
+GitHub auto-merge rejections for unstable merge status keep delivery pending,
+without a failed activity outcome. Wake reevaluates provider readiness every
+60 seconds on control-plane advancement, including after restart and when no
+check-change event arrives. After 60 minutes from the first unstable rejection,
+continued instability follows the existing failed route and retry policy.
+Failing checks, conflicts, review requirements and file guards retain their
+existing failure behavior. No additional configuration is required.
 
 This is useful for native auto-merge: delivery confirmation means the provider
 accepted the enablement request, not that the pull request merged. Wake stays

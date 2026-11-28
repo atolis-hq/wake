@@ -31,7 +31,9 @@ export function requestRetry(
   const retryKey = `${state.currentStage}:${input.outcome.kind}`;
   const count = (state.retryCounts[retryKey] ?? 0) + 1;
   const stage = definition.stages[stageName(state.currentStage)]!;
-  const delay = stage.on[input.outcome.kind]?.retry?.delaysMs?.[count - 1];
+  const delay =
+    stage.on[input.outcome.kind]?.retry?.delaysMs?.[count - 1] ??
+    [60_000, 300_000, 900_000][Math.min(count - 1, 2)]!;
   events.push(
     stateDraft(
       state,
@@ -45,9 +47,7 @@ export function requestRetry(
       {
         eventType: OrchestrationEventType.ActivityRequested,
         payload: {
-          ...(delay === undefined
-            ? {}
-            : { notBefore: new Date(Date.parse(input.occurredAt) + delay).toISOString() }),
+          notBefore: new Date(Date.parse(input.occurredAt) + delay).toISOString(),
           ...activation(state.workflowInstanceId, nextOrdinal(state), stage.activity, stage.with, {
             execution: stage.execution,
             stage: stageName(state.currentStage),

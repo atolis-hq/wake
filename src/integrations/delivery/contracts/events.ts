@@ -13,6 +13,7 @@ import { IntegrationStreamKind, type DeliveryStreamRef } from '../../contracts/s
 import { DeliveryResultKind } from './vocabulary.js';
 
 export const DeliveryEventType = {
+  Deferred: 'delivery.deferred',
   AttemptStarted: 'delivery.attempt-started',
   Confirmed: 'delivery.confirmed',
   Failed: 'delivery.failed',
@@ -32,6 +33,12 @@ export interface DeliveryEventCorrelation {
 }
 
 export interface DeliveryEventPayloads {
+  readonly [DeliveryEventType.Deferred]: DeliveryEventCorrelation & {
+    readonly startedAt: string;
+    readonly notBefore: string;
+    readonly code: string;
+    readonly message: string;
+  };
   readonly [DeliveryEventType.AttemptStarted]: DeliveryEventCorrelation;
   readonly [DeliveryEventType.Confirmed]: DeliveryEventCorrelation & {
     readonly externalId: string;
@@ -89,6 +96,18 @@ const reconciledPayloadSchema = z.discriminatedUnion('result', [
 ]);
 const eventSchema: z.ZodType<DeliveryEvent> = z
   .union([
+    eventEnvelopeSchema.extend({
+      event: eventDataSchema.extend({
+        eventType: z.literal(DeliveryEventType.Deferred),
+        payload: correlationSchema.extend({
+          startedAt: z.iso.datetime(),
+          notBefore: z.iso.datetime(),
+          code: z.string().min(1),
+          message: z.string().min(1),
+        }),
+      }),
+      stream: deliveryStreamSchema,
+    }),
     eventEnvelopeSchema.extend({
       event: eventDataSchema.extend({
         eventType: z.literal(DeliveryEventType.AttemptStarted),

@@ -16,6 +16,7 @@ import { DeliveryEventType } from '../contracts/events.js';
 import type { DeliveryIntentView } from '../contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind, DeliveryState } from '../contracts/vocabulary.js';
 import { hasTerminalDeliveryFact, nextDeliverable } from './delivery-ordering.js';
+import { readinessResult } from './delivery-readiness.js';
 
 export interface DeliveryServiceDependencies {
   readonly journal: EventJournal;
@@ -99,7 +100,11 @@ export class DeliveryService {
     signal: AbortSignal,
     options: { readonly skip?: ReadonlySet<string> } = {},
   ): Promise<DeliveryIntentView | null> {
-    const intent = nextDeliverable(await this.dependencies.intents(), options.skip);
+    const now = Date.parse(this.dependencies.now());
+    const eligible = (await this.dependencies.intents()).filter(
+      (item) => item.readinessWait === undefined || Date.parse(item.readinessWait.notBefore) <= now,
+    );
+    const intent = nextDeliverable(eligible, options.skip);
     if (intent === undefined) return null;
     const occurrence: DeliveryOccurrence = { ordinal: intent.occurrenceOrdinal + 1 };
     if (await this.suppressMergedPublication(intent, occurrence)) return intent;
@@ -118,7 +123,10 @@ export class DeliveryService {
       );
       return intent;
     }
-    if (intent.state === DeliveryState.Ambiguous || intent.attempts > 0) {
+    if (
+      intent.state === DeliveryState.Ambiguous ||
+      (intent.readinessWait === undefined && intent.attempts > 0)
+    ) {
       const reconciled = await adapter.reconcile(
         intent,
         intent.reconciliationKey ?? intent.intentEventId,
@@ -137,6 +145,12 @@ export class DeliveryService {
     if (await this.suppressMergedPublication(intent, occurrence)) return intent;
     const result = await adapter.deliver(intent, signal);
     switch (result.kind) {
+      case DeliveryResultKind.Deferred:
+        await this.append(
+          intent,
+          readinessResult(intent, result, occurrence.ordinal, this.dependencies.now()),
+        );
+        break;
       case DeliveryResultKind.Confirmed:
         await this.append(
           intent,

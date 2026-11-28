@@ -72,7 +72,10 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('default'),
     });
-    for (let attempt = 0; attempt < 5; attempt += 1) await world.advance(work.workItemId);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await world.advance(work.workItemId);
+      world.clock.advance(900_000);
+    }
     expect(refineAttempts).toBe(2);
     expect(implementAttempts).toBe(3);
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('completed');

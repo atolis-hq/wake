@@ -84,8 +84,10 @@ defineScenario(
     });
     const before = await world.viewWorkflow(parent.workflowInstanceId);
     await world.triggerWatch('review.requested', 'review-1');
-    await world.advanceUntilSettled(work.workItemId);
-    await world.advanceUntilSettled(work.workItemId);
+    await world.advance(work.workItemId);
+    world.clock.advance(60_000);
+    await world.advance(work.workItemId);
+    world.clock.advance(300_000);
     await world.advanceUntilSettled(work.workItemId);
     const childId = `${parent.workflowInstanceId}:watch:pr-review:trigger:review-1`;
     expect((await world.viewWorkflow(childId))?.status).toBe('waiting');

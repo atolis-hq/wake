@@ -72,7 +72,10 @@ defineScenario(
       workItemId: work.workItemId,
       workflowName: workflowName('default'),
     });
-    for (let attempt = 0; attempt < 3; attempt += 1) await world.advance(work.workItemId);
+    for (const delay of [0, 60_000, 300_000]) {
+      world.clock.advance(delay);
+      await world.advance(work.workItemId);
+    }
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.status).toBe('waiting');
     expect((await world.viewWorkflow(workflow.workflowInstanceId))?.retryCounts).toEqual({
       'refine:failed': 2,
