@@ -4,39 +4,47 @@ import { createSurfaceApiApplications } from '../../../src/bootstrap/surface-api
 import { type WorkflowInstanceView } from '../../../src/orchestration/index.js';
 import { workId } from '../../support/identities.js';
 
-it('lists workflows from the canonical orchestration projection value', async () => {
-  const workflow = {
-    workflowInstanceId: 'workflow-canonical' as never,
-    workItemId: workId('workflow-canonical'),
-    workflowName: 'default' as never,
-    orchestrationGroupId: 'group-canonical' as never,
-    status: 'active',
-    currentStage: 'implement' as never,
-    repeatCounts: {},
-    retryCounts: {},
-    supplementalQueue: [],
-    acceptedSignalIds: [],
-    operatorRetryCommandIds: [],
-    acceptedOutcomes: [],
-    acceptedChildCompletionIds: [],
-    causalRejectionIds: [],
-    childCompletionRecorded: false,
-  } as WorkflowInstanceView;
-  const applications = createSurfaceApiApplications(
-    {
-      projections: {
-        list: async () => [{ lastGlobalPosition: 1, value: workflow }],
-      },
-      journal: {
-        readAll: async () => [
-          { globalPosition: 1, event: { occurredAt: '2026-09-02T12:00:00.000Z' } },
-        ],
-      },
-    } as unknown as CompositionRoot,
-    () => '2026-09-02T12:00:00.000Z',
-  );
+it.each(['open', 'closed', 'cancelled'] as const)(
+  'lists retry eligibility for %s work from the canonical projection',
+  async (state) => {
+    const workflow = {
+      workflowInstanceId: 'workflow-canonical' as never,
+      workItemId: workId('workflow-canonical'),
+      workflowName: 'default' as never,
+      orchestrationGroupId: 'group-canonical' as never,
+      status: 'blocked',
+      blockReason: 'unconfigured outcome failed',
+      pendingActivation: { activationId: 'activation-1', status: 'completed', activity: 'agent' },
+      lastOutcome: { kind: 'failed' },
+      currentStage: 'implement' as never,
+      repeatCounts: {},
+      retryCounts: {},
+      supplementalQueue: [],
+      acceptedSignalIds: [],
+      operatorRetryCommandIds: [],
+      acceptedOutcomes: ['activation-1'],
+      acceptedChildCompletionIds: [],
+      causalRejectionIds: [],
+      childCompletionRecorded: false,
+    } as WorkflowInstanceView;
+    const applications = createSurfaceApiApplications(
+      {
+        work: { get: async () => ({ state }) },
+        projections: {
+          list: async () => [{ lastGlobalPosition: 1, value: workflow }],
+        },
+        journal: {
+          readAll: async () => [
+            { globalPosition: 1, event: { occurredAt: '2026-09-02T12:00:00.000Z' } },
+          ],
+        },
+      } as unknown as CompositionRoot,
+      () => '2026-09-02T12:00:00.000Z',
+    );
 
-  const result = await applications.orchestration.list({ limit: 10 });
+    const result = await applications.orchestration.list({ limit: 10 });
 
-  expect(result.items).toMatchObject([{ workflowInstanceId: workflow.workflowInstanceId }]);
-});
+    expect(result.items[0]?.retryEligible).toBe(state === 'open' ? true : undefined);
+    expect(result.items).toMatchObject([{ workflowInstanceId: workflow.workflowInstanceId }]);
+  },
+);

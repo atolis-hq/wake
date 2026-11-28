@@ -76,7 +76,7 @@ export async function presentPrimaryWorkflow(
   if (workflow === null) return null;
   const mergePolicyBlock = await mergePolicyBlockForWork(root, workflow);
   return {
-    ...presentWorkflowInstance(workflow),
+    ...presentWorkflowInstance(workflow, (await root.work.get(workflow.workItemId))?.state),
     ...(mergePolicyBlock === undefined ? {} : { mergePolicyBlock }),
   };
 }

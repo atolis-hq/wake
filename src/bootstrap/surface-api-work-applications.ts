@@ -336,7 +336,7 @@ async function workDetail(
       primary: await presentPrimaryWorkflow(root, primary),
       children: workflows
         .filter((value) => value.parentWorkflowInstanceId !== undefined)
-        .map(presentWorkflowInstance),
+        .map((value) => presentWorkflowInstance(value, work.state)),
       diagram: { href: `/api/v1/workflow-diagrams?workItemKey=${encodeURIComponent(key)}` },
     },
     execution: {
