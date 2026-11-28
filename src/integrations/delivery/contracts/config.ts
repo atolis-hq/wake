@@ -12,6 +12,11 @@ export interface ExternalDeliveryAdapter {
 
 export type DeliveryResult =
   | {
+      readonly kind: typeof DeliveryResultKind.Deferred;
+      readonly code: string;
+      readonly message: string;
+    }
+  | {
       readonly kind: typeof DeliveryResultKind.Confirmed;
       readonly externalId: string;
       readonly producerId?: string;

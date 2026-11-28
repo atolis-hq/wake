@@ -186,6 +186,9 @@ it('retries a confirmed interrupted attempt once through workflow policy after r
     },
   });
   await world.advance(work.workItemId);
+  expect(starts).toBe(1);
+  world.clock.advance(60_000);
+  await world.advance(work.workItemId);
   const runs = await world.viewRuns();
   expect(runs.map((run) => run.status)).toEqual(['failed', 'succeeded']);
   expect(starts).toBe(2);

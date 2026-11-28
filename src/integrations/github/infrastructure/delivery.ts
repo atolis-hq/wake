@@ -2,6 +2,7 @@ import { BuiltInActivityName } from '../../../activities/index.js';
 import type { ExternalDeliveryAdapter } from '../../delivery/contracts/config.js';
 import type { DeliveryIntentView } from '../../delivery/contracts/views.js';
 import { DeliveryIntentKind, DeliveryResultKind } from '../../delivery/contracts/vocabulary.js';
+import { GitHubMergeNotReadyError } from '../contracts/merge-not-ready.js';
 
 const GitHubDeliveryFailureCode = 'github-error';
 
@@ -53,11 +54,7 @@ export function createGitHubDelivery(
         } catch {
           // Unavailable evidence cannot turn a failed attempt into success.
         }
-        return {
-          kind: DeliveryResultKind.Failed,
-          code: GitHubDeliveryFailureCode,
-          message: githubErrorMessage(error),
-        };
+        return githubFailure(error);
       }
     },
     async reconcile(intent) {
@@ -86,4 +83,15 @@ function githubErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   return 'GitHub delivery failed with a non-Error rejection';
+}
+
+function githubFailure(error: unknown) {
+  return {
+    kind:
+      error instanceof GitHubMergeNotReadyError
+        ? DeliveryResultKind.Deferred
+        : DeliveryResultKind.Failed,
+    code: GitHubDeliveryFailureCode,
+    message: githubErrorMessage(error),
+  };
 }

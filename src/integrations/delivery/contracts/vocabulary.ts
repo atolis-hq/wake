@@ -16,6 +16,7 @@ export const DeliveryResultKind = defineClosedVocabulary({
   Ambiguous: 'ambiguous',
   NotFound: 'not-found',
   Unknown: 'unknown',
+  Deferred: 'deferred',
 } as const);
 
 export type DeliveryResultKind = ValueOf<typeof DeliveryResultKind>;

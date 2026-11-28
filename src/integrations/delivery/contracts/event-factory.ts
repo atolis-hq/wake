@@ -12,6 +12,8 @@ export type DeliveryEventDataInput = {
 
 export function createDeliveryEventData(input: DeliveryEventDataInput): DeliveryEventData {
   switch (input.eventType) {
+    case DeliveryEventType.Deferred:
+      return createEventData(input);
     case DeliveryEventType.AttemptStarted:
       return createEventData(input);
     case DeliveryEventType.Confirmed:

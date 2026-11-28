@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { MergeMethod, ProviderPermission, PullRequestState } from '../../../activities/index.js';
 import type { GitHubIssueQueryFilters } from '../contracts/issue-query.js';
+import { GitHubMergeNotReadyError } from '../contracts/merge-not-ready.js';
 import { GitHubOutboundAction } from '../contracts/vocabulary.js';
 import { createBoundedGitHubFetch } from './bounded-fetch.js';
 import { createCheckExecutionReader } from './check-execution.js';
@@ -19,6 +20,7 @@ import {
   listReviews,
 } from './client-reads.js';
 import { createEtagCache } from './etag-cache.js';
+import { hasFailingMergeChecks } from './merge-readiness.js';
 import { workflowRunsForSuite } from './workflow-run-evidence.js';
 
 /* eslint-disable max-lines */
@@ -321,6 +323,13 @@ async function enableAutoMerge(octokit: Octokit, command: GitHubDeliveryCommand)
     );
     return result.enablePullRequestAutoMerge.pullRequest.id;
   } catch (error) {
+    if (error instanceof Error && /is in unstable status/i.test(error.message)) {
+      if (
+        await hasFailingMergeChecks(octokit, command.owner, command.repo, pullRequest.data.head.sha)
+      )
+        throw error;
+      throw new GitHubMergeNotReadyError(error.message, { cause: error });
+    }
     if (!isAlreadyCleanError(error)) throw error;
     return directMerge(octokit, command);
   }

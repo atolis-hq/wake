@@ -46,6 +46,7 @@ export interface DeliveryIntentView {
   readonly state: DeliveryStateValue;
   /** When the delivery last transitioned into a resolved (non-pending) state. */
   readonly resolvedAt?: string;
+  readonly readinessWait?: { readonly startedAt: string; readonly notBefore: string };
   readonly attempts: number;
   readonly occurrenceOrdinal: number;
   readonly reconciliationKey?: string;

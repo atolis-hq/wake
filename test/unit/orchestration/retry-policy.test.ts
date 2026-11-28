@@ -203,3 +203,44 @@ it.each([
 ])('rejects malformed selective retry configuration %j', (retry) => {
   expect(outcomeRouteConfigSchema.safeParse({ then: 'await-human', retry }).success).toBe(false);
 });
+
+it.each([undefined, [2000, 4000, 6000, 8000]])(
+  'paces retries with delays %j after journal replay',
+  (delaysMs) => {
+    const fixture = retryFixture();
+    const stage = fixture.definition.stages[fixture.definition.entry]!;
+    const definition = {
+      ...fixture.definition,
+      stages: {
+        ...fixture.definition.stages,
+        [fixture.definition.entry]: {
+          ...stage,
+          on: {
+            ...stage.on,
+            failed: {
+              ...stage.on.failed!,
+              retry: { max: 4, ...(delaysMs === undefined ? {} : { delaysMs }) },
+            },
+          },
+        },
+      },
+    };
+    const events = [...fixture.events];
+    let now = Date.parse('2026-07-30T12:01:00.000Z');
+    for (const [index, delay] of (delaysMs ?? [60000, 300000, 900000, 900000]).entries()) {
+      const state = foldWorkflowInstance(recorded(events))!;
+      const decision = acceptActivityOutcome(definition, state, {
+        activationId: state.pendingActivation!.activationId,
+        outcome: orchestrationActivityOutcome({ kind: 'failed' }),
+        occurredAt: new Date(now).toISOString(),
+        causationId: 'failure-' + index,
+      });
+      if (decision.kind !== 'append') throw new Error('expected retry');
+      events.push(...decision.events);
+      expect(foldWorkflowInstance(recorded(events))?.pendingActivation?.notBefore).toBe(
+        new Date(now + delay).toISOString(),
+      );
+      now += delay;
+    }
+  },
+);
