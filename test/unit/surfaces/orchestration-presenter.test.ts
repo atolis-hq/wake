@@ -56,3 +56,41 @@ describe('presentWorkflowInstance', () => {
     expect(presentWorkflowInstance(view)).not.toHaveProperty('blockReason');
   });
 });
+
+it('shows only the safe block reason for a waiting failed workflow', () => {
+  const view = {
+    workItemId: id,
+    status: 'waiting',
+    waitingFor: { signalKind: 'failed' },
+    blockReason: 'unconfigured outcome blocked',
+    lastOutcome: { kind: 'failed', data: { reason: 'github-error' } },
+    acceptedOutcomes: [],
+  } as unknown as WorkflowInstanceView;
+  const result = presentWorkflowInstance(view);
+  expect(result).toMatchObject({
+    status: 'waiting',
+    displayStatus: 'failed',
+    blockReason: 'unconfigured outcome blocked',
+  });
+  expect(JSON.stringify(result)).not.toContain('github-error');
+});
+
+it.each([
+  ['failed', true],
+  ['approved', false],
+  ['delivery-result', false],
+  ['blocked', false],
+])('offers retry for %s only when the failed stage is eligible', (signalKind, eligible) => {
+  const view = {
+    workItemId: id,
+    status: 'waiting',
+    waitingFor: { signalKind },
+    pendingActivation: { activationId: 'activation-1', status: 'completed' },
+    acceptedOutcomes: ['activation-1'],
+    lastOutcome: { kind: 'failed', data: { reason: 'github-error' } },
+    blockReason: 'unconfigured outcome blocked',
+  } as unknown as WorkflowInstanceView;
+  const result = presentWorkflowInstance(view);
+  expect(result.retryEligible === true).toBe(eligible);
+  if (signalKind !== 'failed') expect(result).not.toHaveProperty('blockReason');
+});

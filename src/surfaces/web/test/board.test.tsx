@@ -849,3 +849,31 @@ describe('board', () => {
     window.localStorage.clear();
   });
 });
+
+it('shows a failed workflow indicator and safe reason on its board card', async () => {
+  render(
+    <MemoryRouter initialEntries={['/board']}>
+      <App
+        client={boardClient(undefined, [
+          {
+            workItemKey: 'wk_failed',
+            workItemId: 'work-failed',
+            objective: 'Failed merge',
+            condition: 'error',
+            displayStatus: 'failed',
+            blockReason: 'unconfigured outcome blocked',
+            dwellSince: asOf,
+            runCount: 1,
+            totalTokens: 0,
+            totalCostUsd: 0,
+            totalDurationMs: 0,
+          },
+        ])}
+      />
+    </MemoryRouter>,
+  );
+  const card = await screen.findByRole('listitem', { name: 'Failed merge' });
+  expect(within(card).getByText('failed')).toBeTruthy();
+  expect(within(card).getByText('unconfigured outcome blocked')).toBeTruthy();
+  expect(within(card).queryByText('github-error')).toBeNull();
+});
