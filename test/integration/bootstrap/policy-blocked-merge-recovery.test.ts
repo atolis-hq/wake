@@ -714,7 +714,7 @@ it('ignores superseded failures and unknown checks without spending a repair', a
 });
 
 it('repairs red checks, observes the pushed green head, and requests merge through production composition', async () => {
-  const definition = checkRepairWorkflow();
+  const definition = structuredClone(checkRepairWorkflow());
   definition.stages.merge.with.blockedPaths = [];
   const { root } = await setup(definition, true);
   await until(root, () => waiting(root));
