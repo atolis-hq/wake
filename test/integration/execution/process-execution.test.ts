@@ -457,6 +457,31 @@ describe('cliRunner', () => {
     });
   });
 
+  it('fails an exit-zero run that the adapter rejects, keeping the raw output', async () => {
+    const runner = cliRunner(
+      'test-cli',
+      process.execPath,
+      () => ['-e', 'process.stdout.write("looked fine")'],
+      {
+        rejectSuccessfulExit: (stdout) => ({
+          kind: 'test-rejection',
+          message: `rejected ${stdout}`,
+        }),
+        parseSuccessfulOutput: () => ({ output: 'must not be used' }),
+      },
+    );
+    const execution = await runner.start(
+      { runId: 'run-1', prompt: 'ignored', allowedTools: [] },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      output: 'looked fine',
+      failure: { kind: 'test-rejection', message: 'rejected looked fine' },
+    });
+  });
+
   it('maps a missing command to a typed process-exit failure', async () => {
     const runner = cliRunner('missing-cli', 'wake-command-that-does-not-exist', () => []);
     const execution = await runner.start(

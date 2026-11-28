@@ -113,6 +113,11 @@ export function cliRunner(
     readonly defaultModel?: string;
     readonly supportsSessionResume?: boolean;
     readonly supportsEphemeralMcp?: boolean;
+    // Fails an exit-zero run the CLI itself shows did not do what Wake required.
+    readonly rejectSuccessfulExit?: (
+      stdout: string,
+      request: RunnerRequest,
+    ) => { readonly kind: string; readonly message: string } | undefined;
     // When set, a successful exit whose parser yields no output fails instead of publishing raw stdout.
     readonly unparsedSuccessFailure?: { readonly kind: string; readonly message: string };
     readonly parseSuccessfulOutput?: (
@@ -155,6 +160,14 @@ export function cliRunner(
               output: value.stdout,
               runner: name,
               failure: failureFor(value, options),
+            };
+          const rejection = options.rejectSuccessfulExit?.(value.stdout, request);
+          if (rejection !== undefined)
+            return {
+              transport: RunStatus.Failed,
+              output: value.stdout,
+              runner: name,
+              failure: rejection,
             };
           const parsed = parseSuccessfulOutput(
             value.stdout,

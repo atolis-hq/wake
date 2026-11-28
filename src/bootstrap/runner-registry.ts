@@ -6,6 +6,7 @@ import {
   createCursorRunner,
   emptyFakeScenarios,
   FakeExecutionRunner,
+  RunnerKind,
   RunnerRegistry,
   type FakeScenarioResolver,
   type Runner,
@@ -60,17 +61,17 @@ function createConfiguredRunner(
   scenarios: FakeScenarioResolver,
 ) {
   switch (runner.kind) {
-    case 'fake':
+    case RunnerKind.Fake:
       return new FakeExecutionRunner(name, scenarios);
-    case 'claude-cli':
+    case RunnerKind.ClaudeCli:
       return createClaudeRunner(runner);
-    case 'codex-cli':
+    case RunnerKind.CodexCli:
       return createCodexRunner(runner);
-    case 'cursor-cli':
+    case RunnerKind.CursorCli:
       return createCursorRunner(runner);
-    case 'copilot-cli':
+    case RunnerKind.CopilotCli:
       return createCopilotRunner(runner);
-    case 'command': {
+    case RunnerKind.Command: {
       if (runner.command === undefined) throw new Error('Command runner requires a command');
       return createCommandRunner(runner.command, runner.args, runner.runnerTimeouts);
     }

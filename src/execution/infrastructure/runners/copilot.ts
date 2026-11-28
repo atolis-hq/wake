@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { RunStatus, WorkspaceMode } from '../../contracts/vocabulary.js';
+import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
 import { usageSinceBaseline, type CumulativeUsage } from './usage-baseline.js';
 
@@ -47,12 +47,9 @@ export function createCopilotRunner(options: CliRunnerOptions = {}): Runner {
       {
         ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
         ...(options.model === undefined ? {} : { defaultModel: options.model }),
-        parseSuccessfulOutput: (stdout, request) => {
-          const failure = copilotMcpFailure(stdout, request);
-          return failure === undefined
-            ? parseCopilotOutput(stdout, request, readUsageReport(usageFile))
-            : { transport: RunStatus.Failed, output: stdout, failure };
-        },
+        rejectSuccessfulExit: copilotMcpFailure,
+        parseSuccessfulOutput: (stdout, request) =>
+          parseCopilotOutput(stdout, request, readUsageReport(usageFile)),
         classifyFailure: classifyCopilotFailure,
         supportsSessionResume: true,
         supportsEphemeralMcp: true,
