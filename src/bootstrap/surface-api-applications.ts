@@ -204,10 +204,24 @@ function createOrchestrationApplications(root: CompositionRoot, now: () => strin
       const filtered = stored.filter(
         (entry) => query.state === undefined || entry.value.status === query.state,
       );
-      return projectionPage(root.journal, filtered, query, presentWorkflowInstance, {
-        emptyAsOf: now(),
-        provenance: stored,
-      });
+      const workStates = new Map(
+        await Promise.all(
+          filtered.map(
+            async ({ value }) =>
+              [value.workItemId, (await root.work.get(value.workItemId))?.state] as const,
+          ),
+        ),
+      );
+      return projectionPage(
+        root.journal,
+        filtered,
+        query,
+        (value) => presentWorkflowInstance(value, workStates.get(value.workItemId)),
+        {
+          emptyAsOf: now(),
+          provenance: stored,
+        },
+      );
     },
   };
 }

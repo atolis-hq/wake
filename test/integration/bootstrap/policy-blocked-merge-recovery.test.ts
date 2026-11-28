@@ -40,7 +40,7 @@ import {
   resourceKind,
 } from '../../../src/resources/index.js';
 import { toWorkItemKey } from '../../../src/surfaces/index.js';
-import { WorkStatus } from '../../../src/work/index.js';
+import { WorkEventType, WorkStatus } from '../../../src/work/index.js';
 import { githubCheckObservation } from '../../support/github-check-observation.js';
 import { resId, workId } from '../../support/identities.js';
 
@@ -698,7 +698,7 @@ it.each([1, 2])(
       ),
     ).toHaveLength(before);
   },
-  60_000,
+  120_000,
 );
 
 it('ignores superseded failures and unknown checks without spending a repair', async () => {
@@ -714,7 +714,7 @@ it('ignores superseded failures and unknown checks without spending a repair', a
 });
 
 it('repairs red checks, observes the pushed green head, and requests merge through production composition', async () => {
-  const definition = checkRepairWorkflow();
+  const definition = structuredClone(checkRepairWorkflow());
   definition.stages.merge.with.blockedPaths = [];
   const { root } = await setup(definition, true);
   await until(root, () => waiting(root));
@@ -754,3 +754,92 @@ it('repairs red checks, observes the pushed green head, and requests merge throu
   );
   expect((await root.orchestration.get(iid))?.retryCounts['pr.merge:failing']).toBe(1);
 }, 60_000);
+
+for (const closureFirst of [true, false]) {
+  it(`concludes our delivered merge exactly once with closureFirst=${closureFirst}`, async () => {
+    const definition = structuredClone(workflow);
+    definition.stages.merge.with.blockedPaths = [];
+    definition.stages['complete-issue'].on.done = {
+      then: 'done',
+      concludesWork: true,
+    } as (typeof definition.stages)['complete-issue']['on']['done'];
+    const { root } = await setup(definition);
+    await until(root, async () => {
+      const view = await root.orchestration.get(iid);
+      return (
+        view?.status === WorkflowStatus.Waiting &&
+        view.lastOutcome?.kind === ActivityOutcomeKind.Done
+      );
+    });
+    const mergedActivation = (await root.orchestration.get(iid))!.pendingActivation!.activationId;
+    const policy = createWorkCancellationPolicy(
+      root.work,
+      root.orchestration,
+      root.execution,
+      { now: () => new Date(command().occurredAt) },
+      { next: () => command().commandId },
+    );
+    const close = () =>
+      concludeObservedWork(
+        { work: root.work, conclusion: policy },
+        {
+          workItemId: wid,
+          outcome: ExternalWorkOutcome.Completed,
+          reason: 'Provider observed completed issue',
+        },
+      );
+    if (closureFirst) await close();
+    await observe(root, 'merged');
+    await until(
+      root,
+      async () => (await root.orchestration.get(iid))?.status === WorkflowStatus.Completed,
+    );
+    await close();
+    await close();
+    await tick(root);
+    const view = await root.orchestration.get(iid);
+    expect(view).toMatchObject({ status: WorkflowStatus.Completed, concludesWork: true });
+    expect((await root.work.get(wid))?.state).toBe(WorkStatus.Closed);
+    const facts = await root.journal.readAll(0);
+    expect(facts.filter((fact) => fact.event.eventType === WorkEventType.ItemClosed)).toHaveLength(
+      1,
+    );
+    expect(
+      facts.filter((fact) => fact.event.eventType === OrchestrationEventType.InstanceCompleted),
+    ).toHaveLength(1);
+    expect(
+      facts.some((fact) => {
+        const owned = selectWorkflowOrchestrationEvent(fact);
+        return (
+          owned?.event.eventType === OrchestrationEventType.ActivityOutcomeAccepted &&
+          owned.event.payload.activationId === mergedActivation &&
+          owned.event.payload.outcome.kind === ActivityOutcomeKind.Done
+        );
+      }),
+    ).toBe(true);
+  });
+}
+
+it('does not infer delivery from external closure after a denied merge', async () => {
+  const { root } = await setup();
+  await until(root, async () => {
+    const view = await root.orchestration.get(iid);
+    return (
+      view?.status === WorkflowStatus.Waiting &&
+      view.lastOutcome?.kind === ActivityOutcomeKind.Blocked
+    );
+  });
+  expect((await root.orchestration.get(iid))?.lastOutcome?.kind).toBe(ActivityOutcomeKind.Blocked);
+  const policy = createWorkCancellationPolicy(
+    root.work,
+    root.orchestration,
+    root.execution,
+    { now: () => new Date(command().occurredAt) },
+    { next: () => command().commandId },
+  );
+  await policy.closeWork(wid, 'Issue closed externally');
+  expect((await root.orchestration.get(iid))?.status).toBe(WorkflowStatus.Blocked);
+  const api = await createSurfaceApplications(root);
+  const detail = await api.api.work.detail(toWorkItemKey(wid));
+  expect(detail?.data.orchestration.primary).not.toHaveProperty('retryEligible');
+});

@@ -14,6 +14,8 @@ describe('presentWorkflowInstance', () => {
       workflowName: 'default',
       orchestrationGroupId: 'group-1',
       status: 'blocked',
+      pendingActivation: { activationId: 'a', activity: 'agent', status: 'completed' },
+      executionFailure: { activationId: 'a', runId: 'r', reason: 'runner inspection unavailable' },
       blockReason: 'execution-recovery-ambiguous: runner inspection unavailable',
       currentStage: 'implement',
       repeatCounts: {},
@@ -21,12 +23,15 @@ describe('presentWorkflowInstance', () => {
       supplementalQueue: [],
       acceptedSignalIds: [],
       operatorRetryCommandIds: [],
-      acceptedOutcomes: [],
+      acceptedOutcomes: ['a'],
       acceptedChildCompletionIds: [],
       causalRejectionIds: [],
       childCompletionRecorded: false,
     } as unknown as WorkflowInstanceView;
 
+    expect(presentWorkflowInstance(view, 'open').retryEligible).toBe(true);
+    expect(presentWorkflowInstance(view, 'closed')).not.toHaveProperty('retryEligible');
+    expect(presentWorkflowInstance(view, 'cancelled')).not.toHaveProperty('retryEligible');
     expect(presentWorkflowInstance(view)).toMatchObject({
       workItemKey: toWorkItemKey(id),
       status: 'blocked',

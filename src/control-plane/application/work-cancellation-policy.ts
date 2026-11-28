@@ -12,6 +12,7 @@ interface WorkPort {
 }
 
 interface OrchestrationPort {
+  concludeDeliveredWorkflow?(id: string, context: CommandContext): Promise<void>;
   listAll(): Promise<readonly WorkflowInstanceView[]>;
   block(
     workflowInstanceId: string,
@@ -57,12 +58,18 @@ export function createWorkCancellationPolicy(
       workflows.map((workflow) => workflow.workflowInstanceId),
       executionReason,
     );
-    for (const workflow of workflows)
+    for (const workflow of workflows) {
+      if (
+        executionReason === ExecutionCancellationReason.WorkClosed &&
+        workflow.workItemId === workItemId
+      )
+        await orchestration.concludeDeliveredWorkflow?.(workflow.workflowInstanceId, context);
       await orchestration.block(
         workflow.workflowInstanceId,
         `${blockReasonPrefix}: ${reason}`,
         context,
       );
+    }
     return concluded;
   }
 

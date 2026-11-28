@@ -32,6 +32,11 @@ watch-driven work can delay a long workflow indefinitely.
 A candidate with no eligible runner remains pending and is skipped for the
 invocation so other pools can dispatch. Authentication pauses require operator resume.
 
+Work conclusion cancels active Runs and blocks unfinished workflows. On external
+closure, Orchestration may reconcile a durable successful merge's pending merged
+transition to its configured terminal completion, including an already-satisfied
+terminal issue-completion step. Other workflows retain normal conclusion handling.
+
 ## Public contracts
 
 `index.ts` is the only public entry.

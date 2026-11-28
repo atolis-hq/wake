@@ -7,10 +7,14 @@ import {
   WorkflowStatus,
   type WorkflowInstanceView,
 } from '../../../orchestration/index.js';
+import { WorkStatus, type WorkItemView } from '../../../work/index.js';
 import type { WorkflowInstanceResponse } from '../contracts/orchestration.js';
 import { toWorkItemKey } from '../contracts/work.js';
 
-export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowInstanceResponse {
+export function presentWorkflowInstance(
+  value: WorkflowInstanceView,
+  workState?: WorkItemView['state'],
+): WorkflowInstanceResponse {
   return {
     workflowInstanceId: value.workflowInstanceId,
     workItemKey: toWorkItemKey(value.workItemId),
@@ -29,7 +33,9 @@ export function presentWorkflowInstance(value: WorkflowInstanceView): WorkflowIn
     value.blockReason !== undefined
       ? { blockReason: value.blockReason }
       : {}),
-    ...(isOperatorRetryEligible(value) ? { retryEligible: true } : {}),
+    ...((workState === undefined || workState === WorkStatus.Open) && isOperatorRetryEligible(value)
+      ? { retryEligible: true }
+      : {}),
     ...(isGroupBudgetExtensionEligible(value) ? { extendEligible: true } : {}),
     ...(value.waitingFor === undefined
       ? {}

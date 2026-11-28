@@ -20,6 +20,7 @@ import type {
 } from '../contracts/delivery.js';
 import { stateDraft } from '../domain/decision-events.js';
 import { expireTimedOutAwait } from '../domain/interpreter.js';
+import { concludeDeliveredWorkflow } from './conclude-delivered-workflow.js';
 import { DeferredSignals } from './deferred-signals.js';
 import { DelegatedWork } from './delegated-work.js';
 import { DelegationCommands } from './delegation-commands.js';
@@ -1008,6 +1009,12 @@ export class OrchestrationService {
   recoverPolicyBlockedMerges(evidence: ResourceTransitionEvidence, context: CommandContext) {
     // The shared repository folds incrementally; a fresh one replays the journal per call.
     return recoverPolicyBlockedMerges(this.repository, this.startWorkflow, evidence, context);
+  }
+
+  concludeDeliveredWorkflow(id: WorkflowInstanceId, context: CommandContext) {
+    return this.transitionWatchChildren(context, () =>
+      concludeDeliveredWorkflow(this.repository, this.startWorkflow, id, context),
+    );
   }
 
   listResourceTransitionMatches(

@@ -360,45 +360,56 @@ it('omits the last run outcome when a newer transport-failed run follows an agen
   expect(response?.data.work).not.toHaveProperty('lastRunOutcome');
 });
 
-it('reads a canonical orchestration projection for work detail', async () => {
-  const workItemId = workId('detail-canonical-projection');
-  const workflowId = 'workflow-detail-canonical';
-  const workflow = workflowProjectionView(workflowId, workItemId);
-  const applications = createSurfaceWorkApplications(
-    {
-      work: {
-        get: async () => ({
-          workItemId,
-          objective: 'Read the orchestration projection',
-          state: 'open',
-          relatedWorkItems: [],
-        }),
-      },
-      resources: { get: async () => null },
-      projections: {
-        read: async (stream: string, key: string) => {
-          if (stream === 'work-correlations' && key === workItemId)
-            return { value: [], lastGlobalPosition: 0 };
-          if (stream === 'workflows-by-work-item' && key === workItemId)
-            return { value: [workflowId], lastGlobalPosition: 0 };
-          if (stream === 'orchestration' && key === workflowId)
-            return { value: workflow, lastGlobalPosition: 0 };
-          if (stream === 'runs-by-workflow-instance' && key === workflowId)
-            return { value: [], lastGlobalPosition: 0 };
-          return null;
+it.each(['open', 'closed', 'cancelled'] as const)(
+  'presents detail retry eligibility for %s work',
+  async (state) => {
+    const workItemId = workId('detail-canonical-projection');
+    const workflowId = 'workflow-detail-canonical';
+    const workflow = {
+      ...workflowProjectionView(workflowId, workItemId),
+      ...eligibleWorkflow(),
+      workItemId,
+      workflowInstanceId: workflowId,
+    } as WorkflowInstanceView;
+    const applications = createSurfaceWorkApplications(
+      {
+        work: {
+          get: async () => ({
+            workItemId,
+            objective: 'Read the orchestration projection',
+            state,
+            relatedWorkItems: [],
+          }),
         },
-      },
-      journal: { readAll: async () => [] },
-    } as unknown as CompositionRoot,
-    () => '2026-09-02T12:00:00.000Z',
-  );
-  const detail = applications.detail;
-  if (detail === undefined) throw new Error('Expected detail work application');
+        resources: { get: async () => null },
+        projections: {
+          read: async (stream: string, key: string) => {
+            if (stream === 'work-correlations' && key === workItemId)
+              return { value: [], lastGlobalPosition: 0 };
+            if (stream === 'workflows-by-work-item' && key === workItemId)
+              return { value: [workflowId], lastGlobalPosition: 0 };
+            if (stream === 'orchestration' && key === workflowId)
+              return { value: workflow, lastGlobalPosition: 0 };
+            if (stream === 'runs-by-workflow-instance' && key === workflowId)
+              return { value: [], lastGlobalPosition: 0 };
+            return null;
+          },
+        },
+        journal: { readAll: async () => [] },
+      } as unknown as CompositionRoot,
+      () => '2026-09-02T12:00:00.000Z',
+    );
+    const detail = applications.detail;
+    if (detail === undefined) throw new Error('Expected detail work application');
 
-  const response = await detail(toWorkItemKey(workItemId));
+    const response = await detail(toWorkItemKey(workItemId));
+    expect(response?.data.orchestration.primary?.retryEligible).toBe(
+      state === 'open' ? true : undefined,
+    );
 
-  expect(response?.data.orchestration.primary).toMatchObject({ workflowInstanceId: workflowId });
-});
+    expect(response?.data.orchestration.primary).toMatchObject({ workflowInstanceId: workflowId });
+  },
+);
 
 it('reads a canonical orchestration projection for a work transcript', async () => {
   const workItemId = workId('tr-canonical-projection');
