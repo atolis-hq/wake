@@ -21,7 +21,7 @@ import { Chip } from '../../components/chip.js';
 import { DataTable } from '../../components/data-table.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { LocalTime } from '../../components/local-time.js';
-import { OutcomeChip } from '../../components/outcome-chip.js';
+import { OutcomeChip, outcomeTone } from '../../components/outcome-chip.js';
 import {
   Button,
   EmptyState,
@@ -364,6 +364,17 @@ function WorkDetailContent({ workItemKey }: { readonly workItemKey: string }) {
                     <dt>Stage</dt>
                     <dd>{query.data.data.orchestration.primary?.currentStage ?? 'Not started'}</dd>
                   </div>
+                  {primaryWorkflow?.displayStatus && (
+                    <div>
+                      <dt>Workflow status</dt>
+                      <dd>
+                        <Chip variant="outline" tone={outcomeTone(primaryWorkflow.displayStatus)}>
+                          {primaryWorkflow.displayStatus}
+                        </Chip>
+                      </dd>
+                    </div>
+                  )}
+                  {primaryWorkflow?.blockReason && <p>{primaryWorkflow.blockReason}</p>}
                   {primaryWorkflow?.retryCondition && <p>{primaryWorkflow.retryCondition}</p>}
                   {primaryWorkflow?.mergePolicyBlock && (
                     <>

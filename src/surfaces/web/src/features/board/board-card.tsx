@@ -8,7 +8,7 @@ import { StageIcon, WorkflowIcon } from '../../components/card-icons.js';
 import { Chip } from '../../components/chip.js';
 import { fmtCost, fmtDuration } from '../../components/format.js';
 import { LinkIcon } from '../../components/link-icon.js';
-import { OutcomeChip } from '../../components/outcome-chip.js';
+import { OutcomeChip, outcomeTone } from '../../components/outcome-chip.js';
 import { TokenUsage } from '../../components/token-usage.js';
 import styles from '../features.module.css';
 
@@ -152,6 +152,11 @@ export function BoardCard({
             item.delegationWait === undefined && (
               <OutcomeChip outcome={item.lastRunOutcome} title="Outcome of the most recent run" />
             )}
+          {(item.displayStatus === 'failed' || item.displayStatus === 'blocked') && (
+            <Chip variant="outline" tone={outcomeTone(item.displayStatus)}>
+              {item.displayStatus}
+            </Chip>
+          )}
           {isAmbiguousRunBlock(item.blockReason) && (
             <Chip
               variant="outline"
@@ -185,6 +190,7 @@ export function BoardCard({
             </Chip>
           )}
         </span>
+        {item.blockReason && <span className={styles.cardStats}>{item.blockReason}</span>}
         <span className={styles.cardStats}>
           {`${item.runCount} runs \u00b7 ${
             item.lastRunAgeMs === undefined

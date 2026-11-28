@@ -72,6 +72,7 @@ export interface BoardCardResponse {
   readonly workflowName?: string;
   readonly stage?: string;
   /** Why the primary workflow is blocked, when it requires operator intervention. */
+  readonly displayStatus?: string;
   readonly blockReason?: string;
   readonly retryCondition?: string;
   readonly dwellSince: string;

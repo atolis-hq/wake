@@ -1715,3 +1715,45 @@ describe('operator board projection', () => {
     expect(view.cards[item]).toBeUndefined();
   });
 });
+
+it.each([
+  ['failed', 'error'],
+  ['blocked', 'needs-input'],
+  ['approved', 'needs-input'],
+  ['delivery-result', 'needs-input'],
+])('presents a wait on %s as %s', (signalKind, condition) => {
+  const item = workId('display-wait');
+  const workflow = workflowInstanceId('display-wait');
+  let view = seedPrimaryBoard(item, workflow);
+  view = boardProjection.project(
+    view,
+    eventEnvelope(
+      OrchestrationEventType.InstanceBlocked,
+      { reason: 'unconfigured outcome blocked' },
+      workflowInstanceStream(workflow),
+      3,
+    ),
+  );
+  view = boardProjection.project(
+    view,
+    eventEnvelope(
+      OrchestrationEventType.StageEntered,
+      { stage: 'merge' },
+      workflowInstanceStream(workflow),
+      4,
+    ),
+  );
+  expect(view.cards[item]?.blockReason).toBeUndefined();
+  view = boardProjection.project(
+    view,
+    eventEnvelope(
+      OrchestrationEventType.SignalWaitStarted,
+      { signalKind },
+      workflowInstanceStream(workflow),
+      5,
+    ),
+  );
+  expect(view.cards[item]?.condition).toBe(condition);
+  if (signalKind === 'failed')
+    expect(view.cards[item]?.blockReason).toBe('unconfigured outcome blocked');
+});

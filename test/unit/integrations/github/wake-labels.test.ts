@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createGitHubWakeLabelReconciler } from '../../../../src/integrations/github/application/wake-labels.js';
 import {
+  signalName,
   stageName,
   workflowInstanceId,
   workflowName,
@@ -13,6 +14,7 @@ import {
   type ResourceCorrelationView,
   type ResourceView,
 } from '../../../../src/resources/index.js';
+import { presentWorkflowInstance } from '../../../../src/surfaces/api/presenters/orchestration.js';
 import {
   workItemId,
   WorkStatus,
@@ -195,6 +197,13 @@ describe('createGitHubWakeLabelReconciler', () => {
     await reconciler.runOnce();
 
     expect(published[0]).toContain(`wake:status.${status}`);
+    const presented = presentWorkflowInstance({
+      ...openWorkflow({ workItemId: item, issue: 550 }),
+      status: WorkflowStatus.Waiting,
+      waitingFor: { signalKind: signalName(signalKind) },
+    });
+    expect(presented.displayStatus).toBe(status);
+    expect(presented.retryEligible).toBeUndefined();
   });
 
   it('stops loading a closed, non-concluded work item once it is known to be final', async () => {

@@ -1595,3 +1595,25 @@ it('shows the pending observed-state retry condition in workflow detail', async 
   );
   expect(await screen.findByText(retryCondition)).toBeTruthy();
 });
+
+it('shows the failed workflow status and safe reason without an inapplicable Retry', async () => {
+  render(
+    <MemoryRouter initialEntries={['/work/wk_a']}>
+      <App
+        client={detailClient({
+          workflowInstanceId: 'workflow-1',
+          workflowName: 'delivery',
+          orchestrationGroupId: 'group-1',
+          status: 'waiting',
+          displayStatus: 'failed',
+          currentStage: 'merge',
+          waitingFor: { signalKind: 'failed' },
+          blockReason: 'unconfigured outcome blocked',
+        })}
+      />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText('unconfigured outcome blocked')).toBeTruthy();
+  expect(screen.getByText('failed')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^Retry$/ })).toBeNull();
+});

@@ -13,6 +13,8 @@ import {
   OrchestrationEventType,
   orchestrationStatusTransitions,
   selectWorkflowOrchestrationEvent,
+  workflowDisplayStatus,
+  WorkflowDisplayStatus,
   WorkflowStatus,
   type SignalName,
   type WorkflowOrchestrationEventData,
@@ -122,6 +124,7 @@ interface StoredCard {
   readonly extendEligible?: boolean;
   readonly workflowName?: string;
   readonly stage?: string;
+  readonly displayStatus?: string;
   readonly blockReason?: string;
   readonly retryCondition?: string;
   readonly dwellSince: string;
@@ -147,6 +150,7 @@ interface StoredCard {
 }
 
 export interface BoardProjectionView {
+  readonly workflowBlockReasons?: Readonly<Record<string, string>>;
   readonly cards: Readonly<Record<string, StoredCard>>;
   readonly workflows: Readonly<Record<string, string>>;
   readonly runs: Readonly<Record<string, string>>;
@@ -304,6 +308,14 @@ function projectWorkflow(
     return projectWorkflowStarted(view, event, occurredAt);
   if (isWorkflowEventType(event, OrchestrationEventType.DelegationPrerequisiteBlocked))
     return projectPrerequisiteBlocked(view, event);
+  if (event.event.eventType === OrchestrationEventType.InstanceBlocked)
+    view = {
+      ...view,
+      workflowBlockReasons: {
+        ...view.workflowBlockReasons,
+        [event.stream.id]: event.event.payload.reason,
+      },
+    };
   return projectDelegation(view, event) ?? projectWorkflowUpdate(view, event, occurredAt);
 }
 
@@ -809,7 +821,7 @@ function projectWorkflowUpdate(
     };
   const status = orchestrationStatusTransitions[event.event.eventType];
   if (status === undefined) return view;
-  const withCondition = cardForWorkflowStatus(card, status, event);
+  const withCondition = cardForDisplayStatus(card, status, event, view);
   if (event.event.eventType === OrchestrationEventType.SignalWaitStarted)
     return {
       ...view,
@@ -827,6 +839,31 @@ function projectWorkflowUpdate(
   if (event.event.eventType === OrchestrationEventType.SignalAccepted)
     return { ...view, cards: { ...view.cards, [workId]: withoutAwaitingApproval(withCondition) } };
   return { ...view, cards: { ...view.cards, [workId]: withCondition } };
+}
+
+function cardForDisplayStatus(
+  card: StoredCard,
+  status: WorkflowStatus,
+  event: WorkflowEvent,
+  view: BoardProjectionView,
+): StoredCard {
+  const blockReason = view.workflowBlockReasons?.[event.stream.id];
+  const displayStatus = workflowDisplayStatus({
+    status,
+    ...(event.event.eventType === OrchestrationEventType.SignalWaitStarted
+      ? { waitingFor: event.event.payload }
+      : {}),
+  });
+  return {
+    ...cardForWorkflowStatus(card, status, event),
+    displayStatus,
+    ...(status === WorkflowStatus.Waiting && displayStatus === WorkflowDisplayStatus.Failed
+      ? {
+          condition: BoardCondition.Error,
+          ...(blockReason === undefined ? {} : { blockReason }),
+        }
+      : {}),
+  };
 }
 
 function cardForWorkflowStatus(
@@ -898,7 +935,12 @@ function awaitingApprovalField(signalKind: SignalName) {
 }
 
 function withoutBlockReason(card: StoredCard): StoredCard {
-  const { blockReason: _blockReason, retryCondition: _retryCondition, ...withoutReason } = card;
+  const {
+    blockReason: _blockReason,
+    retryCondition: _retryCondition,
+    displayStatus: _displayStatus,
+    ...withoutReason
+  } = card;
   return withoutReason;
 }
 

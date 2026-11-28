@@ -17,6 +17,14 @@ The Board is the default view. It groups work items by their current condition,
 with columns for Ready, Active, Needs input, Error, and Finished. Cards
 summarize work and provide a route into its details.
 
+Workflow display status matches GitHub status labels. A workflow waiting on a
+failed signal appears in Error with a failed badge; a blocked signal appears in
+Needs input with a blocked badge. Cards and work detail show the existing safe
+block reason for failed waits when available. Provider outcome data is not
+exposed. The API supplies this derived state as `displayStatus`, preserving the
+workflow’s durable `status`. Retry is available only when Orchestration marks
+the failed stage eligible; approval and in-flight delivery waits do not offer it.
+
 A work item whose workflow is waiting on delegated child work items is shown
 as Active with a "waiting on children: N/M finished" badge rather than as
 needing input. Its own delegating run outcome is not shown while it waits,
