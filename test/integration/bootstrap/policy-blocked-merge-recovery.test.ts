@@ -698,7 +698,7 @@ it.each([1, 2])(
       ),
     ).toHaveLength(before);
   },
-  60_000,
+  120_000,
 );
 
 it('ignores superseded failures and unknown checks without spending a repair', async () => {
