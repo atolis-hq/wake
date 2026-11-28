@@ -36,10 +36,11 @@ export async function reviewCommentEventsFor(
             )
           ).flat(),
         };
-      } catch {
+      } catch (error) {
         reportPartialPollFailure(
           context.repository,
           `pull-request review comments #${pullRequest.number}`,
+          error,
         );
         return { drafts: [], succeeded: false, complete: false };
       }
@@ -74,8 +75,12 @@ export async function reviewEventsFor(
             }),
           ),
         };
-      } catch {
-        reportPartialPollFailure(context.repository, `pull-request reviews #${pullRequest.number}`);
+      } catch (error) {
+        reportPartialPollFailure(
+          context.repository,
+          `pull-request reviews #${pullRequest.number}`,
+          error,
+        );
         return { drafts: [], succeeded: false, complete: false };
       }
     }),
@@ -108,8 +113,8 @@ export async function issueCommentEventsFor(
             )
           ).flat(),
         };
-      } catch {
-        reportPartialPollFailure(context.repository, `issue comments #${issue.number}`);
+      } catch (error) {
+        reportPartialPollFailure(context.repository, `issue comments #${issue.number}`, error);
         return { drafts: [], succeeded: false, complete: false };
       }
     }),

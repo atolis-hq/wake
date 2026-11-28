@@ -115,25 +115,50 @@ describe('createGitHubRequestCoordinator', () => {
     });
   });
 
-  it('applies exponential provider cooldown to 5xx and network failures', async () => {
-    let now = 0;
-    const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1, now: () => now });
-
-    await expect(
+  it('does not cool down on isolated 5xx failures and keeps queued requests alive', async () => {
+    const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1 });
+    const fail = () =>
       coordinator.run(async () => {
         throw Object.assign(new Error('upstream unavailable'), { status: 503 });
-      }),
-    ).rejects.toThrow('upstream unavailable');
+      });
+
+    const results = await Promise.allSettled([
+      fail(),
+      coordinator.run(async () => 'a'),
+      fail(),
+      coordinator.run(async () => 'b'),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual([
+      'rejected',
+      'fulfilled',
+      'rejected',
+      'fulfilled',
+    ]);
+  });
+
+  it('applies exponential provider cooldown after consecutive 5xx and network failures', async () => {
+    let now = 0;
+    const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1, now: () => now });
+    const fail = (error: Error) =>
+      expect(
+        coordinator.run(async () => {
+          throw error;
+        }),
+      ).rejects.toThrow(error.message);
+
+    await fail(Object.assign(new Error('upstream unavailable'), { status: 503 }));
+    await fail(Object.assign(new Error('upstream unavailable'), { status: 502 }));
+    await expect(coordinator.run(async () => 'still-open')).resolves.toBe('still-open');
+    await fail(Object.assign(new Error('upstream unavailable'), { status: 503 }));
+    await fail(Object.assign(new Error('upstream unavailable'), { status: 503 }));
+    await fail(Object.assign(new Error('upstream unavailable'), { status: 503 }));
     await expect(coordinator.run(async () => 'too-early')).rejects.toMatchObject({
       retryAt: 5_000,
     });
 
     now = 5_000;
-    await expect(
-      coordinator.run(async () => {
-        throw new TypeError('network unavailable');
-      }),
-    ).rejects.toThrow('network unavailable');
+    await fail(new TypeError('network unavailable'));
     await expect(coordinator.run(async () => 'too-early')).rejects.toMatchObject({
       retryAt: 15_000,
     });
@@ -142,13 +167,17 @@ describe('createGitHubRequestCoordinator', () => {
   it('caps exponential cooldown at sixty seconds', async () => {
     let now = 0;
     const coordinator = createGitHubRequestCoordinator({ maxConcurrent: 1, now: () => now });
+    const fail = () =>
+      coordinator.run(async () => {
+        throw Object.assign(new Error('upstream unavailable'), { status: 503 });
+      });
 
-    for (const expectedDelay of [5_000, 10_000, 20_000, 40_000, 60_000]) {
-      await expect(
-        coordinator.run(async () => {
-          throw Object.assign(new Error('upstream unavailable'), { status: 503 });
-        }),
-      ).rejects.toThrow('upstream unavailable');
+    for (const expectedDelay of [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]) {
+      await expect(fail()).rejects.toThrow('upstream unavailable');
+      if (expectedDelay === 5_000) {
+        await expect(fail()).rejects.toThrow('upstream unavailable');
+        await expect(fail()).rejects.toThrow('upstream unavailable');
+      }
       await expect(coordinator.run(async () => 'too-early')).rejects.toMatchObject({
         retryAt: now + expectedDelay,
       });

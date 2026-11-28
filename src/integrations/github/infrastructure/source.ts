@@ -297,7 +297,7 @@ function reportRepositoryReadResult(
     health.recordSuccess(repository, 'poll');
     return;
   }
-  reportPartialPollFailure(repository, read);
+  reportPartialPollFailure(repository, read, result.reason);
   health.recordFailure(repository, 'poll', result.reason);
 }
 

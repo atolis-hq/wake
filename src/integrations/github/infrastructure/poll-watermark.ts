@@ -91,8 +91,20 @@ export function completedProviderWatermark(input: {
   ]);
 }
 
-export function reportPartialPollFailure(repository: string, query: string): void {
+export function reportPartialPollFailure(
+  repository: string,
+  query: string,
+  reason?: unknown,
+): void {
+  const detail = reason === undefined ? '' : ` (${failureSummary(reason)})`;
   process.stderr.write(
-    `GitHub poll partial failure for ${repository}: ${query}; preserving watermark for replay\n`,
+    `GitHub poll partial failure for ${repository}: ${query}${detail}; preserving watermark for replay\n`,
   );
+}
+
+// Names the failure class, not its message: provider errors can echo request details.
+function failureSummary(reason: unknown): string {
+  if (!(reason instanceof Error)) return 'unknown error';
+  const status = 'status' in reason && typeof reason.status === 'number' ? ` ${reason.status}` : '';
+  return `${reason.name}${status}`;
 }
