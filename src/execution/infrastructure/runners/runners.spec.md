@@ -111,6 +111,9 @@ component's responsibility.
   connected, its adapter MUST report transport `failed` with failure kind
   `runner-mcp-unavailable` instead of `succeeded`. With no loaded-server
   report in the output it reports nothing extra rather than guess.
+- An adapter MAY hold per-invocation state, such as a temporary file, that is
+  prepared before the process starts and released exactly once however the
+  invocation ends, including a failure to start; release is best effort.
 - A failed resume is never retried as a fresh invocation. Adapters do not
   detect or classify unavailable-session IDs from vendor output. Timeouts,
   cancellation, unavailable sessions, and every other failed or unclassified
@@ -232,12 +235,8 @@ component's responsibility.
 
 ## Decisions, exclusions, and deferred capability
 
-- `maxTurns` and `allowedTools` are carried on the shared port. Claude forwards
-  its established turn/tool options; Codex and Cursor do not consume either
-  field.
-- The `command` runner variant does not forward any part of the request
-  (prompt, model, or otherwise) to its invoked process; it is only useful
-  for a fixed, request-independent command.
+- The `command` runner forwards no part of the request to its process; it is
+  only useful for a fixed, request-independent command.
 - No adapter streams partial output; the full captured output is only
   available once the underlying process or fake invocation has fully
   settled.
