@@ -18,6 +18,7 @@ import {
   parseClaudeOutput,
 } from './claude-output.js';
 import { createClaudeStreamDecoder } from './claude-stream.js';
+import { mcpServersConfig } from './mcp-config.js';
 
 export { classifyClaudeFailure, ClaudeNoFinalResultFailureKind, parseClaudeOutput };
 
@@ -70,7 +71,7 @@ export function claudeCommandArgs(
     claudeDisallowedTools.join(' '),
     ...(request.mcpServers === undefined || request.mcpServers.length === 0
       ? []
-      : ['--mcp-config', JSON.stringify(claudeMcpConfig(request)), '--strict-mcp-config']),
+      : ['--mcp-config', JSON.stringify(mcpServersConfig(request)), '--strict-mcp-config']),
     ...passthroughArgs,
     '--',
     request.prompt,
@@ -88,47 +89,34 @@ function claudeAllowedTools(request: RunnerRequest): readonly string[] {
   ];
 }
 
-function claudeMcpConfig(request: RunnerRequest) {
-  return {
-    mcpServers: Object.fromEntries(
-      (request.mcpServers ?? []).map((server) => [
-        server.name,
-        {
-          command: server.command,
-          ...(server.args === undefined ? {} : { args: server.args }),
-          ...(server.env === undefined ? {} : { env: server.env }),
-        },
-      ]),
-    ),
-  };
+interface CliRunnerBehaviour {
+  readonly runnerTimeouts?: ProcessTimeouts;
+  readonly createStdoutDecoder?: () => ProcessStdoutDecoder;
+  readonly defaultModel?: string;
+  readonly supportsSessionResume?: boolean;
+  readonly supportsEphemeralMcp?: boolean;
+  // Fails an exit-zero run the CLI itself shows did not do what Wake required.
+  readonly rejectSuccessfulExit?: (
+    stdout: string,
+    request: RunnerRequest,
+  ) => { readonly kind: string; readonly message: string } | undefined;
+  // When set, a successful exit whose parser yields no output fails instead of publishing raw stdout.
+  readonly unparsedSuccessFailure?: { readonly kind: string; readonly message: string };
+  readonly parseSuccessfulOutput?: (
+    stdout: string,
+    request: RunnerRequest,
+  ) => Partial<AgentRunnerResult>;
+  readonly classifyFailure?: (input: {
+    readonly stdout: string;
+    readonly stderr: string;
+  }) => { readonly kind: string; readonly message: string } | undefined;
 }
 
 export function cliRunner(
   name: string,
   command: string,
   args: (request: RunnerRequest) => string[],
-  options: {
-    readonly runnerTimeouts?: ProcessTimeouts;
-    readonly createStdoutDecoder?: () => ProcessStdoutDecoder;
-    readonly defaultModel?: string;
-    readonly supportsSessionResume?: boolean;
-    readonly supportsEphemeralMcp?: boolean;
-    // Fails an exit-zero run the CLI itself shows did not do what Wake required.
-    readonly rejectSuccessfulExit?: (
-      stdout: string,
-      request: RunnerRequest,
-    ) => { readonly kind: string; readonly message: string } | undefined;
-    // When set, a successful exit whose parser yields no output fails instead of publishing raw stdout.
-    readonly unparsedSuccessFailure?: { readonly kind: string; readonly message: string };
-    readonly parseSuccessfulOutput?: (
-      stdout: string,
-      request: RunnerRequest,
-    ) => Partial<AgentRunnerResult>;
-    readonly classifyFailure?: (input: {
-      readonly stdout: string;
-      readonly stderr: string;
-    }) => { readonly kind: string; readonly message: string } | undefined;
-  } = {},
+  options: CliRunnerBehaviour = {},
 ): Runner {
   return {
     supportsSessionResume: options.supportsSessionResume === true,
@@ -153,47 +141,47 @@ export function cliRunner(
           id: process.identity ?? request.runId,
           startedAt: new Date().toISOString(),
         },
-        result: process.result.then((value): AgentRunnerResult => {
-          if (value.exitCode !== 0 || value.timedOut)
-            return {
-              transport: RunStatus.Failed,
-              output: value.stdout,
-              runner: name,
-              failure: failureFor(value, options),
-            };
-          const rejection = options.rejectSuccessfulExit?.(value.stdout, request);
-          if (rejection !== undefined)
-            return {
-              transport: RunStatus.Failed,
-              output: value.stdout,
-              runner: name,
-              failure: rejection,
-            };
-          const parsed = parseSuccessfulOutput(
-            value.stdout,
-            request,
-            options.parseSuccessfulOutput,
-          );
-          if (options.unparsedSuccessFailure !== undefined && parsed.output === undefined)
-            return {
-              transport: RunStatus.Failed,
-              output: '',
-              runner: name,
-              failure: options.unparsedSuccessFailure,
-            };
-          return {
-            transport: RunStatus.Succeeded,
-            output: value.stdout,
-            runner: name,
-            ...((request.model ?? options.defaultModel) === undefined
-              ? {}
-              : { model: request.model ?? options.defaultModel }),
-            ...parsed,
-          };
-        }),
+        result: process.result.then((value): AgentRunnerResult =>
+          value.exitCode !== 0 || value.timedOut
+            ? {
+                transport: RunStatus.Failed,
+                output: value.stdout,
+                runner: name,
+                failure: failureFor(value, options),
+              }
+            : settleSuccessfulExit(name, value.stdout, request, options),
+        ),
         cancel: process.cancel,
       };
     },
+  };
+}
+
+function settleSuccessfulExit(
+  name: string,
+  stdout: string,
+  request: RunnerRequest,
+  options: CliRunnerBehaviour,
+): AgentRunnerResult {
+  const rejection = options.rejectSuccessfulExit?.(stdout, request);
+  if (rejection !== undefined)
+    return { transport: RunStatus.Failed, output: stdout, runner: name, failure: rejection };
+  const parsed = parseSuccessfulOutput(stdout, request, options.parseSuccessfulOutput);
+  if (options.unparsedSuccessFailure !== undefined && parsed.output === undefined)
+    return {
+      transport: RunStatus.Failed,
+      output: '',
+      runner: name,
+      failure: options.unparsedSuccessFailure,
+    };
+  return {
+    transport: RunStatus.Succeeded,
+    output: stdout,
+    runner: name,
+    ...((request.model ?? options.defaultModel) === undefined
+      ? {}
+      : { model: request.model ?? options.defaultModel }),
+    ...parsed,
   };
 }
 

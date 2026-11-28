@@ -261,6 +261,27 @@ describe('Copilot MCP availability', () => {
     });
   });
 
+  it('reports the CLI error for a server that failed to start', () => {
+    // Captured from CLI 1.0.117: a server whose command does not exist makes
+    // Copilot exit 0 and answer normally, listing the server as failed.
+    const spawnError =
+      'failed to spawn MCP server process: /nonexistent/binary: No such file or directory (os error 2)';
+    const stdout = event({
+      type: 'session.mcp_servers_loaded',
+      data: {
+        servers: [
+          { name: 'github-mcp-server', status: 'connected', source: 'builtin' },
+          { name: 'wake', status: 'failed', error: spawnError },
+        ],
+      },
+    });
+
+    expect(copilotMcpFailure(stdout, wakeMcpRequest)).toEqual({
+      kind: 'runner-mcp-unavailable',
+      message: `Copilot did not connect MCP server(s): wake\nwake: ${spawnError}`,
+    });
+  });
+
   it('accepts a run whose requested MCP servers are connected', () => {
     const stdout = [
       event({
@@ -357,6 +378,31 @@ describe('Copilot runner process', () => {
       runner: 'copilot',
       output: blockedMcpStdout,
       failure: { kind: 'runner-mcp-unavailable' },
+    });
+  });
+
+  it('fails an exit-zero run that produced no final assistant message', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'wake-copilot-test-'));
+    const command = join(directory, 'copilot');
+    const stdout = [
+      event({ type: 'assistant.message', agentId: 'sub-1', data: { content: 'sub-agent only' } }),
+      event({ type: 'result', sessionId: 'copilot-session', exitCode: 0 }),
+    ].join('\n');
+    await writeFile(
+      command,
+      ['#!/usr/bin/env node', `process.stdout.write(${JSON.stringify(stdout)});`].join('\n'),
+    );
+    await chmod(command, 0o755);
+
+    const execution = await createCopilotRunner({ command }).start(
+      { runId: 'run-1', prompt: 'ship', allowedTools: [] },
+      new AbortController().signal,
+    );
+
+    await expect(execution.result).resolves.toMatchObject({
+      transport: 'failed',
+      output: '',
+      failure: { kind: 'copilot-no-final-message' },
     });
   });
 

@@ -7,6 +7,8 @@ import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/r
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
 import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { mcpServersConfig } from './mcp-config.js';
+import { asRecord, numeric, parseJson } from './runner-json.js';
 import { usageSinceBaseline, type CumulativeUsage } from './usage-baseline.js';
 
 // Copilot's own `session.error` categories that mean the account is out of
@@ -17,6 +19,11 @@ const copilotQuotaErrorTypes: ReadonlySet<string> = new Set(['quota', 'rate_limi
 // Copilot drops MCP servers it is not permitted to load and still exits 0, so
 // a run missing Wake's trusted servers must not be reported as a success.
 export const RunnerMcpUnavailableFailureKind = 'runner-mcp-unavailable';
+
+// An exit-zero run with no main-agent answer has nothing Wake can route on.
+export const CopilotNoFinalMessageFailureKind = 'copilot-no-final-message';
+
+const copilotCapabilities = { supportsSessionResume: true, supportsEphemeralMcp: true } as const;
 
 // Copilot's file-editing tools, excluded for read-only runs. This is a guard
 // only: the shell tool stays available and can still write, as with Claude/Codex.
@@ -51,13 +58,15 @@ export function createCopilotRunner(options: CliRunnerOptions = {}): Runner {
         parseSuccessfulOutput: (stdout, request) =>
           parseCopilotOutput(stdout, request, readUsageReport(usageFile)),
         classifyFailure: classifyCopilotFailure,
-        supportsSessionResume: true,
-        supportsEphemeralMcp: true,
+        unparsedSuccessFailure: {
+          kind: CopilotNoFinalMessageFailureKind,
+          message: 'Copilot exited successfully without a final assistant message',
+        },
+        ...copilotCapabilities,
       },
     );
   return {
-    supportsSessionResume: true,
-    supportsEphemeralMcp: true,
+    ...copilotCapabilities,
     async start(request, signal) {
       // Copilot reports token counts only through its usage file, not stdout.
       const usageFile = join(tmpdir(), `wake-copilot-usage-${randomUUID()}.json`);
@@ -94,26 +103,11 @@ export function copilotCommandArgs(
       : []),
     ...(request.mcpServers === undefined || request.mcpServers.length === 0
       ? []
-      : ['--additional-mcp-config', JSON.stringify(copilotMcpConfig(request))]),
+      : ['--additional-mcp-config', JSON.stringify(mcpServersConfig(request))]),
     ...(request.resumeSessionId === undefined ? [] : [`--resume=${request.resumeSessionId}`]),
     ...(usageFile === undefined ? [] : ['--usage-output-file', usageFile]),
     ...passthroughArgs,
   ];
-}
-
-function copilotMcpConfig(request: RunnerRequest) {
-  return {
-    mcpServers: Object.fromEntries(
-      (request.mcpServers ?? []).map((server) => [
-        server.name,
-        {
-          command: server.command,
-          ...(server.args === undefined ? {} : { args: server.args }),
-          ...(server.env === undefined ? {} : { env: server.env }),
-        },
-      ]),
-    ),
-  };
 }
 
 // Fails only on evidence: Copilot emitted a loaded-server report and no
@@ -130,24 +124,27 @@ export function copilotMcpFailure(
     .map((event) => asRecord(event.data)?.servers)
     .filter(Array.isArray);
   if (reports.length === 0) return undefined;
+  const listed = reports.flat().map(asRecord);
   const connected = new Set(
-    reports
-      .flat()
-      .map(asRecord)
-      .filter((server) => server?.status === 'connected')
-      .map((server) => server?.name),
+    listed.filter((server) => server?.status === 'connected').map((server) => server?.name),
   );
   const missing = requested.filter((name) => !connected.has(name));
   if (missing.length === 0) return undefined;
+  // A server that was listed but failed carries Copilot's own reason.
+  const errors = listed
+    .filter((server) => missing.includes(String(server?.name)) && typeof server?.error === 'string')
+    .map((server) => `${String(server?.name)}: ${String(server?.error)}`);
   const warnings = events
     .filter((event) => event.type === 'session.warning')
     .map((event) => asRecord(event.data)?.message)
     .filter((message): message is string => typeof message === 'string');
   return {
     kind: RunnerMcpUnavailableFailureKind,
-    message: [`Copilot did not connect MCP server(s): ${missing.join(', ')}`, ...warnings].join(
-      '\n',
-    ),
+    message: [
+      `Copilot did not connect MCP server(s): ${missing.join(', ')}`,
+      ...errors,
+      ...warnings,
+    ].join('\n'),
   };
 }
 
@@ -229,23 +226,4 @@ function* copilotEvents(stdout: string): Generator<Record<string, unknown>> {
     const event = asRecord(parseJson(line.trim()));
     if (event !== undefined) yield event;
   }
-}
-
-function parseJson(text: string): unknown {
-  if (text.length === 0) return undefined;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function numeric(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

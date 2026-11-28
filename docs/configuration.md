@@ -893,7 +893,7 @@ host:
 ```
 
 GitHub Copilot needs no mount: authenticate it inside the sandbox with
-`wake sandbox setup`, which runs `copilot login` and keeps the login in the
+`wake sandbox setup`, which runs `copilot login --device-code` and keeps the login in the
 persistent sandbox home.
 
 Use absolute host paths; do not put a literal `~` in YAML. Keep credential

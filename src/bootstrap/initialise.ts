@@ -363,7 +363,7 @@ runner(s) were chosen in step 1:
 - Codex: \`~/.codex/config.toml\` and \`~/.codex/auth.json\`
 - Cursor: \`~/.config/cursor/auth.json\`
 - GitHub Copilot: nothing to mount — authenticate inside the sandbox with
-  \`wake sandbox setup\`, which runs \`copilot login\`
+  \`wake sandbox setup\`, which runs \`copilot login --device-code\`
 
 For each file that exists, propose adding it to \`host.sandbox.extraMounts\`
 in \`config.yaml\`, for example:
