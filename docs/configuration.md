@@ -109,6 +109,12 @@ execution:
       model: composer-2.5
       runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
       args: []
+    copilot-auto:
+      kind: copilot-cli
+      command: copilot
+      model: auto
+      runnerTimeouts: { idleMs: 600000, hardMs: 7200000, cancellationGraceMs: 30000 }
+      args: []
   runnerPools:
     light: [fake]
     standard: [fake]
@@ -317,7 +323,7 @@ Each `execution.agentRunners.<name>` definition has the following shape.
 
 | Field | Type / default | Explanation |
 | --- | --- | --- |
-| `kind` | `claude-cli`, `codex-cli`, `cursor-cli`, `command`, or `fake`; required | Selects the runner adapter. |
+| `kind` | `claude-cli`, `codex-cli`, `cursor-cli`, `copilot-cli`, `command`, or `fake`; required | Selects the runner adapter. |
 | `command` | non-empty string; required except for `fake` | Executable used by command-backed runners. |
 | `model` | non-empty string; optional | Runner's configured model metadata/default. A prompt or Activity may request a different model. |
 | `effort` | non-empty string; optional | Runner-specific reasoning-effort setting. |
@@ -885,6 +891,10 @@ host:
         target: /home/wake/.config/cursor/auth.json
         readOnly: true
 ```
+
+GitHub Copilot needs no mount: authenticate it inside the sandbox with
+`wake sandbox setup`, which runs `copilot login --device-code` and keeps the login in the
+persistent sandbox home.
 
 Use absolute host paths; do not put a literal `~` in YAML. Keep credential
 files read-only unless the sandbox must refresh the host credential. The

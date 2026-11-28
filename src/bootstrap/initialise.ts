@@ -30,6 +30,7 @@ execution:
     codex-terra: { kind: codex-cli, command: codex, model: gpt-5.6-terra }
     codex-sol: { kind: codex-cli, command: codex, model: gpt-5.6-sol }
     cursor-composer: { kind: cursor-cli, command: cursor, model: composer-2.5 }
+    copilot-auto: { kind: copilot-cli, command: copilot, model: auto }
   runnerPools:
     light: [fake]
     standard: [fake]
@@ -323,7 +324,7 @@ and either:
 - if the user has a runner not already listed (a different model, a
   different CLI), add a new named entry under \`execution.agentRunners\`
   following the existing pattern (\`kind\`: \`claude-cli\`, \`codex-cli\`,
-  \`cursor-cli\`, or \`command\`, plus \`command\` and optionally \`model\`),
+  \`cursor-cli\`, \`copilot-cli\`, or \`command\`, plus \`command\` and optionally \`model\`),
   then reference it from \`runnerPools\`.
 - remove entries which are not needed.
 
@@ -361,6 +362,8 @@ runner(s) were chosen in step 1:
 - Claude: \`~/.claude/.credentials.json\` and \`~/.claude/settings.json\`
 - Codex: \`~/.codex/config.toml\` and \`~/.codex/auth.json\`
 - Cursor: \`~/.config/cursor/auth.json\`
+- GitHub Copilot: nothing to mount — authenticate inside the sandbox with
+  \`wake sandbox setup\`, which runs \`copilot login --device-code\`
 
 For each file that exists, propose adding it to \`host.sandbox.extraMounts\`
 in \`config.yaml\`, for example:
@@ -428,7 +431,7 @@ RUN echo "gh-stack cache bust: \${GH_STACK_CACHE_BUST}" \\
   && chmod -R a+rX /usr/local/lib/wake-gh
 
 RUN --mount=type=cache,target=/root/.npm \\
-  npm install -g @anthropic-ai/claude-code @openai/codex
+  npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot
 
 RUN useradd --create-home --shell /bin/bash wake \\
   && mkdir -p /home/wake/.codex-runtime \\
@@ -522,7 +525,7 @@ RUN echo "gh-stack cache bust: \${GH_STACK_CACHE_BUST}" \\
 
 ARG WAKE_VERSION=0.1.0
 RUN --mount=type=cache,target=/root/.npm \\
-  npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@\${WAKE_VERSION}"
+  npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot "@atolis-hq/wake@\${WAKE_VERSION}"
 
 RUN mkdir -p /etc/codex /usr/local/lib/wake \\
   && cp /usr/local/lib/node_modules/@atolis-hq/wake/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \\

@@ -30,6 +30,7 @@ export const executionConfigSchema = z
             commandRunner(RunnerKind.ClaudeCli),
             commandRunner(RunnerKind.CodexCli),
             commandRunner(RunnerKind.CursorCli),
+            commandRunner(RunnerKind.CopilotCli),
             commandRunner(RunnerKind.Command),
             z.object({ kind: z.literal(RunnerKind.Fake), ...agentRunnerBase }).strict(),
           ])

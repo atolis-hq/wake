@@ -19,8 +19,8 @@ runner — it only builds the registry those other decisions are made against.
 ## Core policies, invariants, and behaviours
 
 - Selection MUST be by the configured runner's `kind` alone, against a fixed,
-  closed set: `claude-cli`, `codex-cli`, `cursor-cli`, `command`, `fake`.
-  `kind` names the transport adapter, not a vendor; a runner's own name (the
+  closed set: `claude-cli`, `codex-cli`, `cursor-cli`, `copilot-cli`, `command`,
+  `fake`. `kind` names the transport adapter, not a vendor; a runner's own name (the
   key it is registered under) is a separate, operator-chosen identity used
   wherever a runner pool references it.
 - Every configured runner name MUST produce exactly one constructed runner
@@ -34,7 +34,7 @@ runner — it only builds the registry those other decisions are made against.
   constructing one without a command MUST fail immediately rather than
   producing a runner that would fail only once invoked.
 - For every command-style kind (`claude-cli`, `codex-cli`, `cursor-cli`,
-  `command`), the configured command, wall-clock timeout, and extra
+  `copilot-cli`, `command`), the configured command, wall-clock timeout, and extra
   arguments MUST be passed through to the concrete constructor unchanged —
   this component MUST NOT apply its own default, override, or clamp for any
   of them.

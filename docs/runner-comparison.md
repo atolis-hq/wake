@@ -9,7 +9,7 @@ protected by the configured wall-clock timeout. See
 
 ## Shared behaviour
 
-Claude, Codex, Cursor, command, and fake runners all receive the rendered
+Claude, Codex, Cursor, Copilot, command, and fake runners all receive the rendered
 prompt, optional model/effort, workspace details, a resume session identifier,
 and the same cancellation signal. Wake records the selected runner, its model
 metadata, lifecycle, reported session identity, raw runner result, and final
@@ -56,24 +56,24 @@ initialized roots already include it.
 
 ## CLI capability matrix
 
-| Capability | Claude (`claude-cli`) | Codex (`codex-cli`) | Cursor (`cursor-cli`) |
-| --- | --- | --- | --- |
-| Structured output | `--output-format stream-json --verbose --include-partial-messages` | `exec --json` JSONL | `--output-format json` |
-| Resume | `--resume <session>` | `exec ... resume <session>` | `--resume=<session>` |
-| Model | `--model` | `--model` | `--model` |
-| Effort | `--effort` | `-c model_reasoning_effort=<value>` | No adapter flag |
-| `maxTurns` | `--max-turns` | No adapter flag | No adapter flag |
-| `allowedTools` | `--allowedTools` | No adapter flag | No adapter flag |
-| Always-blocked tools | `--disallowedTools ScheduleWakeup` (a pending wakeup keeps `claude -p` alive after the agent finishes) | None | None |
-| Read-only workspace | Prompt/tool policy only | `--sandbox workspace-write` | `--mode ask` |
-| Branch workspace | Prompt/tool policy only | `--sandbox danger-full-access` | `--force` |
-| Session id parsing | JSON `session_id` | JSONL `thread.started.thread_id` | JSON `session_id` |
-| Token usage parsing | JSON `usage` and cost | JSONL `turn.completed.usage` | JSON `usage` |
-| Trusted per-run Wake MCP | Yes (`--mcp-config`) | Yes (one-run `-c mcp_servers.*` override) | No; skipped for artifact-capable activity dispatch |
+| Capability | Claude (`claude-cli`) | Codex (`codex-cli`) | Cursor (`cursor-cli`) | Copilot (`copilot-cli`) |
+| --- | --- | --- | --- | --- |
+| Structured output | `--output-format stream-json --verbose --include-partial-messages` | `exec --json` JSONL | `--output-format json` | `--output-format json` JSONL |
+| Resume | `--resume <session>` | `exec ... resume <session>` | `--resume=<session>` | `--resume=<session>` |
+| Model | `--model` | `--model` | `--model` | `--model` |
+| Effort | `--effort` | `-c model_reasoning_effort=<value>` | No adapter flag | `--reasoning-effort` |
+| `maxTurns` | `--max-turns` | No adapter flag | No adapter flag | No adapter flag |
+| `allowedTools` | `--allowedTools` | No adapter flag | No adapter flag | No adapter flag |
+| Always-blocked tools | `--disallowedTools ScheduleWakeup` (a pending wakeup keeps `claude -p` alive after the agent finishes) | None | None | None |
+| Read-only workspace | Prompt/tool policy only | `--sandbox workspace-write` | `--mode ask` | `--excluded-tools=edit,create` (a guard, not a sandbox: shell commands can still write) |
+| Branch workspace | Prompt/tool policy only | `--sandbox danger-full-access` | `--force` | `--allow-all` |
+| Session id parsing | JSON `session_id` | JSONL `thread.started.thread_id` | JSON `session_id` | JSONL `result.sessionId` |
+| Token usage parsing | JSON `usage` and cost | JSONL `turn.completed.usage` | JSON `usage` | `--usage-output-file` `modelMetrics`, resume-baselined |
+| Trusted per-run Wake MCP | Yes (`--mcp-config`) | Yes (one-run `-c mcp_servers.*` override) | No; skipped for artifact-capable activity dispatch | Yes (`--additional-mcp-config`); fails the run if Copilot drops the server |
 
 `allowedTools` and `maxTurns` in a prompt template are therefore portable
-metadata but are enforced at the CLI boundary only by Claude. Codex and Cursor
-still receive the prompt instruction and are bounded by the outer execution
+metadata but are enforced at the CLI boundary only by Claude. Codex, Cursor, and
+Copilot still receive the prompt instruction and are bounded by the outer execution
 timeout. Choose a runner pool based on the enforcement level your stage needs,
 not merely model preference.
 
@@ -81,8 +81,10 @@ not merely model preference.
 
 Wake owns workspace acquisition; a runner only receives the resulting path and
 mode. `workspace: none` does not pass a workspace mode. For a read-only or
-branch workspace, Codex maps the mode to its sandbox setting and Cursor maps it
-to `ask` or `--force`. Claude does not derive a filesystem sandbox mode from
+branch workspace, Codex maps the mode to its sandbox setting, Cursor maps it
+to `ask` or `--force`, and Copilot removes its file-editing tools for read-only
+workspaces (its shell tool can still write, so state the boundary in the prompt).
+Claude does not derive a filesystem sandbox mode from
 the workspace setting; use its allowed-tool policy and a prompt that states the
 boundary.
 
@@ -97,8 +99,11 @@ from the same CLI adapter kind; a `fresh` policy never resumes one. If the
 first runner is paused, Wake falls sideways to the next configured member
 of that same pool. It never silently changes to a different pool.
 Artifact-capable agent runs also require trusted ephemeral MCP injection:
-Claude and Codex receive Wake's run-bound configuration directly, while Cursor
-and generic command runners are ineligible for those runs.
+Claude, Codex, and Copilot receive Wake's run-bound configuration directly,
+while Cursor and generic command runners are ineligible for those runs.
+Copilot silently skips MCP servers its account policy blocks, so its adapter
+checks Copilot's loaded-server report and fails the run with
+`runner-mcp-unavailable` when Wake's server did not connect.
 
 ## `command` and `fake`
 

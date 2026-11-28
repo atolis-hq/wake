@@ -50,6 +50,8 @@ export * from './infrastructure/codex-stop-hook.js';
 
 export * from './infrastructure/runners/command.js';
 
+export * from './infrastructure/runners/copilot.js';
+
 export * from './infrastructure/runners/cursor.js';
 
 export * from './infrastructure/runners/fake.js';

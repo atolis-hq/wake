@@ -52,7 +52,7 @@ const expectedSandboxUsage = [
   '  wake sandbox exec [-- <command...>]',
   '  wake sandbox logs [--tail <positive integer>]',
   '  wake sandbox setup',
-  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>',
+  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor|copilot>',
 ].join('\n');
 
 describe('target CLI main contract', () => {
