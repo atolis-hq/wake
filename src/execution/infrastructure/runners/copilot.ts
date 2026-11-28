@@ -23,8 +23,6 @@ export const RunnerMcpUnavailableFailureKind = 'runner-mcp-unavailable';
 // An exit-zero run with no main-agent answer has nothing Wake can route on.
 export const CopilotNoFinalMessageFailureKind = 'copilot-no-final-message';
 
-const copilotCapabilities = { supportsSessionResume: true, supportsEphemeralMcp: true } as const;
-
 // Copilot's file-editing tools, excluded for read-only runs. This is a guard
 // only: the shell tool stays available and can still write, as with Claude/Codex.
 const copilotEditTools = ['edit', 'create'];
@@ -45,38 +43,33 @@ export function classifyCopilotFailure(input: {
   return undefined;
 }
 
+interface CopilotRun {
+  readonly usageFile: string;
+}
+
 export function createCopilotRunner(options: CliRunnerOptions = {}): Runner {
-  const runnerFor = (usageFile: string) =>
-    cliRunner(
-      'copilot',
-      options.command ?? 'copilot',
-      (request: RunnerRequest) => copilotCommandArgs(request, options.args, options, usageFile),
-      {
-        ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
-        ...(options.model === undefined ? {} : { defaultModel: options.model }),
-        rejectSuccessfulExit: copilotMcpFailure,
-        parseSuccessfulOutput: (stdout, request) =>
-          parseCopilotOutput(stdout, request, readUsageReport(usageFile)),
-        classifyFailure: classifyCopilotFailure,
-        unparsedSuccessFailure: {
-          kind: CopilotNoFinalMessageFailureKind,
-          message: 'Copilot exited successfully without a final assistant message',
-        },
-        ...copilotCapabilities,
-      },
-    );
-  return {
-    ...copilotCapabilities,
-    async start(request, signal) {
+  return cliRunner<CopilotRun>(
+    'copilot',
+    options.command ?? 'copilot',
+    (request, run) => copilotCommandArgs(request, options.args, options, run.usageFile),
+    {
+      ...(options.runnerTimeouts === undefined ? {} : { runnerTimeouts: options.runnerTimeouts }),
+      ...(options.model === undefined ? {} : { defaultModel: options.model }),
       // Copilot reports token counts only through its usage file, not stdout.
-      const usageFile = join(tmpdir(), `wake-copilot-usage-${randomUUID()}.json`);
-      const execution = await runnerFor(usageFile).start(request, signal);
-      return {
-        ...execution,
-        result: execution.result.finally(() => rm(usageFile, { force: true })),
-      };
+      prepare: () => ({ usageFile: join(tmpdir(), `wake-copilot-usage-${randomUUID()}.json`) }),
+      cleanup: (run) => rm(run.usageFile, { force: true }),
+      rejectSuccessfulExit: copilotMcpFailure,
+      parseSuccessfulOutput: (stdout, request, run) =>
+        parseCopilotOutput(stdout, request, readUsageReport(run.usageFile)),
+      classifyFailure: classifyCopilotFailure,
+      unparsedSuccessFailure: {
+        kind: CopilotNoFinalMessageFailureKind,
+        message: 'Copilot exited successfully without a final assistant message',
+      },
+      supportsSessionResume: true,
+      supportsEphemeralMcp: true,
     },
-  };
+  );
 }
 
 export function copilotCommandArgs(
