@@ -83,6 +83,7 @@ export const RunnerKind = {
   ClaudeCli: 'claude-cli',
   CodexCli: 'codex-cli',
   CursorCli: 'cursor-cli',
+  CopilotCli: 'copilot-cli',
   Command: 'command',
   Fake: 'fake',
 } as const;

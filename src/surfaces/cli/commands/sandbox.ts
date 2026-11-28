@@ -16,7 +16,7 @@ export const sandboxUsage = [
   '  wake sandbox exec [-- <command...>]',
   '  wake sandbox logs [--tail <positive integer>]',
   '  wake sandbox setup',
-  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>',
+  '  wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor|copilot>',
 ].join('\n');
 
 export async function runSandbox(
@@ -82,7 +82,7 @@ async function runResume(docker: SandboxDockerPort, rest: readonly string[]): Pr
 
 /**
  * Only the explicit-args resume path is ported: `<sessionId> --cwd <path>
- * --cli <claude|codex|cursor>`. Legacy's zero-arg path additionally listed
+ * --cli <claude|codex|cursor|copilot>`. Legacy's zero-arg path additionally listed
  * past sessions from a flat run-record file and prompted an interactive
  * pick; the target has no equivalent surfaced to the CLI/Docker layer (run
  * history lives behind the composition root's event-sourced Execution
@@ -104,7 +104,8 @@ function readResumeTarget(arguments_: readonly string[]): {
   const cwd = readOption(arguments_, '--cwd');
   if (cwd === undefined) throw new Error('sandbox resume requires --cwd <path>');
   const cli = readOption(arguments_, '--cli');
-  if (cli === undefined) throw new Error('sandbox resume requires --cli <claude|codex|cursor>');
+  if (cli === undefined)
+    throw new Error('sandbox resume requires --cli <claude|codex|cursor|copilot>');
   return { sessionId, cwd, cli };
 }
 

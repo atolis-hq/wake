@@ -37,7 +37,7 @@ walkthrough and [Configuration](configuration.md) for Wake-home settings.
 | `wake sandbox exec [-- <command>]` | Runs a command inside the container; omitting a command opens the configured interactive execution path. |
 | `wake sandbox logs [--tail <positive integer>]` | Reads container logs; the default tail length is 200 lines. |
 | `wake sandbox setup` | Runs interactive sandbox-owned authentication and git setup. After GitHub auth it sets the sandbox's global git author to the authenticated GitHub account (`<id>+<login>@users.noreply.github.com`), so agent commits are attributed consistently. |
-| `wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor>` | Manually resumes a known CLI session for debugging. Normal workflow dispatch handles compatible session resumption itself. |
+| `wake sandbox resume <sessionId> --cwd <path> --cli <claude|codex|cursor|copilot>` | Manually resumes a known CLI session for debugging. Normal workflow dispatch handles compatible session resumption itself. |
 
 The Dockerfile template is selected from `host.development.mode`: source mode
 uses the configured `host.development.repoRoot`; packaged mode uses the

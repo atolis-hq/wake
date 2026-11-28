@@ -2,6 +2,7 @@ import {
   createClaudeRunner,
   createCodexRunner,
   createCommandRunner,
+  createCopilotRunner,
   createCursorRunner,
   emptyFakeScenarios,
   FakeExecutionRunner,
@@ -67,6 +68,8 @@ function createConfiguredRunner(
       return createCodexRunner(runner);
     case 'cursor-cli':
       return createCursorRunner(runner);
+    case 'copilot-cli':
+      return createCopilotRunner(runner);
     case 'command': {
       if (runner.command === undefined) throw new Error('Command runner requires a command');
       return createCommandRunner(runner.command, runner.args, runner.runnerTimeouts);

@@ -116,7 +116,7 @@ For more detail, see [docs/vision.md](docs/vision.md) and
   with raw HTML disabled, a download link, and Back to artifacts navigation.
 - **Sandbox-oriented execution.** Wake can run from a persistent Docker sandbox
   with durable auth state and mounted Wake home data.
-- **Runner agnostic.** Claude Code, Codex, Cursor, and fake runners sit behind
+- **Runner agnostic.** Claude Code, Codex, Cursor, GitHub Copilot, and fake runners sit behind
   runner adapters so Wake owns policy and routing rather than depending on one
   provider.
 - **Human resumption.** A human can pick up the exact local agent session when a
@@ -162,6 +162,7 @@ adapters currently exist for:
 - **[Claude Code](https://claude.com/claude-code)**
 - **[Codex](https://openai.com/codex/)**
 - **[Cursor](https://cursor.com/cli)**
+- **[GitHub Copilot CLI](https://github.com/features/copilot/cli)**
 
 Each runner sits behind the same execution contract, so Wake's routing,
 lifecycle, and sandbox behavior stay the same regardless of which CLI executes

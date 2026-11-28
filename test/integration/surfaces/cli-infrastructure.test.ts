@@ -476,6 +476,7 @@ describe('CLI infrastructure', () => {
   it.each([
     ['codex', ['codex', 'exec', 'resume', 'session-7']],
     ['cursor', ['cursor', 'agent', '--resume=session-7']],
+    ['copilot', ['copilot', '--resume=session-7']],
   ])(
     'preserves %s session state through the sandbox surface and Docker boundary',
     async (cli, expectedResume) => {

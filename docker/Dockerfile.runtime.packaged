@@ -27,7 +27,7 @@ ARG WAKE_VERSION
 RUN test -n "$WAKE_VERSION" || (echo "WAKE_VERSION build arg is required" && exit 1)
 
 RUN --mount=type=cache,target=/root/.npm \
-  npm install -g @anthropic-ai/claude-code @openai/codex "@atolis-hq/wake@${WAKE_VERSION}"
+  npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot "@atolis-hq/wake@${WAKE_VERSION}"
 
 RUN mkdir -p /etc/codex /usr/local/lib/wake \
   && cp /usr/local/lib/node_modules/@atolis-hq/wake/dist/src/execution/infrastructure/codex-stop-hook.js /usr/local/lib/wake/codex-stop-hook.js \

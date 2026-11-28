@@ -52,8 +52,9 @@ wake sandbox setup
   container itself never exits, so `sandbox setup` and `sandbox exec` can
   always reach it.
 - `sandbox setup` runs first-time auth inside the container: GitHub, SSH
-  keygen, Claude, Codex. Optional best practice: use a dedicated GitHub
-  identity for Wake-managed work rather than your main account.
+  keygen, Claude, Codex, Cursor, and GitHub Copilot. Optional best practice:
+  use a dedicated GitHub identity for Wake-managed work rather than your main
+  account.
 
 ## Run it
 

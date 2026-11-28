@@ -41,4 +41,8 @@ export async function runSandboxSetup(deps: SandboxSetupDependencies): Promise<v
   if (await deps.prompt('Configure Cursor auth? [y/N]'))
     await deps.runInteractive(cursorCliSubcommand, ['login']);
   else deps.log('Skipping Cursor auth setup.');
+
+  if (await deps.prompt('Configure GitHub Copilot auth? [y/N]'))
+    await deps.runInteractive('copilot', ['login', '--device-code']);
+  else deps.log('Skipping GitHub Copilot auth setup.');
 }

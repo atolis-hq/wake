@@ -39,7 +39,7 @@ component's responsibility.
 ## Core policies, invariants, and behaviours
 
 **Shared CLI runner contract** (`claude-cli`, `codex-cli`, `cursor-cli`,
-`command`)
+`copilot-cli`, `command`)
 
 - Every CLI-based runner MUST spawn its configured command as a real OS
   process, without a shell, using the request's `workspacePath` as its
@@ -72,12 +72,12 @@ component's responsibility.
   invocation.
 - `RunnerRequest` makes `model` and `effort` portable selection controls;
   each concrete adapter maps only the controls it supports into its own vendor
-  syntax and omits unsupported controls. The `claude-cli`, `codex-cli`, and
-  `cursor-cli` variants build their vendor-specific fresh or resumed arguments
+  syntax and omits unsupported controls. The `claude-cli`, `codex-cli`,
+  `cursor-cli`, and `copilot-cli` variants build their vendor-specific fresh or resumed arguments
   from the request's full `prompt`, `model` when present, and optional opaque
   `resumeSessionId`. Codex additionally maps a requested `effort` to
   `-c model_reasoning_effort=<effort>`; Claude maps it to `--effort <effort>`;
-  Cursor omits it because it has no mapping. `RunnerRequest` also declares `maxTurns` and `allowedTools`;
+  Copilot maps it to `--reasoning-effort <effort>`; Cursor omits it because it has no mapping. `RunnerRequest` also declares `maxTurns` and `allowedTools`;
   only Claude forwards its established turn/tool options. The `command` variant
   ignores the request entirely and always invokes its configured command with
   its configured static arguments, so it does not forward the request's prompt,
@@ -95,11 +95,22 @@ component's responsibility.
   no baseline, the adapter reports the final cumulative snapshot; with a
   supplied baseline that cannot safely be subtracted, it reports no generic
   usage. Claude's parsed JSON usage remains per invocation and is not
-  baseline-adjusted. The operational usage total sums every reported counter
+  baseline-adjusted. Copilot reports usage only through a per-invocation
+  `--usage-output-file` report whose `modelMetrics` are a cumulative session
+  snapshot summed across models; its adapter reads and removes that file and
+  applies the same baseline rule as Codex. Copilot's reported input count
+  includes cached tokens, so the adapter reports input net of cache reads and
+  writes, and reports no usage if the cached counts exceed the input count. The operational usage total sums every reported counter
   (`input`, `output`, cache read, and cache write), while retaining the
   individual counters for a provider-specific breakdown. Adapters record a
   reported cost only and never
   estimate one.
+- Copilot silently drops MCP servers its account policy does not permit and
+  still exits with code zero. When a request carries `mcpServers` and
+  Copilot's own loaded-server report shows a requested server absent or not
+  connected, its adapter MUST report transport `failed` with failure kind
+  `runner-mcp-unavailable` instead of `succeeded`. With no loaded-server
+  report in the output it reports nothing extra rather than guess.
 - A failed resume is never retried as a fresh invocation. Adapters do not
   detect or classify unavailable-session IDs from vendor output. Timeouts,
   cancellation, unavailable sessions, and every other failed or unclassified
@@ -170,12 +181,12 @@ component's responsibility.
 | `prompt` | string | The rendered prompt text. |
 | `context` | `{runnerName, action, activationOrdinal}`, optional | Supplied by the Execution service when a runner was resolved; read only by the fake runner, to match a scripted scenario rule. No CLI-based runner reads it. |
 | `model` | string, optional | Overrides the runner's own default model, when the adapter reads it. |
-| `effort` | string, optional | Portable generic reasoning-effort selection. Each adapter maps it only when it has a vendor-specific syntax; Codex maps it to `model_reasoning_effort`, Claude maps it to `--effort`, and Cursor omits it. |
+| `effort` | string, optional | Portable generic reasoning-effort selection. Each adapter maps it only when it has a vendor-specific syntax; Codex maps it to `model_reasoning_effort`, Claude maps it to `--effort`, Copilot maps it to `--reasoning-effort`, and Cursor omits it. |
 | `workspacePath` | string, optional | Working directory for a spawned process. |
-| `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, and fake adapters do not read it. |
-| `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, and fake adapters do not read it. |
-| `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution only when the resolved adapter declares resume support and its configured runner identity matches the prior session. Claude, Codex, and Cursor each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
-| `usageBaseline` | `{input, output, cacheRead?, cacheWrite?}`, optional | Previous per-invocation usage totals selected by Execution for the resumed session. Only Codex consumes it, subtracting it from its cumulative resumed-session snapshot to report this invocation's delta. |
+| `allowedTools` | list of string | Claude forwards its established tool option; Codex, Cursor, Copilot, and fake adapters do not read it. |
+| `maxTurns` | integer, optional | Claude forwards its established turn option; Codex, Cursor, Copilot, and fake adapters do not read it. |
+| `resumeSessionId` | string, optional | Opaque prior-session reference selected by Execution only when the resolved adapter declares resume support and its configured runner identity matches the prior session. Claude, Codex, Cursor, and Copilot each pass it in their own vendor-supported resume shape while still forwarding the complete current prompt; generic command and fake runners do not manufacture or interpret it. |
+| `usageBaseline` | `{input, output, cacheRead?, cacheWrite?}`, optional | Previous per-invocation usage totals selected by Execution for the resumed session. Only Codex and Copilot consume it, subtracting it from their cumulative resumed-session snapshot to report this invocation's delta. |
 
 **AgentRunnerResult**
 

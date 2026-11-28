@@ -24,7 +24,7 @@ RUN echo "gh-stack cache bust: ${GH_STACK_CACHE_BUST}" \
   && chmod -R a+rX /usr/local/lib/wake-gh
 
 RUN --mount=type=cache,target=/root/.npm \
-  npm install -g @anthropic-ai/claude-code @openai/codex
+  npm install -g @anthropic-ai/claude-code @openai/codex @github/copilot
 
 RUN useradd --create-home --shell /bin/bash wake \
   && mkdir -p /home/wake/.codex-runtime \

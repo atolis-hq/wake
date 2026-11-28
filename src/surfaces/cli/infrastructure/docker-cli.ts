@@ -6,6 +6,7 @@ import {
 import { managedRuntimeDockerfile, managedRuntimeImage } from './managed-runtime-image.js';
 import { scrubProcessLog, type ProcessLogSink } from './process-log.js';
 import { sandboxHomeInitDirectories } from './sandbox-home-init-directories.js';
+import { buildResumeCommandForCli } from './sandbox-resume-command.js';
 import { ensureSandboxWorkspaceOwnership } from './sandbox-workspace-ownership.js';
 
 export {
@@ -249,16 +250,6 @@ export interface SandboxResumeTarget {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
-
-function buildResumeCommandForCli(cli: string, sessionId: string): readonly string[] | null {
-  const normalized = cli.trim().toLowerCase();
-  if (normalized === 'claude') return ['claude', '--resume', sessionId];
-  if (normalized === 'codex') return ['codex', 'exec', 'resume', sessionId];
-  if (normalized === 'cursor') return ['cursor', cursorCliSubcommand, `--resume=${sessionId}`];
-  return null;
 }
 
 async function requireImage(inspect: SandboxDockerInspection, image: string): Promise<void> {
