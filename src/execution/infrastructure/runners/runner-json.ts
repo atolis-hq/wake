@@ -18,3 +18,7 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
 export function numeric(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
+
+export function parseJsonRecord(text: string): Record<string, unknown> | undefined {
+  return asRecord(parseJson(text));
+}

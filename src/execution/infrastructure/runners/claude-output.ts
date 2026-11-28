@@ -4,6 +4,7 @@ import {
 } from '../../../activities/index.js';
 import type { AgentRunnerResult, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
+import { asRecord, numeric, parseJsonRecord } from './runner-json.js';
 
 export const ClaudeNoFinalResultFailureKind = 'claude-no-final-result';
 
@@ -43,7 +44,7 @@ export function classifyClaudeFailure(input: {
   readonly stdout: string;
   readonly stderr: string;
 }): { readonly kind: string; readonly message: string } | undefined {
-  const structured = finalResult(input.stdout) ?? parseRecord(input.stdout);
+  const structured = finalResult(input.stdout) ?? parseJsonRecord(input.stdout);
   if (structured?.is_error === true && typeof structured.result === 'string') {
     const message = structured.result.trim();
     if (claudeAuthenticationPattern.test(message))
@@ -59,7 +60,7 @@ export function classifyClaudeFailure(input: {
 }
 
 function claudeUsage(value: Record<string, unknown>): Partial<AgentRunnerResult> {
-  const usage = record(value.usage);
+  const usage = asRecord(value.usage);
   const input = usage === undefined ? undefined : numeric(usage.input_tokens);
   const output = usage === undefined ? undefined : numeric(usage.output_tokens);
   if (usage === undefined || input === undefined || output === undefined) return {};
@@ -81,27 +82,9 @@ function claudeUsage(value: Record<string, unknown>): Partial<AgentRunnerResult>
 // A whole-output parse keeps the legacy single-object shape working.
 function finalResult(stdout: string): (Record<string, unknown> & { result: string }) | undefined {
   const lines = stdout.split('\n').filter((line) => line.trim().length > 0);
-  const last = lines.length === 0 ? undefined : parseRecord(lines[lines.length - 1]!);
-  const value = last ?? (lines.length > 1 ? parseRecord(stdout) : undefined);
+  const last = lines.length === 0 ? undefined : parseJsonRecord(lines[lines.length - 1]!);
+  const value = last ?? (lines.length > 1 ? parseJsonRecord(stdout) : undefined);
   return value !== undefined && typeof value.result === 'string'
     ? (value as Record<string, unknown> & { result: string })
     : undefined;
-}
-
-function parseRecord(stdout: string): Record<string, unknown> | undefined {
-  try {
-    return record(JSON.parse(stdout) as unknown);
-  } catch {
-    return undefined;
-  }
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function numeric(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
