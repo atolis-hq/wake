@@ -1,6 +1,7 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './cli-runner.js';
+import { asRecord, numeric, parseJsonRecord } from './runner-json.js';
 import { usageSinceBaseline, type CumulativeUsage } from './usage-baseline.js';
 
 // Deliberately narrow: only genuine provider usage/rate-limit phrasing.
@@ -28,7 +29,7 @@ function extractCodexErrorMessage(stdout: string): string | undefined {
   for (const line of stdout.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
-    const event = parseLine(trimmed);
+    const event = parseJsonRecord(trimmed);
     if (event === undefined) continue;
     if (event.type === 'error' && typeof event.message === 'string') return event.message;
     if (event.type === 'turn.failed') {
@@ -110,7 +111,7 @@ export function parseCodexOutput(
 ): Partial<AgentRunnerResult> {
   let state: CodexOutputState = {};
   for (const line of stdout.split(/\r?\n/)) {
-    state = consumeCodexEvent(state, parseLine(line));
+    state = consumeCodexEvent(state, parseJsonRecord(line));
   }
   return codexResult(state, request?.usageBaseline);
 }
@@ -122,14 +123,6 @@ interface CodexOutputState {
 }
 
 type CodexUsage = CumulativeUsage;
-
-function parseLine(line: string): Record<string, unknown> | undefined {
-  try {
-    return asRecord(JSON.parse(line) as unknown);
-  } catch {
-    return undefined;
-  }
-}
 
 function consumeCodexEvent(
   state: CodexOutputState,
@@ -183,14 +176,4 @@ function codexResult(
     ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
     ...(tokenUsage === undefined ? {} : { tokenUsage }),
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function numeric(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

@@ -1,7 +1,8 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
-import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './cli-runner.js';
+import { asRecord, numeric, parseJsonRecord } from './runner-json.js';
 
 // Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);
@@ -60,7 +61,7 @@ export function cursorCommandArgs(
 }
 
 export function parseCursorOutput(stdout: string): Partial<AgentRunnerResult> {
-  const value = parseRecord(stdout);
+  const value = parseJsonRecord(stdout);
   if (value === undefined || typeof value.result !== 'string') return {};
   return {
     output: value.result,
@@ -84,22 +85,4 @@ function cursorUsage(value: Record<string, unknown>): Partial<AgentRunnerResult>
       ...(cacheWrite === undefined ? {} : { cacheWrite }),
     },
   };
-}
-
-function parseRecord(stdout: string): Record<string, unknown> | undefined {
-  try {
-    return asRecord(JSON.parse(stdout) as unknown);
-  } catch {
-    return undefined;
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function numeric(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
