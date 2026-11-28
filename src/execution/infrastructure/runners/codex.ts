@@ -1,6 +1,6 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
-import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './cli-runner.js';
 import { usageSinceBaseline, type CumulativeUsage } from './usage-baseline.js';
 
 // Deliberately narrow: only genuine provider usage/rate-limit phrasing.

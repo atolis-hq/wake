@@ -1,7 +1,7 @@
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
-import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './cli-runner.js';
 
 // Cursor's CLI subcommand, not the closed domain vocabulary word "agent".
 const cursorCliSubcommand = String.fromCharCode(97, 103, 101, 110, 116);

@@ -44,6 +44,8 @@ export * from './infrastructure/prompt-templates.js';
 
 export * from './infrastructure/runners/claude.js';
 
+export * from './infrastructure/runners/cli-runner.js';
+
 export * from './infrastructure/runners/codex.js';
 
 export * from './infrastructure/codex-stop-hook.js';

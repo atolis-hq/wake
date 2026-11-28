@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { AgentRunnerResult, Runner, RunnerRequest } from '../../contracts/runner.js';
 import { ProviderQuotaExceededFailureKind } from '../../contracts/runner.js';
 import { WorkspaceMode } from '../../contracts/vocabulary.js';
-import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './claude.js';
+import { cliRunner, type CliRunnerOptions, type RunnerDefaults } from './cli-runner.js';
 import { mcpServersConfig } from './mcp-config.js';
 import { asRecord, numeric, parseJson } from './runner-json.js';
 import { usageSinceBaseline, type CumulativeUsage } from './usage-baseline.js';
