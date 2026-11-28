@@ -1,3 +1,7 @@
+// One isolated 5xx must not reject the rest of a poll's queued requests, or a
+// flaky provider keeps every poll partial. Cool down only on consecutive failures.
+const TRANSIENT_FAILURES_BEFORE_COOLDOWN = 3;
+
 export interface GitHubRequestCoordinator {
   run<Value>(request: () => Promise<Value>): Promise<Value>;
 }
@@ -91,9 +95,10 @@ class CoordinatedGitHubRequests implements GitHubRequestCoordinator {
       return;
     }
     if (isTransient(error)) {
-      const delay = Math.min(5_000 * 2 ** this.transientFailureCount, 60_000);
       this.transientFailureCount += 1;
-      this.cooldownUntil = this.now() + delay;
+      const excess = this.transientFailureCount - TRANSIENT_FAILURES_BEFORE_COOLDOWN;
+      if (excess < 0) return;
+      this.cooldownUntil = this.now() + Math.min(5_000 * 2 ** excess, 60_000);
     }
   }
 }
