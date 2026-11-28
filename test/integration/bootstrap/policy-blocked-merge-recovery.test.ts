@@ -822,7 +822,13 @@ for (const closureFirst of [true, false]) {
 
 it('does not infer delivery from external closure after a denied merge', async () => {
   const { root } = await setup();
-  await until(root, () => waiting(root));
+  await until(root, async () => {
+    const view = await root.orchestration.get(iid);
+    return (
+      view?.status === WorkflowStatus.Waiting &&
+      view.lastOutcome?.kind === ActivityOutcomeKind.Blocked
+    );
+  });
   expect((await root.orchestration.get(iid))?.lastOutcome?.kind).toBe(ActivityOutcomeKind.Blocked);
   const policy = createWorkCancellationPolicy(
     root.work,
